@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' file: data: https://th.wallhaven.cc https://w.wallhaven.cc https://*.r2.cloudflarestorage.com; style-src 'self' 'unsafe-inline';" />
+  <title>Znada</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="titlebar" id="titlebar">
+    <div class="tb-left">
+      <img class="tb-icon" src="../assets/icon.png" alt="" />
+      <span class="tb-title">Znada</span>
+    </div>
+    <div class="tb-nav" id="tbNav">
+      <button class="navbtn active" data-page="home" data-i18n="nav.home">Главная</button>
+      <button class="navbtn" data-page="library" data-i18n="nav.library">Библиотека</button>
+      <button class="navbtn" data-page="design" data-i18n="nav.design">Оформление</button>
+    </div>
+    <div class="tb-right">
+      <button class="tb-btn" id="btnPrefs" data-i18n-title="prefs.tooltip" title="Настройки приложения" aria-label="Настройки приложения">
+        <svg viewBox="0 0 16 16" width="17" height="17" fill="currentColor">
+          <path d="M8 5.2a2.8 2.8 0 100 5.6 2.8 2.8 0 000-5.6zm0 1.4a1.4 1.4 0 110 2.8 1.4 1.4 0 010-2.8z"/>
+          <path d="M7.2 1h1.6l.3 1.6a5.3 5.3 0 011.3.55l1.4-.8 1.13 1.13-.8 1.4c.24.4.43.84.55 1.3L15 7.2v1.6l-1.6.3a5.3 5.3 0 01-.55 1.3l.8 1.4-1.13 1.13-1.4-.8c-.4.24-.84.43-1.3.55L8.8 15H7.2l-.3-1.6a5.3 5.3 0 01-1.3-.55l-1.4.8-1.13-1.13.8-1.4a5.3 5.3 0 01-.55-1.3L1 8.8V7.2l1.6-.3c.12-.46.31-.9.55-1.3l-.8-1.4 1.13-1.13 1.4.8c.4-.24.84-.43 1.3-.55L7.2 1z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- ===================== WELCOME (первый запуск) ===================== -->
+    <section class="view welcome" id="viewWelcome" hidden>
+      <div class="welcome-card">
+        <img class="welcome-icon" src="../assets/icon.png" alt="" />
+        <h1 class="welcome-title" data-i18n="welcome.title">Добро пожаловать в Znada</h1>
+        <p class="welcome-sub" data-i18n="welcome.sub">Znada автоматически меняет обои рабочего стола при переключении светлой и тёмной темы Windows. Приложение живёт в трее и работает в фоне.</p>
+
+        <div class="boxed-list">
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="welcome.langTitle">Язык</div></div>
+            <div class="select-wrap">
+              <select id="welcomeLang">
+                <option value="system" data-i18n="lang.system">Системный</option>
+                <option value="uk">Українська</option>
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+                <option value="ar">العربية</option>
+                <option value="bg">Български</option>
+                <option value="vi">Tiếng Việt</option>
+                <option value="el">Ελληνικά</option>
+                <option value="da">Dansk</option>
+                <option value="de">Deutsch</option>
+                <option value="he">עברית</option>
+                <option value="id">Bahasa Indonesia</option>
+                <option value="es">Español</option>
+                <option value="it">Italiano</option>
+                <option value="zh">中文 (简体)</option>
+                <option value="ko">한국어</option>
+                <option value="hu">Magyar</option>
+                <option value="nl">Nederlands</option>
+                <option value="no">Norsk</option>
+                <option value="pl">Polski</option>
+                <option value="pt">Português</option>
+                <option value="ro">Română</option>
+                <option value="sk">Slovenčina</option>
+                <option value="fi">Suomi</option>
+                <option value="th">ไทย</option>
+                <option value="tr">Türkçe</option>
+                <option value="fr">Français</option>
+                <option value="hi">हिन्दी</option>
+                <option value="cs">Čeština</option>
+                <option value="sv">Svenska</option>
+                <option value="ja">日本語</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="welcome.autoTitle">Автосмена обоев</div>
+              <div class="row-sub" data-i18n="welcome.autoSub">Менять обои при переключении темы Windows</div>
+            </div>
+            <button class="gtkswitch" id="welcomeAuto" role="switch" aria-checked="false"><span class="knob"></span></button>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="welcome.startupTitle">Автозапуск с Windows</div>
+              <div class="row-sub" data-i18n="welcome.startupSub">Запускать в фоне (в трее) при входе в систему</div>
+            </div>
+            <button class="gtkswitch" id="welcomeStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="welcome.themeTitle">Автопереключение темы Windows</div>
+              <div class="row-sub" data-i18n="welcome.themeSub">Znada сама будет менять тему по расписанию. Подробнее — в «Оформлении».</div>
+            </div>
+            <button class="gtkswitch" id="welcomeTheme" role="switch" aria-checked="false"><span class="knob"></span></button>
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="welcome.shortcutDesktopTitle">Ярлык на рабочем столе</div></div>
+            <button class="pill" id="welcomeShortcutDesktop">Создать</button>
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="welcome.shortcutStartTitle">Ярлык в меню «Пуск»</div></div>
+            <button class="pill" id="welcomeShortcutStart">Создать</button>
+          </div>
+        </div>
+
+        <p class="welcome-note" data-i18n="welcome.trayNote">Окно можно закрыть — приложение продолжит работать в трее. Повторно запускать установщик не нужно.</p>
+        <button class="pill suggested welcome-start" id="welcomeStart" data-i18n="welcome.start">Начать</button>
+      </div>
+    </section>
+
+    <!-- ===================== HOME ===================== -->
+    <section class="view" id="viewHome">
+      <div class="home-layout">
+        <div class="home-desktop-card" id="homeDesktopCard">
+          <div class="home-scene" id="homeScene">
+            <div class="home-scene-backdrop" id="homeBackdrop"></div>
+            <div class="home-scene-shade"></div>
+
+            <h2 class="home-scene-title" data-i18n="home.currentDesktop">Сейчас на рабочем столе</h2>
+
+            <div class="home-display-area" id="homeMonitors"></div>
+
+            <aside class="home-info-panel">
+              <div class="home-info-heading">
+                <strong id="homeInfoTitle">Все мониторы</strong>
+                <span id="homeInfoMeta">Общий режим</span>
+              </div>
+
+              <button class="home-theme-row" id="themeIndicator" type="button">
+                <span class="home-info-icon" id="heroIcon"><svg class="theme-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.5V3.2M8 12.8v1.7M1.5 8h1.7M12.8 8h1.7M3.4 3.4 4.6 4.6M11.4 11.4l1.2 1.2M12.6 3.4 11.4 4.6M4.6 11.4 3.4 12.6"/></svg></span>
+                <span class="home-info-copy">
+                  <small data-i18n="home.currentTheme">Текущая тема</small>
+                  <strong id="heroSub" data-i18n="home.detecting">Определяю…</strong>
+                </span>
+              </button>
+
+              <div class="home-automation-row">
+                <span class="home-info-icon"><svg class="rot-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8A5 5 0 1 1 8 3"/><path d="M7.4 1.1 11.2 3.1 7.4 5.1Z" fill="currentColor" stroke="none"/></svg></span>
+                <span class="home-info-copy">
+                  <small id="homeAutoTitle">Автоматическая смена</small>
+                  <strong id="homeAutoDetail">По настройкам приложения</strong>
+                </span>
+              </div>
+
+              <button class="pill suggested home-next-wall" id="btnNextWall" type="button" data-i18n-title="home.nextWallpaperHint">
+                <span class="hnw-ic"><svg class="rot-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8A5 5 0 1 1 8 3"/><path d="M7.4 1.1 11.2 3.1 7.4 5.1Z" fill="currentColor" stroke="none"/></svg></span><span id="homeNextLabel" data-i18n="home.switchAll">Сменить на всех экранах</span>
+              </button>
+            </aside>
+
+            <nav class="home-pager" id="homePager"></nav>
+          </div>
+        </div>
+
+        <section class="home-recent" id="homeRecent">
+          <div class="home-recent-head">
+            <div>
+              <h2 data-i18n="home.recentTitle">Недавно добавленные</h2>
+              <p data-i18n="home.recentSubtitle">Последние изображения из вашей Библиотеки</p>
+            </div>
+            <button class="pill home-recent-all" id="homeRecentAll" type="button">
+              <span data-i18n="home.recentAll">Показать все</span>
+              <span aria-hidden="true">›</span>
+            </button>
+          </div>
+          <div class="home-recent-grid" id="homeRecentGrid"></div>
+          <div class="home-recent-empty" id="homeRecentEmpty" hidden>
+            <span class="home-recent-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="14" height="16" rx="2"/><path d="m5.5 16 3.2-3.5 2.5 2.3 2-2 3.8 4.1"/><circle cx="13" cy="8.5" r="1.4"/><path d="M20 7v6M17 10h6"/>
+              </svg>
+            </span>
+            <span class="home-recent-empty-copy">
+              <strong data-i18n="home.recentEmpty">Здесь появятся новые обои</strong>
+              <small data-i18n="home.recentEmptyHint">Добавьте изображения с компьютера или из онлайн-каталога</small>
+            </span>
+            <button class="pill suggested" id="homeRecentAdd" type="button" data-i18n="home.recentAdd">Добавить фото…</button>
+          </div>
+        </section>
+
+        <!-- Smart Panel -->
+        <section class="smart-panel" id="smartPanel" hidden>
+          <div class="smart-panel-icon-wrap">
+            <!-- Иконку ставит renderSmartPanel() до того, как снимет hidden с панели, поэтому
+                 разметка пустая: копия SVG здесь никогда бы не показалась и только разъезжалась
+                 бы с константой в renderer.js. У индикатора темы копия в разметке ОСТАВЛЕНА
+                 намеренно — там панель видна сразу, до первого applyThemeToUI(). -->
+            <div class="smart-panel-icon" id="spIcon"></div>
+          </div>
+          <div class="smart-panel-content">
+            <div class="smart-panel-title" id="spTitle">Совет дня</div>
+            <div class="smart-panel-text" id="spText"></div>
+          </div>
+          <div class="smart-panel-actions" id="spActions">
+            <button class="pill" id="btnSpAction" hidden></button>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===================== DESIGN (обои) ===================== -->
+    <section class="view" id="viewDesign" hidden>
+      <section class="monitor-bar" id="monitorBar" hidden>
+        <div class="monmap" id="monMap"></div>
+        <div class="mon-label" id="monLabel"></div>
+        <div class="mon-note" data-i18n="design.monitorNote">Выберите монитор — обои ниже задаются именно для него. У каждого монитора своя пара день/ночь.</div>
+      </section>
+
+      <h2 class="group-title" data-i18n="design.wallpapersGroup">Обои</h2>
+      <div class="cards">
+        <!-- Light -->
+        <div class="wallcard" data-theme="light">
+          <div class="drag-overlay">
+            <svg viewBox="0 0 16 16" width="32" height="32" fill="currentColor">
+              <path d="M8 15A7 7 0 118 1a7 7 0 010 14zm0-1A6 6 0 108 2a6 6 0 000 12z"/>
+              <path d="M7.5 5.5v5a.5.5 0 001 0v-5a.5.5 0 00-1 0z"/>
+              <path d="M8 4.25a.25.25 0 00-.177.073L5.573 6.573a.5.5 0 00.707.707L8 5.414l1.72 1.72a.5.5 0 00.707-.707L8.177 4.323A.25.25 0 008 4.25z"/>
+            </svg>
+            <span data-i18n="design.dropPrompt">Перетащите картинки или папку сюда</span>
+          </div>
+          <div class="wallcard-head">
+            <span class="dot dot-light"></span>
+            <span data-i18n="design.lightTheme">Дневная тема</span>
+          </div>
+          <div class="stage">
+            <div class="monitor" id="previewLight"><span class="preview-empty" data-i18n="design.notSelected">Не выбрано</span></div>
+          </div>
+          <div class="thumbstrip" id="stripLight"></div>
+
+        </div>
+        <!-- Dark -->
+        <div class="wallcard" data-theme="dark">
+          <div class="drag-overlay">
+            <svg viewBox="0 0 16 16" width="32" height="32" fill="currentColor">
+              <path d="M8 15A7 7 0 118 1a7 7 0 010 14zm0-1A6 6 0 108 2a6 6 0 000 12z"/>
+              <path d="M7.5 5.5v5a.5.5 0 001 0v-5a.5.5 0 00-1 0z"/>
+              <path d="M8 4.25a.25.25 0 00-.177.073L5.573 6.573a.5.5 0 00.707.707L8 5.414l1.72 1.72a.5.5 0 00.707-.707L8.177 4.323A.25.25 0 008 4.25z"/>
+            </svg>
+            <span data-i18n="design.dropPrompt">Перетащите картинки или папку сюда</span>
+          </div>
+          <div class="wallcard-head">
+            <span class="dot dot-dark"></span>
+            <span data-i18n="design.darkTheme">Ночная тема</span>
+          </div>
+          <div class="stage">
+            <div class="monitor" id="previewDark"><span class="preview-empty" data-i18n="design.notSelected">Не выбрано</span></div>
+          </div>
+          <div class="thumbstrip" id="stripDark"></div>
+
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="design.behaviorGroup">Поведение</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="design.separateTitle">Раздельные обои для светлой и тёмной темы</div>
+            <div class="row-sub" data-i18n="design.separateSub">У каждого монитора своя пара день/ночь. Выключите, чтобы вести один общий список обоев</div>
+          </div>
+          <button class="gtkswitch" id="swSeparate" role="switch" aria-checked="true"><span class="knob"></span></button>
+        </div>
+        <div class="row" id="rowSingleWall" hidden>
+          <div class="row-text">
+            <div class="row-title" data-i18n="design.singleTitle">Одни обои на все мониторы</div>
+            <div class="row-sub" data-i18n="design.singleSub">Использовать одно изображение для всех мониторов сразу</div>
+          </div>
+          <button class="gtkswitch" id="swSingle" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row wallpaper-schedule-row" id="rowWallpaperSchedule">
+          <div class="row-text">
+            <div class="row-title" data-i18n="design.wallpaperScheduleTitle">Day/night wallpaper trigger</div>
+            <div class="row-sub" data-i18n="design.wallpaperScheduleSub">Choose what selects the day or night wallpaper slot</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selWallpaperMode">
+              <option value="off" data-i18n="theme.modeOff">Off</option>
+              <option value="system" data-i18n="design.wallpaperModeSystem">Follow Windows</option>
+              <option value="time" data-i18n="theme.modeTime">By time</option>
+              <option value="sun" data-i18n="theme.modeSun">By sun</option>
+            </select>
+          </div>
+        </div>
+        <div id="wallpaperTimes" class="wallpaper-schedule-row" hidden>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="design.wallpaperLightStart">Day wallpapers from</div></div>
+            <input type="time" id="wallpaperLightStart" class="time-input" value="07:00" />
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="design.wallpaperDarkStart">Night wallpapers from</div></div>
+            <input type="time" id="wallpaperDarkStart" class="time-input" value="20:00" />
+          </div>
+        </div>
+        <div id="wallpaperSun" class="wallpaper-schedule-row" hidden>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="theme.autoCoordsTitle">Detect by IP</div>
+              <div class="row-sub" id="lblWallpaperCoordsStatus" data-i18n="theme.autoCoordsSub">Automatically set coordinates based on your location</div>
+            </div>
+            <button class="pill" id="btnDetectWallpaperCoords">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                <path d="M8 0C4.963 0 2.5 2.463 2.5 5.5c0 3.93 5.033 10.05 5.247 10.309a.333.333 0 00.506 0c.214-.259 5.247-6.379 5.247-10.309C13.5 2.463 11.037 0 8 0zm0 8.25a2.75 2.75 0 110-5.5 2.75 2.75 0 010 5.5z"/>
+              </svg>
+              <span data-i18n="theme.autoCoordsBtn">Detect</span>
+            </button>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="theme.coordinates">Coordinates</div>
+              <div class="row-sub" data-i18n="design.sharedCoordinatesSub">Shared with the Windows theme schedule</div>
+            </div>
+            <div class="coords-group">
+              <div class="coord-field">
+                <span class="coord-label" data-i18n="theme.lat">Latitude</span>
+                <input type="number" step="0.0001" id="wallpaperLatInput" class="time-input num-input" placeholder="50.45" />
+              </div>
+              <div class="coord-field">
+                <span class="coord-label" data-i18n="theme.lng">Longitude</span>
+                <input type="number" step="0.0001" id="wallpaperLngInput" class="time-input num-input" placeholder="30.52" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="design.styleTitle">Расположение</div>
+            <div class="row-sub" data-i18n="design.styleSub">Как изображение размещается на рабочем столе</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selStyle">
+              <option value="fill" data-i18n="style.fill">Заполнение</option>
+              <option value="fit" data-i18n="style.fit">Вписать</option>
+              <option value="stretch" data-i18n="style.stretch">Растянуть</option>
+              <option value="center" data-i18n="style.center">По центру</option>
+              <option value="tile" data-i18n="style.tile">Замостить</option>
+              <option value="span" data-i18n="style.span">Развернуть на все мониторы</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="slideshow.group">Слайдшоу</h2>
+      <div class="boxed-list" id="slideshowList">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="slideshow.title">Слайдшоу</div>
+            <div class="row-sub" data-i18n="slideshow.sub">Менять обои по кругу из добавленных фото и папок</div>
+          </div>
+          <button class="gtkswitch" id="swSlideshow" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row slideshow-option" hidden>
+          <div class="row-text">
+            <div class="row-title" data-i18n="slideshow.orderTitle">Порядок</div>
+            <div class="row-sub" data-i18n="slideshow.orderSub">Как выбирать следующую картинку</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selSlideOrder">
+              <option value="sequential" data-i18n="order.sequential">По порядку</option>
+              <option value="shuffle" data-i18n="order.shuffle">Вперемешку</option>
+            </select>
+          </div>
+        </div>
+        <div class="row slideshow-option" hidden>
+          <div class="row-text">
+            <div class="row-title" data-i18n="slideshow.intervalTitle">Интервал</div>
+            <div class="row-sub" data-i18n="slideshow.intervalSub">Через сколько минут менять картинку</div>
+          </div>
+          <div class="row-controls">
+            <input type="number" min="1" step="1" id="slideInterval" class="time-input num-input" value="30" />
+            <button class="gtkswitch" id="swSlideInterval" role="switch" aria-checked="true"><span class="knob"></span></button>
+          </div>
+        </div>
+        <div class="row slideshow-option" hidden>
+          <div class="row-text">
+            <div class="row-title"><span data-i18n="triggers.startupTitle">При запуске Windows</span></div>
+            <div class="row-sub" data-i18n="triggers.startupSub">Переключать обои при каждом старте системы</div>
+          </div>
+          <button class="gtkswitch" id="swTriggerStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row slideshow-option" hidden>
+          <div class="row-text">
+            <div class="row-title"><span data-i18n="triggers.wakeupTitle">При выходе из спящего режима</span><span class="beta-badge">beta</span></div>
+            <div class="row-sub" data-i18n="triggers.wakeupSub">Переключать обои при пробуждении компьютера из сна</div>
+          </div>
+          <button class="gtkswitch" id="swTriggerWakeup" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row slideshow-option" id="rowTriggerStealth" hidden>
+          <div class="row-text">
+            <div class="row-title">
+              <span data-i18n="triggers.stealthTitle">Невидимая смена</span>
+              <span class="info-icon" data-i18n-tooltip="triggers.stealthTooltip"></span>
+            </div>
+            <div class="row-sub" data-i18n="triggers.stealthSub">Ждать до 5 минут развёрнутого на весь экран окна, чтобы сменить обои незаметно</div>
+          </div>
+          <button class="gtkswitch" id="swTriggerStealth" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row slideshow-option stealth-scope-row" id="rowTriggerStealthScope" hidden>
+          <div class="row-text">
+            <div class="row-title" data-i18n="triggers.stealthScopeTitle">Применять для</div>
+            <div class="row-sub" data-i18n="triggers.stealthScopeSub">Выберите, где Znada будет пытаться скрыть смену обоев</div>
+          </div>
+          <div class="row-controls stealth-scope-controls">
+            <label class="stealth-scope-check">
+              <input type="checkbox" id="cbStealthStartup" data-stealth-scope="startup" />
+              <span data-i18n="triggers.stealthScopeStartup">Запуск</span>
+            </label>
+            <label class="stealth-scope-check">
+              <input type="checkbox" id="cbStealthWakeup" data-stealth-scope="wakeup" />
+              <span data-i18n="triggers.stealthScopeWakeup">Пробуждение</span>
+            </label>
+            <label class="stealth-scope-check">
+              <input type="checkbox" id="cbStealthInterval" data-stealth-scope="interval" />
+              <span data-i18n="triggers.stealthScopeInterval">Интервал</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="theme.group">Тема Windows</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="theme.modeTitle">Переключать тему по расписанию</div>
+              <div class="row-sub" data-i18n="theme.modeSub">This controls Windows only; wallpaper timing is configured above</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selThemeMode">
+              <option value="off" data-i18n="theme.modeOff">Выкл.</option>
+              <option value="time" data-i18n="theme.modeTime">По времени</option>
+              <option value="sun" data-i18n="theme.modeSun">По солнцу</option>
+            </select>
+          </div>
+        </div>
+        <div id="themeTimes" hidden>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="theme.lightStart">Светлая тема с</div></div>
+            <input type="time" id="lightStart" class="time-input" value="07:00" />
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="theme.darkStart">Тёмная тема с</div></div>
+            <input type="time" id="darkStart" class="time-input" value="20:00" />
+          </div>
+        </div>
+        <div id="themeSun" hidden>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="theme.autoCoordsTitle">Определить по IP</div>
+              <div class="row-sub" id="lblCoordsStatus" data-i18n="theme.autoCoordsSub">Автоматически заполнить координаты по вашему местоположению</div>
+            </div>
+            <button class="pill" id="btnDetectCoords">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                <path d="M8 0C4.963 0 2.5 2.463 2.5 5.5c0 3.93 5.033 10.05 5.247 10.309a.333.333 0 00.506 0c.214-.259 5.247-6.379 5.247-10.309C13.5 2.463 11.037 0 8 0zm0 8.25a2.75 2.75 0 110-5.5 2.75 2.75 0 010 5.5z"/>
+              </svg>
+              <span data-i18n="theme.autoCoordsBtn">Определить</span>
+            </button>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="theme.coordinates">Координаты</div>
+              <div class="row-sub" data-i18n="theme.coordsSub">Координаты для расчёта рассвета и заката</div>
+            </div>
+            <div class="coords-group">
+              <div class="coord-field">
+                <span class="coord-label" data-i18n="theme.lat">Широта</span>
+                <input type="number" step="0.0001" id="latInput" class="time-input num-input" placeholder="50.45" />
+              </div>
+              <div class="coord-field">
+                <span class="coord-label" data-i18n="theme.lng">Долгота</span>
+                <input type="number" step="0.0001" id="lngInput" class="time-input num-input" placeholder="30.52" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== LIBRARY (пул обоев) ===================== -->
+    <section class="view" id="viewLibrary" hidden>
+      <div class="lib">
+        <aside class="lib-rail">
+          <button class="lib-railbtn active" data-filter="all">
+            <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.2" y="2.2" width="4.6" height="4.6" rx="1"/><rect x="9.2" y="2.2" width="4.6" height="4.6" rx="1"/><rect x="2.2" y="9.2" width="4.6" height="4.6" rx="1"/><rect x="9.2" y="9.2" width="4.6" height="4.6" rx="1"/></svg>
+            <span data-i18n="library.all">Все</span>
+          </button>
+          <button class="lib-railbtn" data-filter="favorite">
+            <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2l1.76 3.57 3.94.57-2.85 2.78.67 3.92L8 11.0 4.48 12.85l.67-3.92L2.3 6.14l3.94-.57z"/></svg>
+            <span data-i18n="library.favorites">Избранное</span>
+          </button>
+          <button class="lib-railbtn" data-filter="folder">
+            <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 4.3c0-.5.4-.9.9-.9h2.7l1.3 1.5h6.2c.5 0 .9.4.9.9v6.4c0 .5-.4.9-.9.9H2.9c-.5 0-.9-.4-.9-.9z"/></svg>
+            <span data-i18n="library.folders">Папки</span>
+          </button>
+          <div class="lib-rail-separator"></div>
+          <button class="lib-railbtn lib-railonline" data-filter="online">
+            <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 3.9 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.3 5.4 8S6.3 3.6 8 1.8z"/></svg>
+            <span data-i18n="online.rail">Онлайн</span>
+          </button>
+          <div class="lib-tags-section" id="libTagSection" hidden>
+            <label class="lib-tag-searchbox">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
+              <input type="search" id="libTagSearch" placeholder="Поиск тегов" data-i18n-ph="library.tagSearchPh" data-i18n-title="library.tagSearchPh" aria-label="Поиск тегов" aria-controls="libTags" autocomplete="off" spellcheck="false" />
+            </label>
+            <div class="lib-railtags" id="libTags"></div>
+            <div class="lib-tag-empty" id="libTagEmpty" data-i18n="library.noTagsFound" aria-live="polite" hidden>Подходящие теги не найдены</div>
+          </div>
+        </aside>
+        <div class="lib-main">
+          <div class="lib-local" id="libLocal">
+            <div class="lib-toolbar">
+              <label class="lib-searchbox">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
+                <input type="search" id="libSearch" class="lib-search" placeholder="Поиск" data-i18n-ph="library.searchPh" />
+              </label>
+              <button id="libRefresh" class="lib-iconbtn" data-i18n-title="library.refresh" title="Обновить">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+              </button>
+              <div class="select-wrap">
+                <select id="libSort">
+                  <option value="added" data-i18n="library.sortAdded">Сначала новые</option>
+                  <option value="name" data-i18n="library.sortName">По имени</option>
+                  <option value="size" data-i18n="library.sortSize">По размеру</option>
+                  <option value="shuffle" data-i18n="library.sortShuffle">Вперемешку</option>
+                </select>
+              </div>
+              <button class="pill suggested lib-add-btn" id="libAddPhotos">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.8" y="2.5" width="9.7" height="10.5" rx="1.6"/><path d="m3.3 10 2.2-2.4 1.8 1.7 1.4-1.4 2.8 3M13.3 3.2v4.5M11 5.45h4.6"/><circle cx="8.6" cy="5.5" r="1"/></svg>
+                <span data-i18n="library.addPhotos">Добавить фото…</span>
+              </button>
+              <button class="pill lib-add-btn" id="libAddFolder">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M1.7 4.2c0-.6.5-1 1-1h2.7l1.3 1.5h6.6c.6 0 1 .4 1 1v6.2c0 .6-.4 1-1 1H2.7c-.5 0-1-.4-1-1z"/></svg>
+                <span data-i18n="library.addFolder">Добавить папку…</span>
+              </button>
+            </div>
+            <div class="lib-breadcrumbs" id="libCrumbs" hidden></div>
+            <div class="lib-grid" id="libGrid"></div>
+            <div class="lib-sentinel" id="libSentinel" hidden></div>
+            <div class="lib-empty" id="libEmpty" hidden>
+              <svg class="lib-empty-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 18.5c0-2.5 2-4.5 4.5-4.5h13l6 7h20c2.5 0 4.5 2 4.5 4.5v23c0 2.5-2 4.5-4.5 4.5h-39A4.5 4.5 0 0 1 8 48.5z"/><path d="M8 26h48"/><path d="m20 43 7-7 5 5 4-4 8 8"/><circle cx="40" cy="32" r="2.5"/></svg>
+              <span data-i18n="library.empty">Библиотека пуста — перетащите сюда картинки или нажмите «Добавить».</span>
+            </div>
+          </div>
+
+          <div class="lib-online" id="libOnline" hidden>
+            <!-- Unified online search: one bar + one grid for all active sources.
+                 Znada is just another source feeding the same results, not a block. -->
+            <div class="lib-toolbar lib-online-toolbar" id="libSourceBar">
+              <span class="lib-online-toolbar-label" data-i18n="online.sourcesLabel">Источники</span>
+              <button class="lib-source-chip" id="srcLumina" type="button" data-source="lumina" aria-pressed="false">
+                <svg class="lib-source-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4.4 12.5a2.9 2.9 0 0 1-.3-5.78A3.4 3.4 0 0 1 10.5 5.6a2.6 2.6 0 0 1 .5 6.9z"/></svg>
+                <span data-i18n="online.sourceLumina">Znada</span>
+              </button>
+              <button class="lib-source-chip" id="srcInternet" type="button" data-source="internet" aria-pressed="true">
+                <svg class="lib-source-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 3.9 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.3 5.4 8S6.3 3.6 8 1.8z"/></svg>
+                <span data-i18n="online.sourceInternet">Интернет</span>
+              </button>
+              <div class="lib-online-account" id="libCloudAccount" hidden></div>
+            </div>
+
+            <div class="lib-toolbar lib-online-search" id="onlineSearchBar">
+              <div class="lib-search-wrap">
+                <label class="lib-searchbox" for="whQuery">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
+                  <input type="search" id="whQuery" class="lib-search" placeholder="Теги: nature, space…" data-i18n-ph="online.searchPh" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="whSuggest" />
+                </label>
+                <div class="online-tag-suggest" id="whSuggest" role="listbox" hidden></div>
+              </div>
+              <button class="pill lib-fav-toggle" id="onlineFavToggle" type="button" hidden aria-pressed="false" data-i18n-title="online.favViewHint" title="Избранное Znada">
+                <svg class="lib-source-ic" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.2-3.3-6.7-6.2C.2 5.3 1.5 3 3.8 3c1.4 0 2.3.8 2.9 1.6.3.4.6.4.9 0C8.2 3.8 9.1 3 10.5 3c2.3 0 3.6 2.3 2.5 4.8C12 10.7 8 14 8 14z"/></svg>
+                <span data-i18n="online.viewFavorites">Избранное</span>
+              </button>
+              <div class="select-wrap">
+                <select id="whSort">
+                  <option value="date_added" data-i18n="online.sortLatest">Новые</option>
+                  <option value="toplist" data-i18n="online.sortTop">Топ</option>
+                  <option value="random" data-i18n="online.sortRandom">Случайно</option>
+                  <option value="views" data-i18n="online.sortViews">Просмотры</option>
+                </select>
+              </div>
+              <button class="pill icon-only" id="whFilterToggle" data-i18n-title="online.filterToggle" title="Фильтры контента"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:-1px"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+              <button class="pill suggested" id="whSearch" data-i18n="online.search">Найти</button>
+            </div>
+            <div class="lib-filters-row" id="whFiltersRow" hidden>
+              <span class="lib-filters-label" data-i18n="online.purityLabel">Допуск контента:</span>
+              <label class="lib-filter-label"><input type="checkbox" class="wh-purity-cb" data-purity="sfw"> SFW</label>
+              <label class="lib-filter-label"><input type="checkbox" class="wh-purity-cb" data-purity="sketchy"> Sketchy</label>
+              <label class="lib-filter-label" id="lblPurityNsfw" data-i18n-title="online.nsfwNeedsKey" title="18+ (нужен ключ)"><input type="checkbox" class="wh-purity-cb" data-purity="nsfw"> NSFW</label>
+            </div>
+            <div class="lib-online-note" id="whNote"></div>
+            <div class="lib-grid" id="whGrid"></div>
+            <div class="lib-online-more">
+              <button class="pill" id="whMore" hidden data-i18n="online.more">Показать ещё</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="libSelectionBar" class="lib-selection-bar" role="region" hidden>
+        <span id="libSelCount" class="lib-sel-count" role="status" aria-live="polite"></span>
+        <button type="button" id="libSelAssign" class="pill suggested"></button>
+        <button type="button" id="libSelDelete" class="pill destructive"></button>
+        <button type="button" id="libSelPurge" class="pill destructive" hidden></button>
+        <button type="button" id="libSelClear" class="pill">✕</button>
+      </div>
+      <div class="lib-statusbar" id="libStatus"></div>
+    </section>
+
+    <!-- ===================== PREFS (настройки приложения) ===================== -->
+    <section class="view" id="viewPrefs" hidden>
+      <h2 class="group-title" data-i18n="prefs.appGroup">Настройки приложения</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.autostartTitle">Автозапуск с Windows</div>
+            <div class="row-sub" data-i18n="prefs.autostartSub">Запускать приложение в фоне (в трее) при входе в систему</div>
+          </div>
+          <button class="gtkswitch" id="swStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.startMinTitle">Запускать свёрнутым</div>
+            <div class="row-sub" data-i18n="prefs.startMinSub">При автозапуске открывать сразу в трее, без окна</div>
+          </div>
+          <button class="gtkswitch" id="swStartMin" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.languageTitle">Язык</div>
+            <div class="row-sub" data-i18n="prefs.languageSub">Язык интерфейса</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selLang">
+              <option value="system" data-i18n="lang.system">Системный</option>
+              <option value="uk">Українська</option>
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
+              <option value="ar">العربية</option>
+              <option value="bg">Български</option>
+              <option value="vi">Tiếng Việt</option>
+              <option value="el">Ελληνικά</option>
+              <option value="da">Dansk</option>
+              <option value="de">Deutsch</option>
+              <option value="he">עברית</option>
+              <option value="id">Bahasa Indonesia</option>
+              <option value="es">Español</option>
+              <option value="it">Italiano</option>
+              <option value="zh">中文 (简体)</option>
+              <option value="ko">한국어</option>
+              <option value="hu">Magyar</option>
+              <option value="nl">Nederlands</option>
+              <option value="no">Norsk</option>
+              <option value="pl">Polski</option>
+              <option value="pt">Português</option>
+              <option value="ro">Română</option>
+              <option value="sk">Slovenčina</option>
+              <option value="fi">Suomi</option>
+              <option value="th">ไทย</option>
+              <option value="tr">Türkçe</option>
+              <option value="fr">Français</option>
+              <option value="hi">हिन्दी</option>
+              <option value="cs">Čeština</option>
+              <option value="sv">Svenska</option>
+              <option value="ja">日本語</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.viewerBgTitle">Фон просмотрщика</div>
+            <div class="row-sub" data-i18n="prefs.viewerBgSub">Фон за фото в полноэкранном просмотрщике</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selViewerBackground">
+              <option value="ambient" data-i18n="viewerBg.ambient">Размытие фото</option>
+              <option value="__soon" disabled data-i18n="viewerBg.soon">Скоро больше вариантов</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.telemetryTitle">Сбор анонимной статистики</div>
+            <div class="row-sub" data-i18n="prefs.telemetrySub">Помогает находить и исправлять ошибки. По умолчанию выключено; сейчас ничего не отправляется.</div>
+          </div>
+          <button class="gtkswitch" id="swTelemetry" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.gameModeTitle">Игровой режим</div>
+            <div class="row-sub" data-i18n="prefs.gameModeSub">Не переключать тему и обои во время игр или полноэкранных приложений</div>
+          </div>
+          <button class="gtkswitch" id="swGameMode" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.notifyFailTitle">Уведомления о сбоях</div>
+            <div class="row-sub" data-i18n="prefs.notifyFailSub">Показывать системное уведомление, если фоновая смена обоев или темы сломалась</div>
+          </div>
+          <button class="gtkswitch" id="swNotifyFail" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.welcomeTitle">Экран приветствия</div>
+            <div class="row-sub" data-i18n="prefs.welcomeSub">Показать стартовый экран первого запуска снова</div>
+          </div>
+          <button class="pill" id="btnShowWelcome" data-i18n="prefs.welcomeBtn">Показать</button>
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="shortcuts.group">Горячие клавиши</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="shortcuts.nextTitle">Следующие обои</div>
+            <div class="row-sub" data-i18n="shortcuts.nextSub">Переключить на следующие обои на всех мониторах по горячей клавише</div>
+          </div>
+          <div class="shortcut-record-wrap">
+            <button class="pill shortcut-record-btn" id="btnRecordShortcut" data-i18n="shortcuts.pressKeys">Назначить...</button>
+            <button class="clear-btn" id="btnClearShortcut" hidden title="Очистить">&times;</button>
+          </div>
+          <button class="gtkswitch" id="swShortcutEnabled" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="library.removedTitle">Корзина библиотеки</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-sub" data-i18n="library.removedSub">Убранное из библиотеки. Файлы на диске не удаляются, вернуть можно что угодно.</div>
+          </div>
+          <button class="pill" id="btnOpenRemoved" data-i18n="library.removedOpen">Открыть</button>
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="journal.group">Журнал событий</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-sub" data-i18n="journal.sub">Последние сбои фоновых операций и их восстановления</div>
+          </div>
+          <button class="pill" id="btnClearEventLog" data-i18n="journal.clear">Очистить</button>
+        </div>
+        <div id="eventLogList"></div>
+      </div>
+
+      <h2 class="group-title" data-i18n="prefs.aboutGroup">О программе</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text"><div class="row-title">Znada</div><div class="row-sub" data-i18n="prefs.aboutSub">Автосмена обоев при переключении темы Windows</div></div>
+          <div class="status-val" id="appVersion">—</div>
+        </div>
+        <div class="row clickable" id="btnWebsite">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.websiteTitle">Сайт проекта</div>
+            <div class="row-sub">github.com/alexvlass01/znada</div>
+          </div>
+          <svg viewBox="0 0 16 16" width="16" height="16" class="row-link-icon">
+            <path d="M9 1.5a.5.5 0 000 1h3.79l-7.07 7.07a.5.5 0 00.71.71L13.5 3.21V7a.5.5 0 001 0V2a1 1 0 00-1-1H9zM2 3.5a1 1 0 00-1 1v9.5a1 1 0 001 1h9.5a1 1 0 001-1V9a.5.5 0 00-1 0v4H2V4.5h4a.5.5 0 000-1H2z" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.updateTitle">Обновления</div>
+            <div class="row-sub" id="updateStatus" data-i18n="prefs.updateIdle">Проверить наличие новой версии</div>
+          </div>
+          <button class="pill" id="btnCheckUpdate" data-i18n="prefs.updateCheck">Проверить</button>
+        </div>
+      </div>
+
+      <div class="danger-zone">
+        <button class="pill danger" id="btnQuit" data-i18n="prefs.quit">Выйти из приложения</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="../src/next-change.js"></script>
+  <script src="../src/path-key.js"></script>
+  <script src="../src/hotkey.js"></script>
+  <script src="justified-layout.js"></script>
+  <script src="virtual-window.js"></script>
+  <script src="virtual-grid-dom.js"></script>
+  <script src="unified-grid.js"></script>
+  <script src="card-interaction.js"></script>
+  <script src="resize-anchor.js"></script>
+  <script src="deferred-refresh.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'none'">
+<title>Znada Diagnostics</title>
+<style>
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 14px; background: #1b1b1b; color: #e6e6e6;
+  font-family: system-ui, "Segoe UI", sans-serif; font-size: 14px; user-select: none;
+}
+h1 { font-size: 13px; margin: 0 0 10px; color: #9aa0a6; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+#state { display: flex; align-items: center; gap: 8px; font-size: 16px; margin-bottom: 4px; }
+#dot { width: 11px; height: 11px; border-radius: 50%; background: #5a5a5a; }
+#dot.rec { background: #e01b24; animation: pulse 1.4s ease-in-out infinite; }
+#dot.done { background: #33d17a; }
+#dot.bad { background: #f5c211; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+#timer { font-variant-numeric: tabular-nums; color: #bcbcbc; margin-bottom: 12px; font-size: 13px; }
+button {
+  width: 100%; padding: 10px 12px; margin: 5px 0; border: 1px solid #3a3a3a; border-radius: 8px;
+  background: #2b2b2b; color: #e6e6e6; font-size: 14px; cursor: pointer; text-align: left;
+}
+button:hover:not(:disabled) { background: #343434; }
+button:disabled { opacity: .4; cursor: default; }
+button.primary { background: #e01b24; border-color: #e01b24; color: #fff; font-weight: 600; }
+button.primary:hover:not(:disabled) { background: #f0242d; }
+button.go { background: #1c71d8; border-color: #1c71d8; color: #fff; font-weight: 600; }
+.group { margin-top: 10px; padding-top: 10px; border-top: 1px solid #2f2f2f; }
+.hidden { display: none; }
+#warn { color: #f5c211; font-size: 12px; margin: 8px 0 0; }
+#notificationStatus { color: #9aa0a6; font-size: 12px; margin: 6px 2px 0; min-height: 17px; }
+#hint { color: #7a7a7a; font-size: 11.5px; margin-top: 12px; line-height: 1.45; }
+.mono { font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+<h1>Znada Diagnostics</h1>
+<div id="state"><span id="dot"></span><span id="stateText">…</span></div>
+<div id="timer" class="mono">—</div>
+
+<button id="btnMark" class="primary">🔴 Только что лагнуло</button>
+<button id="btnStop">⏹ Остановить запись</button>
+<button id="btnStart" class="go hidden">⏺ Начать запись</button>
+
+<div class="group">
+  <button id="btnTestNotification">🔔 Проверить уведомление Windows</button>
+  <p id="notificationStatus">Принудительная доставка без записи ложного сбоя в журнал.</p>
+</div>
+
+<div id="after" class="group hidden">
+  <button id="btnReport">📄 Открыть отчёт (summary.html)</button>
+  <button id="btnFolder">📁 Открыть папку записи</button>
+  <button id="btnExport">🔒 Экспорт без личных данных</button>
+  <button id="btnClear">🗑 Очистить все записи</button>
+</div>
+
+<p id="warn" class="hidden"></p>
+<p id="hint">Запись стартует автоматически. Нажми «Только что лагнуло» сразу после рывка — она пометит последние ~3 секунды. Останови запись, чтобы получить отчёт.</p>
+
+<script src="control.js"></script>
+</body>
+</html>

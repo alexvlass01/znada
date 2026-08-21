@@ -1,0 +1,32 @@
+# Dependencies and build output
+node_modules/
+dist/
+.build/
+
+# Temporary and machine-local state
+.tmp/
+scratch/
+.claude/
+.agents/
+.codex/
+*.log
+.env
+.env.*
+
+# Private canonical documentation must never enter the public mirror
+AGENTS.md
+CLAUDE.md
+ROADMAP.md
+STATUS.md
+plans/
+Znada-DEV.bat
+Znada-DIAG.bat
+
+# Provider credentials are injected only into isolated official builds
+wallhaven-key.json
+gelbooru-key.json
+
+# OS/editor state
+Thumbs.db
+desktop.ini
+.DS_Store

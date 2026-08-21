@@ -1,0 +1,6790 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "main.js",
+    "renderer/index.html",
+    "renderer/renderer.js",
+    "renderer/viewer.js",
+    "src/next-change.js",
+    "src/tray.js"
+  ],
+  "stats": {
+    "total": 380,
+    "contextualized": 376,
+    "coveragePct": 98.9,
+    "unresolved": 4
+  },
+  "entries": {
+    "nav.home": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "navigation",
+          "file": "renderer/index.html",
+          "line": 17,
+          "column": 65,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "button.navbtn.active"
+        }
+      ]
+    },
+    "nav.library": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "navigation",
+          "file": "renderer/index.html",
+          "line": 18,
+          "column": 61,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "button.navbtn"
+        }
+      ]
+    },
+    "nav.design": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "navigation",
+          "file": "renderer/index.html",
+          "line": 19,
+          "column": 60,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "button.navbtn"
+        }
+      ]
+    },
+    "prefs.tooltip": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "navigation",
+          "file": "renderer/index.html",
+          "line": 22,
+          "column": 61,
+          "via": "data-i18n-title",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#btnPrefs"
+        }
+      ]
+    },
+    "prefs.appGroup": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 609,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        }
+      ]
+    },
+    "prefs.autostartTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 613,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.autostartSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 614,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "prefs.startMinTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 620,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.startMinSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 621,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "prefs.languageTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 627,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.languageSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 628,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "prefs.telemetryTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 680,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.telemetrySub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 681,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "prefs.gameModeTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 687,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.gameModeSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 688,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "prefs.notifyFailTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 694,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.notifyFailSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 695,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "prefs.welcomeTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 701,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.welcomeSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 702,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "prefs.welcomeBtn": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 704,
+          "column": 63,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#btnShowWelcome"
+        }
+      ]
+    },
+    "prefs.aboutGroup": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 744,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        }
+      ]
+    },
+    "prefs.aboutSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 747,
+          "column": 99,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "prefs.websiteTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 752,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.updateTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 761,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.updateCheck": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 764,
+          "column": 63,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#btnCheckUpdate"
+        },
+        {
+          "type": "button",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5494,
+          "column": 26,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderUpdate"
+        }
+      ]
+    },
+    "prefs.updateRestart": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5490,
+          "column": 26,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderUpdate"
+        }
+      ]
+    },
+    "prefs.updateIdle": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 762,
+          "column": 63,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "#updateStatus"
+        },
+        {
+          "type": "label",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5477,
+          "column": 10,
+          "via": "lookup-map:UPDATE_STATUS_KEY",
+          "confidence": "high",
+          "function": "renderUpdate",
+          "lookup": "UPDATE_STATUS_KEY"
+        },
+        {
+          "type": "label",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5487,
+          "column": 55,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderUpdate"
+        }
+      ]
+    },
+    "prefs.updateChecking": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5477,
+          "column": 40,
+          "via": "lookup-map:UPDATE_STATUS_KEY",
+          "confidence": "high",
+          "function": "renderUpdate",
+          "lookup": "UPDATE_STATUS_KEY"
+        }
+      ]
+    },
+    "prefs.updateDownloading": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5478,
+          "column": 17,
+          "via": "lookup-map:UPDATE_STATUS_KEY",
+          "confidence": "high",
+          "function": "renderUpdate",
+          "lookup": "UPDATE_STATUS_KEY"
+        }
+      ]
+    },
+    "prefs.updateReady": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5478,
+          "column": 51,
+          "via": "lookup-map:UPDATE_STATUS_KEY",
+          "confidence": "high",
+          "function": "renderUpdate",
+          "lookup": "UPDATE_STATUS_KEY"
+        }
+      ]
+    },
+    "prefs.updateNone": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5479,
+          "column": 10,
+          "via": "lookup-map:UPDATE_STATUS_KEY",
+          "confidence": "high",
+          "function": "renderUpdate",
+          "lookup": "UPDATE_STATUS_KEY"
+        }
+      ]
+    },
+    "prefs.updateError": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "preferences",
+          "file": "renderer/renderer.js",
+          "line": 5479,
+          "column": 37,
+          "via": "lookup-map:UPDATE_STATUS_KEY",
+          "confidence": "high",
+          "function": "renderUpdate",
+          "lookup": "UPDATE_STATUS_KEY"
+        }
+      ]
+    },
+    "prefs.quit": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 769,
+          "column": 61,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#btnQuit"
+        }
+      ]
+    },
+    "prefs.viewerBgTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 668,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "prefs.viewerBgSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 669,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "lang.system": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 44,
+          "column": 51,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        },
+        {
+          "type": "option",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 632,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "welcome.title": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 36,
+          "column": 46,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h1",
+          "selector": "h1.welcome-title"
+        }
+      ]
+    },
+    "welcome.sub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 37,
+          "column": 43,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "p",
+          "selector": "p.welcome-sub"
+        }
+      ]
+    },
+    "welcome.langTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 41,
+          "column": 69,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "welcome.autoTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 80,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "welcome.autoSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 81,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "welcome.startupTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 87,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "welcome.startupSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 88,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "welcome.themeTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 94,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "welcome.themeSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 95,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "welcome.shortcutDesktopTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 100,
+          "column": 69,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "welcome.shortcutStartTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 104,
+          "column": 69,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "welcome.shortcutsBtn": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "welcome",
+          "file": "renderer/renderer.js",
+          "line": 4968,
+          "column": 63,
+          "via": "t",
+          "confidence": "high",
+          "function": "apply"
+        }
+      ]
+    },
+    "welcome.shortcutDone": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "welcome",
+          "file": "renderer/renderer.js",
+          "line": 4968,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "apply"
+        }
+      ]
+    },
+    "welcome.trayNote": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 109,
+          "column": 44,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "p",
+          "selector": "p.welcome-note"
+        }
+      ]
+    },
+    "welcome.start": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "welcome",
+          "file": "renderer/index.html",
+          "line": 110,
+          "column": 83,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#welcomeStart"
+        }
+      ]
+    },
+    "home.detecting": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 136,
+          "column": 51,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "strong",
+          "selector": "#heroSub"
+        }
+      ]
+    },
+    "home.currentDesktop": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 122,
+          "column": 53,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.home-scene-title"
+        }
+      ]
+    },
+    "home.nextWallpaperHint": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 148,
+          "column": 109,
+          "via": "data-i18n-title",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#btnNextWall"
+        },
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5108,
+          "column": 75,
+          "via": "t",
+          "confidence": "high",
+          "function": "updateHomeInfo"
+        }
+      ]
+    },
+    "home.noWallpaper": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5301,
+          "column": 30,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderHome"
+        }
+      ]
+    },
+    "home.noMonitors": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5278,
+          "column": 52,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderHome"
+        }
+      ]
+    },
+    "home.themeLight": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 805,
+          "column": 65,
+          "via": "t",
+          "confidence": "medium",
+          "function": "applyThemeToUI"
+        }
+      ]
+    },
+    "home.themeDark": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 805,
+          "column": 43,
+          "via": "t",
+          "confidence": "medium",
+          "function": "applyThemeToUI"
+        }
+      ]
+    },
+    "home.forceLight": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 814,
+          "column": 22,
+          "via": "t",
+          "confidence": "high",
+          "function": "applyThemeToUI"
+        }
+      ]
+    },
+    "home.forceDark": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 817,
+          "column": 22,
+          "via": "t",
+          "confidence": "high",
+          "function": "applyThemeToUI"
+        }
+      ]
+    },
+    "home.themeAuto": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 820,
+          "column": 22,
+          "via": "t",
+          "confidence": "high",
+          "function": "applyThemeToUI"
+        }
+      ]
+    },
+    "home.allMonitors": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5100,
+          "column": 28,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateHomeInfo"
+        }
+      ]
+    },
+    "home.generalMode": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5101,
+          "column": 27,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateHomeInfo"
+        }
+      ]
+    },
+    "home.currentTheme": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 135,
+          "column": 37,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "small",
+          "selector": "small"
+        }
+      ]
+    },
+    "home.automaticChange": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5034,
+          "column": 34,
+          "via": "t",
+          "confidence": "high",
+          "function": "homeAutomationCopy"
+        },
+        {
+          "type": "heading",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5039,
+          "column": 19,
+          "via": "t",
+          "confidence": "high",
+          "function": "homeAutomationCopy"
+        },
+        {
+          "type": "heading",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5043,
+          "column": 24,
+          "via": "t",
+          "confidence": "high",
+          "function": "homeAutomationCopy"
+        }
+      ]
+    },
+    "home.automaticTheme": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5049,
+          "column": 24,
+          "via": "t",
+          "confidence": "high",
+          "function": "homeAutomationCopy"
+        }
+      ]
+    },
+    "home.everyMinutes": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5040,
+          "column": 20,
+          "via": "t",
+          "confidence": "high",
+          "function": "homeAutomationCopy"
+        }
+      ]
+    },
+    "home.nextIn": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "src/next-change.js",
+          "line": 76,
+          "column": 44,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "remainingLabel"
+        }
+      ]
+    },
+    "home.nextInHours": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "src/next-change.js",
+          "line": 81,
+          "column": 17,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "remainingLabel"
+        }
+      ]
+    },
+    "home.nextInHoursExact": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "src/next-change.js",
+          "line": 80,
+          "column": 17,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "remainingLabel"
+        }
+      ]
+    },
+    "home.nextSoon": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "src/next-change.js",
+          "line": 63,
+          "column": 24,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "createApi"
+        },
+        {
+          "type": "label",
+          "area": "home",
+          "file": "src/next-change.js",
+          "line": 73,
+          "column": 22,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "remainingLabel"
+        }
+      ]
+    },
+    "home.nextHeldGame": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "src/next-change.js",
+          "line": 58,
+          "column": 21,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "createApi"
+        }
+      ]
+    },
+    "home.nextHeldStealth": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "src/next-change.js",
+          "line": 59,
+          "column": 21,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "createApi"
+        }
+      ]
+    },
+    "home.eventTriggers": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5043,
+          "column": 59,
+          "via": "t",
+          "confidence": "high",
+          "function": "homeAutomationCopy"
+        },
+        {
+          "type": "label",
+          "area": "home",
+          "file": "src/next-change.js",
+          "line": 55,
+          "column": 24,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "createApi"
+        }
+      ]
+    },
+    "home.followWindows": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5048,
+          "column": 35,
+          "via": "lookup-map:detailKeys",
+          "confidence": "medium",
+          "function": "homeAutomationCopy",
+          "lookup": "detailKeys"
+        },
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5049,
+          "column": 87,
+          "via": "t",
+          "confidence": "medium",
+          "function": "homeAutomationCopy"
+        }
+      ]
+    },
+    "home.byTime": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5048,
+          "column": 63,
+          "via": "lookup-map:detailKeys",
+          "confidence": "medium",
+          "function": "homeAutomationCopy",
+          "lookup": "detailKeys"
+        }
+      ]
+    },
+    "home.bySun": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5048,
+          "column": 83,
+          "via": "lookup-map:detailKeys",
+          "confidence": "medium",
+          "function": "homeAutomationCopy",
+          "lookup": "detailKeys"
+        }
+      ]
+    },
+    "home.manualChange": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5051,
+          "column": 22,
+          "via": "t",
+          "confidence": "high",
+          "function": "homeAutomationCopy"
+        }
+      ]
+    },
+    "home.manualControl": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5051,
+          "column": 54,
+          "via": "t",
+          "confidence": "high",
+          "function": "homeAutomationCopy"
+        }
+      ]
+    },
+    "home.switchAll": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 149,
+          "column": 349,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "#homeNextLabel"
+        },
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5098,
+          "column": 57,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateHomeInfo"
+        },
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5102,
+          "column": 32,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateHomeInfo"
+        }
+      ]
+    },
+    "home.switchThis": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5098,
+          "column": 79,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateHomeInfo"
+        }
+      ]
+    },
+    "home.noNextWallpaper": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5108,
+          "column": 47,
+          "via": "t",
+          "confidence": "high",
+          "function": "updateHomeInfo"
+        }
+      ]
+    },
+    "home.monitorRange": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5026,
+          "column": 13,
+          "via": "t",
+          "confidence": "medium",
+          "function": "homePageLabel"
+        }
+      ]
+    },
+    "home.monitorSingle": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5023,
+          "column": 39,
+          "via": "t",
+          "confidence": "medium",
+          "function": "homePageLabel"
+        }
+      ]
+    },
+    "home.monitorPages": {
+      "contexts": [
+        {
+          "type": "aria-label",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5211,
+          "column": 39,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderHomePager"
+        }
+      ]
+    },
+    "home.pageLabel": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5241,
+          "column": 20,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderHomePager"
+        }
+      ]
+    },
+    "home.monitorDetails": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5288,
+          "column": 25,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderHome"
+        }
+      ]
+    },
+    "home.recentTitle": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 160,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2"
+        }
+      ]
+    },
+    "home.recentSubtitle": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 161,
+          "column": 29,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "p",
+          "selector": "p"
+        }
+      ]
+    },
+    "home.recentAll": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 164,
+          "column": 32,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "home.recentEmpty": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 176,
+          "column": 34,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "strong",
+          "selector": "strong"
+        }
+      ]
+    },
+    "home.recentEmptyHint": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 177,
+          "column": 33,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "small",
+          "selector": "small"
+        }
+      ]
+    },
+    "home.recentAdd": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "home",
+          "file": "renderer/index.html",
+          "line": 179,
+          "column": 88,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#homeRecentAdd"
+        }
+      ]
+    },
+    "home.recentAssignHint": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "home",
+          "file": "renderer/renderer.js",
+          "line": 5367,
+          "column": 21,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderHomeRecentItems"
+        }
+      ]
+    },
+    "design.monitorNote": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 208,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.mon-note"
+        },
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/renderer.js",
+          "line": 765,
+          "column": 64,
+          "via": "dataset-i18n",
+          "confidence": "high",
+          "function": "updateSeparateThemesUI"
+        }
+      ]
+    },
+    "design.monitorNoteSingle": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/renderer.js",
+          "line": 765,
+          "column": 35,
+          "via": "dataset-i18n",
+          "confidence": "high",
+          "function": "updateSeparateThemesUI"
+        }
+      ]
+    },
+    "design.wallpapersGroup": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 211,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        }
+      ]
+    },
+    "design.lightTheme": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 225,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        },
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/renderer.js",
+          "line": 2940,
+          "column": 32,
+          "via": "t",
+          "confidence": "medium",
+          "function": "appendAssignRows"
+        }
+      ]
+    },
+    "design.darkTheme": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 245,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        },
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/renderer.js",
+          "line": 2940,
+          "column": 74,
+          "via": "t",
+          "confidence": "medium",
+          "function": "appendAssignRows"
+        }
+      ]
+    },
+    "design.notSelected": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 228,
+          "column": 91,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.preview-empty"
+        },
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 248,
+          "column": 90,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.preview-empty"
+        },
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/renderer.js",
+          "line": 632,
+          "column": 49,
+          "via": "t",
+          "confidence": "medium",
+          "function": "setPreview"
+        }
+      ]
+    },
+    "design.behaviorGroup": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 255,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        }
+      ]
+    },
+    "design.wallpaperScheduleTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 273,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "design.wallpaperScheduleSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 274,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "design.wallpaperModeSystem": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 279,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "design.wallpaperLightStart": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 287,
+          "column": 69,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "design.wallpaperDarkStart": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 291,
+          "column": 69,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "design.sharedCoordinatesSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 311,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "design.styleTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 327,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "design.styleSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 328,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "design.singleTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 266,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "design.singleSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 267,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "design.separateTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 259,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "design.separateSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 260,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "design.removeItem": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "design",
+          "file": "renderer/renderer.js",
+          "line": 729,
+          "column": 19,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderStrip"
+        }
+      ]
+    },
+    "design.dropPrompt": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 221,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        },
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 241,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "library.all": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 484,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        },
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1557,
+          "column": 27,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderBreadcrumbs"
+        }
+      ]
+    },
+    "library.favorites": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 488,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "library.folders": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 492,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "library.removedTitle": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 723,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        },
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1566,
+          "column": 27,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderBreadcrumbs"
+        }
+      ]
+    },
+    "library.removedSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 727,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "library.removedOpen": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 729,
+          "column": 63,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#btnOpenRemoved"
+        }
+      ]
+    },
+    "library.removedEmpty": {
+      "contexts": [
+        {
+          "type": "empty-state",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2065,
+          "column": 89,
+          "via": "helper-key:setLibEmptyText",
+          "confidence": "high",
+          "function": "renderRemovedView"
+        }
+      ]
+    },
+    "library.restore": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3616,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.restoreFirst": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2719,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "toggleFavoriteForRecord"
+        },
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2960,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "openMassAssignMenu"
+        }
+      ]
+    },
+    "library.massRestore": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2607,
+          "column": 39,
+          "via": "t",
+          "confidence": "high",
+          "function": "syncSelectionUI"
+        },
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2616,
+          "column": 52,
+          "via": "t",
+          "confidence": "high",
+          "function": "syncSelectionUI"
+        }
+      ]
+    },
+    "library.restoredToast": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2102,
+          "column": 12,
+          "via": "t",
+          "confidence": "high",
+          "function": "restorePaths"
+        }
+      ]
+    },
+    "library.deleteForever": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2625,
+          "column": 28,
+          "via": "t",
+          "confidence": "medium",
+          "function": "syncSelectionUI"
+        },
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2627,
+          "column": 41,
+          "via": "t",
+          "confidence": "high",
+          "function": "syncSelectionUI"
+        },
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3624,
+          "column": 37,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.deleteForeverTitle": {
+      "contexts": [
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 3298,
+          "column": 19,
+          "via": "tMain",
+          "confidence": "high"
+        }
+      ]
+    },
+    "library.deleteForeverMessage": {
+      "contexts": [
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 3301,
+          "column": 21,
+          "via": "tMain",
+          "confidence": "high"
+        }
+      ]
+    },
+    "library.deleteForeverDetail": {
+      "contexts": [
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 3302,
+          "column": 72,
+          "via": "tMain",
+          "confidence": "high"
+        }
+      ]
+    },
+    "library.deleteForeverConfirm": {
+      "contexts": [
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 3295,
+          "column": 22,
+          "via": "tMain",
+          "confidence": "high"
+        }
+      ]
+    },
+    "library.deleteForeverCancel": {
+      "contexts": [
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 3295,
+          "column": 61,
+          "via": "tMain",
+          "confidence": "high"
+        }
+      ]
+    },
+    "library.deleteForeverDone": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2087,
+          "column": 17,
+          "via": "t",
+          "confidence": "high",
+          "function": "deleteForever"
+        }
+      ]
+    },
+    "library.deleteForeverFailed": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2079,
+          "column": 77,
+          "via": "t",
+          "confidence": "high",
+          "function": "deleteForever"
+        },
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2086,
+          "column": 28,
+          "via": "t",
+          "confidence": "high",
+          "function": "deleteForever"
+        }
+      ]
+    },
+    "library.searchPh": {
+      "contexts": [
+        {
+          "type": "placeholder",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 513,
+          "column": 106,
+          "via": "data-i18n-ph",
+          "confidence": "high",
+          "element": "input",
+          "selector": "#libSearch"
+        }
+      ]
+    },
+    "library.tagSearchPh": {
+      "contexts": [
+        {
+          "type": "placeholder",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 502,
+          "column": 94,
+          "via": "data-i18n-ph",
+          "confidence": "high",
+          "element": "input",
+          "selector": "#libTagSearch"
+        },
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 502,
+          "column": 94,
+          "via": "data-i18n-title",
+          "confidence": "high",
+          "element": "input",
+          "selector": "#libTagSearch"
+        }
+      ]
+    },
+    "library.noTagsFound": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 505,
+          "column": 68,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "#libTagEmpty"
+        }
+      ]
+    },
+    "library.refresh": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 515,
+          "column": 76,
+          "via": "data-i18n-title",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#libRefresh"
+        }
+      ]
+    },
+    "library.sortAdded": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 520,
+          "column": 52,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "library.sortName": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 521,
+          "column": 51,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "library.sortSize": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 522,
+          "column": 51,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "library.sortShuffle": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 523,
+          "column": 54,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "library.addPhotos": {
+      "contexts": [
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 2613,
+          "column": 19,
+          "via": "tMain",
+          "confidence": "high"
+        },
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 2724,
+          "column": 19,
+          "via": "tMain",
+          "confidence": "high"
+        },
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 528,
+          "column": 34,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "library.addFolder": {
+      "contexts": [
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 2639,
+          "column": 19,
+          "via": "tMain",
+          "confidence": "high"
+        },
+        {
+          "type": "dialog-title",
+          "area": "native-file-picker",
+          "file": "main.js",
+          "line": 2748,
+          "column": 19,
+          "via": "tMain",
+          "confidence": "high"
+        },
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 532,
+          "column": 34,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "library.empty": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 540,
+          "column": 32,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        },
+        {
+          "type": "empty-state",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1402,
+          "column": 85,
+          "via": "helper-key:setLibEmptyText",
+          "confidence": "high",
+          "function": "renderLibraryCore"
+        },
+        {
+          "type": "empty-state",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2027,
+          "column": 89,
+          "via": "helper-key:setLibEmptyText",
+          "confidence": "high",
+          "function": "renderAllView"
+        }
+      ]
+    },
+    "library.emptyFolder": {
+      "contexts": [
+        {
+          "type": "empty-state",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1933,
+          "column": 71,
+          "via": "helper-key:setLibEmptyText",
+          "confidence": "high",
+          "function": "renderFolderView"
+        }
+      ]
+    },
+    "library.back": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1575,
+          "column": 25,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderBreadcrumbs"
+        }
+      ]
+    },
+    "library.assignThisFolder": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1591,
+          "column": 30,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderBreadcrumbs"
+        }
+      ]
+    },
+    "library.favorite": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1433,
+          "column": 18,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildLibCard"
+        },
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1976,
+          "column": 18,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildEphemeralImageCard"
+        }
+      ]
+    },
+    "library.favoriteAdd": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2654,
+          "column": 52,
+          "via": "t",
+          "confidence": "medium",
+          "function": "setCardFavorite"
+        },
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3640,
+          "column": 75,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.favoriteRemove": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2654,
+          "column": 25,
+          "via": "t",
+          "confidence": "medium",
+          "function": "setCardFavorite"
+        },
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3640,
+          "column": 48,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.selectItem": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2493,
+          "column": 49,
+          "via": "t",
+          "confidence": "medium",
+          "function": "selectionControlLabel"
+        }
+      ]
+    },
+    "library.deselectItem": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2493,
+          "column": 24,
+          "via": "t",
+          "confidence": "medium",
+          "function": "selectionControlLabel"
+        }
+      ]
+    },
+    "library.cardActions": {
+      "contexts": [
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3609,
+          "column": 37,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.open": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3629,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.openItem": {
+      "contexts": [
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2509,
+          "column": 38,
+          "via": "t",
+          "confidence": "high",
+          "function": "bindSelectionCard"
+        }
+      ]
+    },
+    "library.assign": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3632,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.assignTo": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2922,
+          "column": 26,
+          "via": "t",
+          "confidence": "medium",
+          "function": "appendAssignRows"
+        },
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2966,
+          "column": 37,
+          "via": "t",
+          "confidence": "high",
+          "function": "openMassAssignMenu"
+        },
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3202,
+          "column": 88,
+          "via": "t",
+          "confidence": "high"
+        }
+      ]
+    },
+    "library.assignAction": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2939,
+          "column": 27,
+          "via": "t",
+          "confidence": "medium",
+          "function": "appendAssignRows"
+        }
+      ]
+    },
+    "library.assigned": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1444,
+          "column": 21,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildLibCard"
+        },
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2640,
+          "column": 21,
+          "via": "t",
+          "confidence": "high",
+          "function": "setCardAssigned"
+        }
+      ]
+    },
+    "library.tags": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3086,
+          "column": 27,
+          "via": "t",
+          "confidence": "medium",
+          "function": "appendTagEditor"
+        }
+      ]
+    },
+    "library.moreTags": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3552,
+          "column": 29,
+          "via": "t",
+          "confidence": "medium",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "library.editTags": {
+      "contexts": [
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3202,
+          "column": 64,
+          "via": "t",
+          "confidence": "high"
+        },
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3645,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.details": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3617,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        },
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3652,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.addTagPh": {
+      "contexts": [
+        {
+          "type": "placeholder",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3093,
+          "column": 29,
+          "via": "t",
+          "confidence": "high",
+          "function": "appendTagEditor"
+        }
+      ]
+    },
+    "library.remove": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3242,
+          "column": 29,
+          "via": "t",
+          "confidence": "high"
+        },
+        {
+          "type": "menu-item",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3658,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "openLocalCardContextMenu"
+        }
+      ]
+    },
+    "library.assignedToast": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2989,
+          "column": 101,
+          "via": "t",
+          "confidence": "high",
+          "function": "openMassAssignMenu"
+        },
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3225,
+          "column": 25,
+          "via": "t",
+          "confidence": "high"
+        }
+      ]
+    },
+    "library.assignMissingToast": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2989,
+          "column": 67,
+          "via": "t",
+          "confidence": "high",
+          "function": "openMassAssignMenu"
+        },
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3225,
+          "column": 54,
+          "via": "t",
+          "confidence": "high"
+        }
+      ]
+    },
+    "library.assignPartialToast": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2989,
+          "column": 36,
+          "via": "t",
+          "confidence": "high",
+          "function": "openMassAssignMenu"
+        }
+      ]
+    },
+    "library.removedToast": {
+      "contexts": []
+    },
+    "library.removedToastN": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 390,
+          "column": 18,
+          "via": "t",
+          "confidence": "medium",
+          "function": "toastRemoved"
+        }
+      ]
+    },
+    "library.undo": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 391,
+          "column": 36,
+          "via": "t",
+          "confidence": "medium",
+          "function": "toastRemoved"
+        }
+      ]
+    },
+    "library.undoneToast": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 386,
+          "column": 12,
+          "via": "t",
+          "confidence": "high",
+          "function": "undoLastRemoval"
+        }
+      ]
+    },
+    "library.undoFailed": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 381,
+          "column": 37,
+          "via": "t",
+          "confidence": "high",
+          "function": "undoLastRemoval"
+        },
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2096,
+          "column": 24,
+          "via": "t",
+          "confidence": "high",
+          "function": "restorePaths"
+        }
+      ]
+    },
+    "library.selected": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2592,
+          "column": 38,
+          "via": "t",
+          "confidence": "medium",
+          "function": "syncSelectionUI"
+        }
+      ]
+    },
+    "library.massAssign": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2602,
+          "column": 27,
+          "via": "t",
+          "confidence": "medium",
+          "function": "syncSelectionUI"
+        }
+      ]
+    },
+    "library.massDelete": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2607,
+          "column": 63,
+          "via": "t",
+          "confidence": "high",
+          "function": "syncSelectionUI"
+        },
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2616,
+          "column": 76,
+          "via": "t",
+          "confidence": "high",
+          "function": "syncSelectionUI"
+        }
+      ]
+    },
+    "library.massDeleteFailed": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3298,
+          "column": 37,
+          "via": "t",
+          "confidence": "high",
+          "function": "removeRecordFromLibrary"
+        },
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3301,
+          "column": 29,
+          "via": "t",
+          "confidence": "high",
+          "function": "removeRecordFromLibrary"
+        },
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3868,
+          "column": 18,
+          "via": "t",
+          "confidence": "high",
+          "function": "initLibrary"
+        },
+        {
+          "type": "toast",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 3878,
+          "column": 33,
+          "via": "t",
+          "confidence": "high",
+          "function": "initLibrary"
+        }
+      ]
+    },
+    "library.selectionActions": {
+      "contexts": [
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2578,
+          "column": 37,
+          "via": "t",
+          "confidence": "high",
+          "function": "syncSelectionUI"
+        }
+      ]
+    },
+    "library.clearSelection": {
+      "contexts": [
+        {
+          "type": "aria-label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2582,
+          "column": 41,
+          "via": "t",
+          "confidence": "high",
+          "function": "syncSelectionUI"
+        },
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 2583,
+          "column": 22,
+          "via": "t",
+          "confidence": "high",
+          "function": "syncSelectionUI"
+        }
+      ]
+    },
+    "library.itemsCount": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/renderer.js",
+          "line": 1314,
+          "column": 63,
+          "via": "t",
+          "confidence": "medium",
+          "function": "setLibViewHeader"
+        }
+      ]
+    },
+    "details.type": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3511,
+          "column": 34,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.typeImage": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3511,
+          "column": 90,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.typeFolder": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3511,
+          "column": 64,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.resolution": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3512,
+          "column": 32,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.size": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3513,
+          "column": 33,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.added": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3516,
+          "column": 45,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.modified": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3517,
+          "column": 32,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.author": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3519,
+          "column": 59,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.source": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3536,
+          "column": 36,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.path": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3538,
+          "column": 34,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.tags": {
+      "contexts": [
+        {
+          "type": "field-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3555,
+          "column": 36,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.openFolder": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3458,
+          "column": 8,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.copyPath": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3462,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.openSource": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3469,
+          "column": 10,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.copied": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3464,
+          "column": 22,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.missing": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3586,
+          "column": 51,
+          "via": "t",
+          "confidence": "medium",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.revealFailed": {
+      "contexts": [
+        {
+          "type": "error-message",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3460,
+          "column": 6,
+          "via": "helper-key:addAction",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.copyFailed": {
+      "contexts": [
+        {
+          "type": "error-message",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3466,
+          "column": 7,
+          "via": "helper-key:addAction",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.openFailed": {
+      "contexts": [
+        {
+          "type": "error-message",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3471,
+          "column": 8,
+          "via": "helper-key:addAction",
+          "confidence": "high",
+          "function": "openCardDetails"
+        },
+        {
+          "type": "error-message",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3530,
+          "column": 10,
+          "via": "literal-reference",
+          "confidence": "medium",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.unknown": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3510,
+          "column": 22,
+          "via": "t",
+          "confidence": "medium",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.close": {
+      "contexts": [
+        {
+          "type": "aria-label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3417,
+          "column": 39,
+          "via": "t",
+          "confidence": "high",
+          "function": "openCardDetails"
+        }
+      ]
+    },
+    "details.unitB": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3324,
+          "column": 21,
+          "via": "t",
+          "confidence": "medium",
+          "function": "formatFileSize"
+        }
+      ]
+    },
+    "details.unitKb": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3324,
+          "column": 41,
+          "via": "t",
+          "confidence": "medium",
+          "function": "formatFileSize"
+        }
+      ]
+    },
+    "details.unitMb": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3324,
+          "column": 62,
+          "via": "t",
+          "confidence": "medium",
+          "function": "formatFileSize"
+        }
+      ]
+    },
+    "details.unitGb": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library.details",
+          "file": "renderer/renderer.js",
+          "line": 3324,
+          "column": 83,
+          "via": "t",
+          "confidence": "medium",
+          "function": "formatFileSize"
+        }
+      ]
+    },
+    "viewer.title": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 520,
+          "column": 63,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderCore"
+        }
+      ]
+    },
+    "viewer.local": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "media-viewer",
+          "file": "renderer/renderer.js",
+          "line": 2380,
+          "column": 18,
+          "via": "t",
+          "confidence": "high",
+          "function": "galleryItemFromLibrary"
+        }
+      ]
+    },
+    "viewer.localFolder": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "media-viewer",
+          "file": "renderer/renderer.js",
+          "line": 2391,
+          "column": 18,
+          "via": "t",
+          "confidence": "high",
+          "function": "galleryItemFromPath"
+        }
+      ]
+    },
+    "viewer.loading": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 48,
+          "column": 45,
+          "via": "t",
+          "confidence": "medium",
+          "function": "scheduleLoadingPill"
+        },
+        {
+          "type": "label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 53,
+          "column": 45,
+          "via": "t",
+          "confidence": "medium",
+          "function": "scheduleLoadingPill"
+        }
+      ]
+    },
+    "viewer.loadingFull": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 268,
+          "column": 39,
+          "via": "t",
+          "confidence": "medium",
+          "function": "loadI18n"
+        }
+      ]
+    },
+    "viewer.loadError": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "media-viewer",
+          "file": "renderer/renderer.js",
+          "line": 2460,
+          "column": 27,
+          "via": "t",
+          "confidence": "high",
+          "function": "openGalleryViewer"
+        },
+        {
+          "type": "error-message",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 567,
+          "column": 19,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderCore"
+        }
+      ]
+    },
+    "viewer.counter": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 523,
+          "column": 10,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderCore"
+        }
+      ]
+    },
+    "viewer.close": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 254,
+          "column": 22,
+          "via": "t",
+          "confidence": "high",
+          "function": "loadI18n"
+        },
+        {
+          "type": "aria-label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 255,
+          "column": 41,
+          "via": "t",
+          "confidence": "high",
+          "function": "loadI18n"
+        }
+      ]
+    },
+    "viewer.previous": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 259,
+          "column": 21,
+          "via": "t",
+          "confidence": "high",
+          "function": "loadI18n"
+        },
+        {
+          "type": "aria-label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 260,
+          "column": 40,
+          "via": "t",
+          "confidence": "high",
+          "function": "loadI18n"
+        }
+      ]
+    },
+    "viewer.next": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 264,
+          "column": 21,
+          "via": "t",
+          "confidence": "high",
+          "function": "loadI18n"
+        },
+        {
+          "type": "aria-label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 265,
+          "column": 40,
+          "via": "t",
+          "confidence": "high",
+          "function": "loadI18n"
+        }
+      ]
+    },
+    "viewer.fullscreen": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 229,
+          "column": 47,
+          "via": "t",
+          "confidence": "medium",
+          "function": "setFullscreenUi"
+        }
+      ]
+    },
+    "viewer.windowed": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 229,
+          "column": 27,
+          "via": "t",
+          "confidence": "medium",
+          "function": "setFullscreenUi"
+        }
+      ]
+    },
+    "online.rail": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 497,
+          "column": 30,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "online.source": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 2413,
+          "column": 45,
+          "via": "t",
+          "confidence": "high",
+          "function": "galleryItemFromInternet"
+        },
+        {
+          "type": "description",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 2414,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "galleryItemFromInternet"
+        },
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4848,
+          "column": 70,
+          "via": "t",
+          "confidence": "medium",
+          "function": "buildInternetCard"
+        }
+      ]
+    },
+    "online.searchPh": {
+      "contexts": [
+        {
+          "type": "placeholder",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 564,
+          "column": 121,
+          "via": "data-i18n-ph",
+          "confidence": "high",
+          "element": "input",
+          "selector": "#whQuery"
+        }
+      ]
+    },
+    "online.sortLatest": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 574,
+          "column": 57,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "online.sortTop": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 575,
+          "column": 54,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "online.sortRandom": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 576,
+          "column": 53,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "online.sortViews": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 577,
+          "column": 52,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "online.filterToggle": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 580,
+          "column": 83,
+          "via": "data-i18n-title",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#whFilterToggle"
+        }
+      ]
+    },
+    "online.purityLabel": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 584,
+          "column": 58,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.lib-filters-label"
+        }
+      ]
+    },
+    "online.search": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 581,
+          "column": 71,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#whSearch"
+        }
+      ]
+    },
+    "online.more": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 592,
+          "column": 66,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#whMore"
+        }
+      ]
+    },
+    "online.loading": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4528,
+          "column": 35,
+          "via": "t",
+          "confidence": "medium",
+          "function": "loadFavoritesFeed"
+        },
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4713,
+          "column": 35,
+          "via": "t",
+          "confidence": "medium",
+          "function": "doOnlineSearch"
+        }
+      ]
+    },
+    "online.noResults": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4769,
+          "column": 44,
+          "via": "t",
+          "confidence": "medium",
+          "function": "finalizeOnlineFeed"
+        }
+      ]
+    },
+    "online.error": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4534,
+          "column": 92,
+          "via": "t",
+          "confidence": "medium",
+          "function": "loadFavoritesFeed"
+        },
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4592,
+          "column": 43,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildCloudCard"
+        },
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4626,
+          "column": 25,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildCloudCard"
+        },
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4845,
+          "column": 43,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildInternetCard"
+        },
+        {
+          "type": "label",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 470,
+          "column": 19,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderActions"
+        }
+      ]
+    },
+    "online.add": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4583,
+          "column": 48,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildCloudCard"
+        },
+        {
+          "type": "tooltip",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4836,
+          "column": 48,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildInternetCard"
+        },
+        {
+          "type": "button",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 452,
+          "column": 58,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderActions"
+        },
+        {
+          "type": "button",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 469,
+          "column": 28,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderActions"
+        }
+      ]
+    },
+    "online.added": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4581,
+          "column": 116,
+          "via": "t",
+          "confidence": "high",
+          "function": "markAdded"
+        },
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4591,
+          "column": 52,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildCloudCard"
+        },
+        {
+          "type": "tooltip",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4833,
+          "column": 20,
+          "via": "t",
+          "confidence": "high",
+          "function": "markAdded"
+        },
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4844,
+          "column": 52,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildInternetCard"
+        },
+        {
+          "type": "button",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 438,
+          "column": 26,
+          "via": "t",
+          "confidence": "high",
+          "function": "markAdded"
+        },
+        {
+          "type": "button",
+          "area": "media-viewer",
+          "file": "renderer/viewer.js",
+          "line": 452,
+          "column": 38,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderActions"
+        }
+      ]
+    },
+    "online.nsfwNeedsKey": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 587,
+          "column": 83,
+          "via": "data-i18n-title",
+          "confidence": "high",
+          "element": "label",
+          "selector": "#lblPurityNsfw"
+        },
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 3987,
+          "column": 18,
+          "via": "t",
+          "confidence": "high",
+          "function": "initLibrary"
+        },
+        {
+          "type": "tooltip",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4046,
+          "column": 54,
+          "via": "t",
+          "confidence": "high",
+          "function": "updatePurityToggle"
+        }
+      ]
+    },
+    "online.sourceLumina": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 551,
+          "column": 34,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        },
+        {
+          "type": "heading",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 2402,
+          "column": 29,
+          "via": "t",
+          "confidence": "high",
+          "function": "galleryItemFromCloud"
+        },
+        {
+          "type": "description",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 2403,
+          "column": 35,
+          "via": "t",
+          "confidence": "high",
+          "function": "galleryItemFromCloud"
+        },
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4631,
+          "column": 70,
+          "via": "t",
+          "confidence": "medium",
+          "function": "buildCloudCard"
+        }
+      ]
+    },
+    "online.sourceInternet": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 555,
+          "column": 34,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "online.sourcesLabel": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 548,
+          "column": 65,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.lib-online-toolbar-label"
+        }
+      ]
+    },
+    "online.ratingGeneral": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 2403,
+          "column": 88,
+          "via": "dynamic-template",
+          "confidence": "medium",
+          "pattern": "online.rating*",
+          "function": "galleryItemFromCloud"
+        }
+      ]
+    },
+    "online.ratingSuggestive": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 2403,
+          "column": 88,
+          "via": "dynamic-template",
+          "confidence": "medium",
+          "pattern": "online.rating*",
+          "function": "galleryItemFromCloud"
+        }
+      ]
+    },
+    "online.ratingExplicit": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 2403,
+          "column": 88,
+          "via": "dynamic-template",
+          "confidence": "medium",
+          "pattern": "online.rating*",
+          "function": "galleryItemFromCloud"
+        }
+      ]
+    },
+    "online.offline": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4534,
+          "column": 70,
+          "via": "t",
+          "confidence": "medium",
+          "function": "loadFavoritesFeed"
+        }
+      ]
+    },
+    "online.signIn": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4359,
+          "column": 24,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderCloudAccount"
+        }
+      ]
+    },
+    "online.signOut": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4344,
+          "column": 26,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderCloudAccount"
+        }
+      ]
+    },
+    "online.signingIn": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4331,
+          "column": 26,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderCloudAccount"
+        },
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4368,
+          "column": 12,
+          "via": "t",
+          "confidence": "high",
+          "function": "doCloudSignin"
+        }
+      ]
+    },
+    "online.signedIn": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4383,
+          "column": 14,
+          "via": "t",
+          "confidence": "high",
+          "function": "doCloudSignin"
+        }
+      ]
+    },
+    "online.signedOut": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4403,
+          "column": 12,
+          "via": "t",
+          "confidence": "high",
+          "function": "doCloudSignout"
+        }
+      ]
+    },
+    "online.signinFailed": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4386,
+          "column": 53,
+          "via": "t",
+          "confidence": "high",
+          "function": "doCloudSignin"
+        }
+      ]
+    },
+    "online.sessionExpired": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4354,
+          "column": 26,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderCloudAccount"
+        }
+      ]
+    },
+    "online.viewFavorites": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 570,
+          "column": 34,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "online.favAdd": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4603,
+          "column": 48,
+          "via": "t",
+          "confidence": "high",
+          "function": "setFavUi"
+        }
+      ]
+    },
+    "online.favRemove": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4603,
+          "column": 27,
+          "via": "t",
+          "confidence": "high",
+          "function": "setFavUi"
+        }
+      ]
+    },
+    "online.favEmpty": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4542,
+          "column": 44,
+          "via": "t",
+          "confidence": "medium",
+          "function": "loadFavoritesFeed"
+        },
+        {
+          "type": "label",
+          "area": "online",
+          "file": "renderer/renderer.js",
+          "line": 4621,
+          "column": 52,
+          "via": "t",
+          "confidence": "medium",
+          "function": "buildCloudCard"
+        }
+      ]
+    },
+    "online.favViewHint": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "library",
+          "file": "renderer/index.html",
+          "line": 568,
+          "column": 131,
+          "via": "data-i18n-title",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#onlineFavToggle"
+        }
+      ]
+    },
+    "theme.group": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 420,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        }
+      ]
+    },
+    "theme.modeTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 424,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "theme.modeSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 425,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "theme.modeOff": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 278,
+          "column": 46,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        },
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 429,
+          "column": 46,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "theme.modeTime": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 280,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        },
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 430,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "theme.modeSun": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 281,
+          "column": 46,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        },
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 431,
+          "column": 46,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "theme.lightStart": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 437,
+          "column": 69,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "theme.darkStart": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 441,
+          "column": 69,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "theme.lat": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 315,
+          "column": 54,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.coord-label"
+        },
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 465,
+          "column": 54,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.coord-label"
+        }
+      ]
+    },
+    "theme.lng": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 319,
+          "column": 54,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.coord-label"
+        },
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 469,
+          "column": 54,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.coord-label"
+        }
+      ]
+    },
+    "theme.coordinates": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 310,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        },
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 460,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "theme.coordsSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 461,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "theme.autoCoordsTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 298,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        },
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 448,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "theme.autoCoordsSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 299,
+          "column": 77,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "#lblWallpaperCoordsStatus"
+        },
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 449,
+          "column": 68,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "#lblCoordsStatus"
+        }
+      ]
+    },
+    "theme.autoCoordsBtn": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 305,
+          "column": 32,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        },
+        {
+          "type": "button",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 455,
+          "column": 32,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "theme.autoCoordsChecking": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design.theme",
+          "file": "renderer/renderer.js",
+          "line": 5871,
+          "column": 29,
+          "via": "t",
+          "confidence": "medium",
+          "function": "detectCoordinates"
+        }
+      ]
+    },
+    "theme.autoCoordsSuccess": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design.theme",
+          "file": "renderer/renderer.js",
+          "line": 5876,
+          "column": 26,
+          "via": "t",
+          "confidence": "medium",
+          "function": "detectCoordinates"
+        }
+      ]
+    },
+    "theme.autoCoordsError": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design.theme",
+          "file": "renderer/renderer.js",
+          "line": 5880,
+          "column": 31,
+          "via": "t",
+          "confidence": "medium",
+          "function": "detectCoordinates"
+        }
+      ]
+    },
+    "slideshow.group": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 343,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        }
+      ]
+    },
+    "slideshow.title": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 347,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "slideshow.sub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 348,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "slideshow.intervalTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 366,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "slideshow.intervalSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 367,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "slideshow.orderTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 354,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "slideshow.orderSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 355,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "order.sequential": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 359,
+          "column": 53,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "order.shuffle": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 360,
+          "column": 50,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "style.fill": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 332,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "style.fit": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 333,
+          "column": 46,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "style.stretch": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 334,
+          "column": 50,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "style.center": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 335,
+          "column": 49,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "style.tile": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 336,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "style.span": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 337,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "monitor.label": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 469,
+          "column": 23,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateMonLabel"
+        },
+        {
+          "type": "tooltip",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 505,
+          "column": 21,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildMonitorMap"
+        },
+        {
+          "type": "label",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 2932,
+          "column": 29,
+          "via": "t",
+          "confidence": "medium",
+          "function": "appendAssignRows"
+        },
+        {
+          "type": "label",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 5096,
+          "column": 28,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateHomeInfo"
+        },
+        {
+          "type": "label",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 5308,
+          "column": 30,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderHome"
+        }
+      ]
+    },
+    "monitor.primary": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 469,
+          "column": 101,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateMonLabel"
+        },
+        {
+          "type": "tooltip",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 505,
+          "column": 100,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildMonitorMap"
+        },
+        {
+          "type": "label",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 5097,
+          "column": 79,
+          "via": "t",
+          "confidence": "medium",
+          "function": "updateHomeInfo"
+        },
+        {
+          "type": "label",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 5308,
+          "column": 83,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderHome"
+        }
+      ]
+    },
+    "monitor.vertical": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "monitors",
+          "file": "renderer/renderer.js",
+          "line": 459,
+          "column": 34,
+          "via": "t",
+          "confidence": "medium",
+          "function": "fmtResolution"
+        }
+      ]
+    },
+    "journal.group": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 733,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        }
+      ]
+    },
+    "journal.sub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 737,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "journal.clear": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 739,
+          "column": 65,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#btnClearEventLog"
+        }
+      ]
+    },
+    "journal.empty": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "preferences.event-journal",
+          "file": "renderer/renderer.js",
+          "line": 4917,
+          "column": 26,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderEventLog"
+        }
+      ]
+    },
+    "journal.failedNote": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "renderer/renderer.js",
+          "line": 4933,
+          "column": 27,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderEventLog"
+        }
+      ]
+    },
+    "journal.recoveredNote": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "renderer/renderer.js",
+          "line": 4932,
+          "column": 27,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderEventLog"
+        }
+      ]
+    },
+    "journal.wallpaperAuto": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 234,
+          "column": 45,
+          "via": "helper-key:reportChannelSuccess",
+          "confidence": "high",
+          "function": "reportApplyOutcome"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 242,
+          "column": 45,
+          "via": "helper-key:reportChannelFailure",
+          "confidence": "high",
+          "function": "reportApplyOutcome"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "renderer/renderer.js",
+          "line": 19,
+          "column": 93,
+          "via": "literal-reference",
+          "confidence": "high"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "renderer/renderer.js",
+          "line": 20,
+          "column": 91,
+          "via": "literal-reference",
+          "confidence": "high"
+        }
+      ]
+    },
+    "journal.wallpaperManual": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 240,
+          "column": 82,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "reportApplyOutcome"
+        }
+      ]
+    },
+    "journal.themeSchedule": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 1302,
+          "column": 53,
+          "via": "helper-key:reportChannelSuccess",
+          "confidence": "high",
+          "function": "applyThemeSchedule"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 1305,
+          "column": 49,
+          "via": "helper-key:reportChannelFailure",
+          "confidence": "high",
+          "function": "applyThemeSchedule"
+        }
+      ]
+    },
+    "journal.thumbs": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 259,
+          "column": 49,
+          "via": "helper-key:reportChannelFailure",
+          "confidence": "high"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 264,
+          "column": 49,
+          "via": "helper-key:reportChannelSuccess",
+          "confidence": "high"
+        }
+      ]
+    },
+    "journal.liveFolder": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 874,
+          "column": 57,
+          "via": "helper-key:reportChannelFailure",
+          "confidence": "high",
+          "function": "run"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 879,
+          "column": 57,
+          "via": "helper-key:reportChannelSuccess",
+          "confidence": "high",
+          "function": "run"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "renderer/renderer.js",
+          "line": 18,
+          "column": 89,
+          "via": "literal-reference",
+          "confidence": "high"
+        }
+      ]
+    },
+    "journal.libraryStore": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 412,
+          "column": 42,
+          "via": "helper-key:reportChannelFailure",
+          "confidence": "high",
+          "function": "reportLibraryStoreProblem"
+        }
+      ]
+    },
+    "notify.wallpaperFailedTitle": {
+      "contexts": [
+        {
+          "type": "notification-title",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 243,
+          "column": 18,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "reportApplyOutcome"
+        }
+      ]
+    },
+    "notify.wallpaperFailedBody": {
+      "contexts": [
+        {
+          "type": "notification-body",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 244,
+          "column": 17,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "reportApplyOutcome"
+        }
+      ]
+    },
+    "notify.themeFailedTitle": {
+      "contexts": [
+        {
+          "type": "notification-title",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 1306,
+          "column": 22,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "applyThemeSchedule"
+        }
+      ]
+    },
+    "notify.themeFailedBody": {
+      "contexts": [
+        {
+          "type": "notification-body",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 1307,
+          "column": 21,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "applyThemeSchedule"
+        }
+      ]
+    },
+    "notify.thumbsFailedTitle": {
+      "contexts": [
+        {
+          "type": "notification-title",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 260,
+          "column": 20,
+          "via": "literal-reference",
+          "confidence": "high"
+        }
+      ]
+    },
+    "notify.thumbsFailedBody": {
+      "contexts": [
+        {
+          "type": "notification-body",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 261,
+          "column": 19,
+          "via": "literal-reference",
+          "confidence": "high"
+        }
+      ]
+    },
+    "notify.libraryStoreFailedTitle": {
+      "contexts": [
+        {
+          "type": "notification-title",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 413,
+          "column": 16,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "reportLibraryStoreProblem"
+        }
+      ]
+    },
+    "notify.libraryStoreDamagedBody": {
+      "contexts": [
+        {
+          "type": "notification-body",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 414,
+          "column": 35,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "reportLibraryStoreProblem"
+        }
+      ]
+    },
+    "notify.libraryStoreLockedBody": {
+      "contexts": [
+        {
+          "type": "notification-body",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 414,
+          "column": 70,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "reportLibraryStoreProblem"
+        }
+      ]
+    },
+    "notify.testTitle": {
+      "contexts": [
+        {
+          "type": "notification-title",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 4841,
+          "column": 20,
+          "via": "literal-reference",
+          "confidence": "high"
+        }
+      ]
+    },
+    "notify.testBody": {
+      "contexts": [
+        {
+          "type": "notification-body",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 4842,
+          "column": 19,
+          "via": "literal-reference",
+          "confidence": "high"
+        }
+      ]
+    },
+    "toast.applied": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 722,
+          "column": 60,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderStrip"
+        }
+      ]
+    },
+    "toast.nextWallpaper": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5541,
+          "column": 56,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.error": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5881,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "detectCoordinates"
+        }
+      ]
+    },
+    "toast.applyFailed": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 408,
+          "column": 44,
+          "via": "t",
+          "confidence": "high"
+        }
+      ]
+    },
+    "toast.applyNoWallpaper": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 401,
+          "column": 20,
+          "via": "lookup-map:APPLY_ERROR_KEYS",
+          "confidence": "high",
+          "lookup": "APPLY_ERROR_KEYS"
+        }
+      ]
+    },
+    "toast.applyGameMode": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 402,
+          "column": 24,
+          "via": "lookup-map:APPLY_ERROR_KEYS",
+          "confidence": "high",
+          "lookup": "APPLY_ERROR_KEYS"
+        }
+      ]
+    },
+    "toast.applyMissingFile": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 403,
+          "column": 23,
+          "via": "lookup-map:APPLY_ERROR_KEYS",
+          "confidence": "high",
+          "lookup": "APPLY_ERROR_KEYS"
+        }
+      ]
+    },
+    "toast.startupOn": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5754,
+          "column": 19,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.startupOff": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5754,
+          "column": 42,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.gameModeOn": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5586,
+          "column": 19,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.gameModeOff": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5586,
+          "column": 43,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.styleUpdated": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5772,
+          "column": 33,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.themeDark": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5894,
+          "column": 81,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.themeLight": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5894,
+          "column": 104,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.scheduleOn": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5857,
+          "column": 74,
+          "via": "t",
+          "confidence": "high",
+          "function": "saveThemeSchedule"
+        }
+      ]
+    },
+    "toast.scheduleOff": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5857,
+          "column": 49,
+          "via": "t",
+          "confidence": "high",
+          "function": "saveThemeSchedule"
+        }
+      ]
+    },
+    "toast.wallpaperScheduleUpdated": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5713,
+          "column": 28,
+          "via": "t",
+          "confidence": "high",
+          "function": "saveWallpaperSchedule"
+        }
+      ]
+    },
+    "toast.locationUpdated": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5878,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "detectCoordinates"
+        }
+      ]
+    },
+    "toast.shortcutsDone": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5670,
+          "column": 14,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5675,
+          "column": 14,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.singleOn": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5745,
+          "column": 21,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.singleOff": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5745,
+          "column": 43,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.startMinOn": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5763,
+          "column": 19,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.startMinOff": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5763,
+          "column": 43,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.updateManual": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5628,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.photosAdded": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 3933,
+          "column": 40,
+          "via": "t",
+          "confidence": "high",
+          "function": "initLibrary"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 4032,
+          "column": 40,
+          "via": "t",
+          "confidence": "high",
+          "function": "initLibraryDragDrop"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5556,
+          "column": 42,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6219,
+          "column": 18,
+          "via": "t",
+          "confidence": "high",
+          "function": "initDragDrop"
+        }
+      ]
+    },
+    "toast.folderAdded": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 3940,
+          "column": 40,
+          "via": "t",
+          "confidence": "high",
+          "function": "initLibrary"
+        }
+      ]
+    },
+    "toast.slideshowOn": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5788,
+          "column": 19,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.slideshowOff": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 5788,
+          "column": 44,
+          "via": "t",
+          "confidence": "high",
+          "function": "init"
+        }
+      ]
+    },
+    "toast.shortcutInvalid": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6038,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "handleKeydown"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6098,
+          "column": 57,
+          "via": "t",
+          "confidence": "high",
+          "function": "saveShortcut"
+        }
+      ]
+    },
+    "toast.shortcutUnavailable": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6052,
+          "column": 18,
+          "via": "t",
+          "confidence": "high",
+          "function": "startRecording"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6067,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "startRecording"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6098,
+          "column": 83,
+          "via": "t",
+          "confidence": "high",
+          "function": "saveShortcut"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6105,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "saveShortcut"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6121,
+          "column": 45,
+          "via": "t",
+          "confidence": "high",
+          "function": "initHotkeys"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6125,
+          "column": 24,
+          "via": "t",
+          "confidence": "high",
+          "function": "initHotkeys"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6145,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "initHotkeys"
+        }
+      ]
+    },
+    "toast.shortcutUpdated": {
+      "contexts": [
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6103,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "saveShortcut"
+        },
+        {
+          "type": "toast",
+          "area": "global.toast",
+          "file": "renderer/renderer.js",
+          "line": 6124,
+          "column": 16,
+          "via": "t",
+          "confidence": "high",
+          "function": "initHotkeys"
+        }
+      ]
+    },
+    "shortcuts.group": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 708,
+          "column": 42,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "h2",
+          "selector": "h2.group-title"
+        }
+      ]
+    },
+    "shortcuts.nextTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 712,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "shortcuts.nextSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 713,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "shortcuts.pressKeys": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "preferences",
+          "file": "renderer/index.html",
+          "line": 716,
+          "column": 88,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "button",
+          "selector": "#btnRecordShortcut"
+        },
+        {
+          "type": "label",
+          "area": "preferences.shortcuts",
+          "file": "renderer/renderer.js",
+          "line": 939,
+          "column": 31,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderConfig"
+        },
+        {
+          "type": "label",
+          "area": "preferences.shortcuts",
+          "file": "renderer/renderer.js",
+          "line": 6033,
+          "column": 49,
+          "via": "t",
+          "confidence": "medium",
+          "function": "handleKeydown"
+        },
+        {
+          "type": "label",
+          "area": "preferences.shortcuts",
+          "file": "renderer/renderer.js",
+          "line": 6084,
+          "column": 38,
+          "via": "t",
+          "confidence": "medium",
+          "function": "stopRecording"
+        }
+      ]
+    },
+    "shortcuts.recording": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "preferences.shortcuts",
+          "file": "renderer/renderer.js",
+          "line": 6064,
+          "column": 31,
+          "via": "t",
+          "confidence": "medium",
+          "function": "startRecording"
+        }
+      ]
+    },
+    "tray.open": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "system-tray",
+          "file": "src/tray.js",
+          "line": 13,
+          "column": 17,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildMenuTemplate"
+        }
+      ]
+    },
+    "tray.applyCurrent": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "system-tray",
+          "file": "src/tray.js",
+          "line": 14,
+          "column": 17,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildMenuTemplate"
+        }
+      ]
+    },
+    "tray.nextWallpaper": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "system-tray",
+          "file": "src/tray.js",
+          "line": 17,
+          "column": 28,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildMenuTemplate"
+        }
+      ]
+    },
+    "tray.installUpdate": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "system-tray",
+          "file": "src/tray.js",
+          "line": 20,
+          "column": 51,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildMenuTemplate"
+        }
+      ]
+    },
+    "tray.quit": {
+      "contexts": [
+        {
+          "type": "menu-item",
+          "area": "system-tray",
+          "file": "src/tray.js",
+          "line": 22,
+          "column": 49,
+          "via": "t",
+          "confidence": "high",
+          "function": "buildMenuTemplate"
+        }
+      ]
+    },
+    "triggers.startupTitle": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 376,
+          "column": 53,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "triggers.startupSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 377,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "triggers.wakeupTitle": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 383,
+          "column": 53,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "triggers.wakeupSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 384,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "triggers.stealthTitle": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 391,
+          "column": 32,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "triggers.stealthSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 394,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "triggers.stealthTooltip": {
+      "contexts": [
+        {
+          "type": "tooltip",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 392,
+          "column": 58,
+          "via": "data-i18n-tooltip",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span.info-icon"
+        }
+      ]
+    },
+    "triggers.stealthScopeTitle": {
+      "contexts": [
+        {
+          "type": "setting-title",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 400,
+          "column": 47,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-title"
+        }
+      ]
+    },
+    "triggers.stealthScopeSub": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 401,
+          "column": 45,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "div",
+          "selector": "div.row-sub"
+        }
+      ]
+    },
+    "triggers.stealthScopeStartup": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 406,
+          "column": 32,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "triggers.stealthScopeWakeup": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 410,
+          "column": 32,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "triggers.stealthScopeInterval": {
+      "contexts": [
+        {
+          "type": "label",
+          "area": "design",
+          "file": "renderer/index.html",
+          "line": 414,
+          "column": 32,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "span",
+          "selector": "span"
+        }
+      ]
+    },
+    "smart.updateTitle": {
+      "contexts": [
+        {
+          "type": "heading",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3751,
+          "column": 36,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "smart.updateText": {
+      "contexts": [
+        {
+          "type": "description",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3752,
+          "column": 35,
+          "via": "t",
+          "confidence": "medium",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "smart.updateBtn": {
+      "contexts": [
+        {
+          "type": "button",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3754,
+          "column": 26,
+          "via": "t",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "smart.tips.0": {
+      "contexts": [
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "smart.tips.1": {
+      "contexts": [
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "smart.tips.2": {
+      "contexts": [
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "smart.tips.3": {
+      "contexts": [
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "smart.tips.4": {
+      "contexts": [
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "smart.tips.5": {
+      "contexts": [
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3724,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "showSmartTip"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 34,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        },
+        {
+          "type": "tip",
+          "area": "home.smart-panel",
+          "file": "renderer/renderer.js",
+          "line": 3763,
+          "column": 72,
+          "via": "collection-reference",
+          "confidence": "high",
+          "function": "renderSmartPanel"
+        }
+      ]
+    },
+    "viewerBg.ambient": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "media-viewer",
+          "file": "renderer/index.html",
+          "line": 673,
+          "column": 50,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    },
+    "viewerBg.charcoal": {
+      "contexts": []
+    },
+    "viewerBg.aurora": {
+      "contexts": []
+    },
+    "viewerBg.color": {
+      "contexts": []
+    },
+    "viewerBg.soon": {
+      "contexts": [
+        {
+          "type": "option",
+          "area": "media-viewer",
+          "file": "renderer/index.html",
+          "line": 674,
+          "column": 58,
+          "via": "data-i18n",
+          "confidence": "high",
+          "element": "option",
+          "selector": "option"
+        }
+      ]
+    }
+  },
+  "unresolved": [
+    "library.removedToast",
+    "viewerBg.charcoal",
+    "viewerBg.aurora",
+    "viewerBg.color"
+  ],
+  "danglingReferences": []
+}

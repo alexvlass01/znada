@@ -1,0 +1,352 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #050505;
+  color: #fff;
+  font-family: "Segoe UI", "Cantarell", system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.media-viewer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #050505;
+}
+
+/* Backdrop behind the (contained) photo. The mode is set as a bg-* class on the
+   viewer root; the photo layers sit above this via .media-stage z-index. */
+.media-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #050505;
+}
+
+.media-bg-img {
+  position: absolute;
+  inset: -8%;
+  width: 116%;
+  height: 116%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  filter: blur(48px) brightness(0.5) saturate(1.25);
+}
+
+/* Ambient: a heavily blurred, dimmed copy of the current photo fills the frame.
+   The two layers crossfade via the same on-top technique as the foreground
+   (crossfadeTo), so the backdrop never dims mid-swap. */
+
+/* Charcoal: deep near-black with a soft central lift and darkened edges (vignette). */
+.media-viewer.bg-charcoal .media-bg {
+  background: radial-gradient(circle at 50% 42%, #16161c 0%, #0b0b0e 56%, #050506 100%);
+}
+
+/* Aurora: dark base with a slow, faint blue→purple accent glow (app palette). */
+.media-viewer.bg-aurora .media-bg { background: #07070f; }
+.media-viewer.bg-aurora .media-bg::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  background:
+    radial-gradient(40% 50% at 22% 24%, rgba(53, 132, 228, 0.24), transparent 60%),
+    radial-gradient(46% 56% at 80% 78%, rgba(192, 97, 203, 0.22), transparent 62%);
+  filter: blur(46px);
+  animation: media-aurora 20s ease-in-out infinite alternate;
+}
+
+@keyframes media-aurora {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(4%, -3%) scale(1.12); }
+}
+
+/* Color: JS sets an inline gradient from the photo's dominant color on #viewerBg. */
+
+.media-topbar {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  right: 0;
+  top: 0;
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 28px 28px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.42) 58%, transparent);
+}
+
+.media-titlebox {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.media-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 760;
+  letter-spacing: 0.01em;
+}
+
+.media-subtitle {
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 12.5px;
+}
+
+.media-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.media-action,
+.media-close,
+.media-nav {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(18px);
+  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+
+.media-action {
+  min-height: 36px;
+  padding: 0 15px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.media-action.suggested {
+  border-color: rgba(53, 132, 228, 0.52);
+  background: #3584e4;
+}
+
+.media-action:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.media-close {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  flex: 0 0 auto;
+}
+
+.media-close svg,
+.media-nav svg {
+  width: 18px;
+  height: 18px;
+}
+
+.media-action:hover:not(:disabled),
+.media-close:hover,
+.media-nav:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.20);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.media-action.suggested:hover:not(:disabled) {
+  background: #2b75d0;
+}
+
+.media-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.media-image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  /* Always fill the stage and contain the photo by its own aspect ratio, so a
+     low-res preview occupies the exact same rectangle as the full image will.
+     The thumbnail->full swap then reads as "sharpen", not a size jump. */
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 0;
+  /* Two stacked layers crossfade between frames (and preview->full). The new
+     layer fades in ON TOP of the still-opaque old one (see crossfadeTo in
+     viewer.js), so there is never a <100% coverage moment that would dim the
+     image. Opacity/z-index are driven inline; this is just the resting state. */
+  opacity: 0;
+  transition: opacity 70ms ease;
+  transform-origin: center center;
+  will-change: opacity, transform;
+}
+
+.media-state {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(460px, calc(100% - 40px));
+  padding: 11px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.52);
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 13px;
+  text-align: center;
+  backdrop-filter: blur(16px);
+}
+
+.media-state[hidden] {
+  display: none;
+}
+
+/* Subtle "still loading full quality" badge shown while a low-res preview is on
+   screen and the full image is still being fetched/decoded. */
+.media-hd {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 88px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  backdrop-filter: blur(16px);
+  pointer-events: none;
+}
+
+.media-hd[hidden] {
+  display: none;
+}
+
+.media-hd .spin {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  animation: media-spin 0.7s linear infinite;
+}
+
+@keyframes media-spin {
+  to { transform: rotate(360deg); }
+}
+
+.media-nav {
+  position: absolute;
+  z-index: 9;
+  top: 50%;
+  width: 46px;
+  height: 70px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  transform: translateY(-50%);
+}
+
+.media-nav.prev { left: 28px; }
+.media-nav.next { right: 28px; }
+
+.media-nav:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.media-footer {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 9px 24px 18px;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 12.5px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
+}
+
+.media-fullscreen {
+  position: absolute;
+  z-index: 11;
+  right: 18px;
+  bottom: 14px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+
+.media-fullscreen:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.media-fullscreen svg {
+  width: 17px;
+  height: 17px;
+}
+
+.media-fullscreen .exit { display: none; }
+.media-viewer.is-fullscreen .media-fullscreen .enter { display: none; }
+.media-viewer.is-fullscreen .media-fullscreen .exit { display: block; }
+
+@media (max-width: 760px) {
+  .media-topbar {
+    padding: 13px 14px 24px;
+  }
+
+  .media-nav {
+    width: 36px;
+    height: 58px;
+  }
+
+  .media-nav.prev { left: 10px; }
+  .media-nav.next { right: 10px; }
+
+  .media-actions {
+    max-width: 42%;
+  }
+
+  .media-action {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
