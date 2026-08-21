@@ -27,13 +27,15 @@ function resolveLauncher(execPath, installed) {
   if (!installed) {
     return { installed: false, appExe, target: execPath, cwd: appDir, args: [], shortcutArgs: '' };
   }
-  const target = path.resolve(appDir, '..', 'Update.exe');
+  const root = path.resolve(appDir, '..');
+  const target = path.join(root, 'Update.exe');
   const args = ['--processStart', appExe];
   return {
     installed: true,
     appExe,
     target,
-    cwd: path.dirname(target),
+    cwd: root,
+    stableExe: path.join(root, appExe),
     args,
     shortcutArgs: `--processStart ${quoteWindowsArg(appExe)}`,
   };
@@ -57,9 +59,14 @@ function shortcutDetails(execPath, { installed, description, appUserModelId } = 
     target: launch.target,
     cwd: launch.cwd,
     args: launch.shortcutArgs,
-    // The current app exe supplies the intended product icon. Squirrel recreates
-    // standard Desktop/Start Menu shortcuts on every update, refreshing this path.
-    icon: execPath,
+    // The icon has to survive an update, and process.execPath does not: it points into
+    // app-<version>, which Squirrel deletes once the old version is cleaned up. The live
+    // update on 2026-08-21 left exactly that behind — target correctly on the stable
+    // Update.exe, icon on app-1.6.0. Squirrel keeps a stub next to Update.exe and repoints
+    // it at the current version on every update, so that is what an icon must name. Only
+    // a two-version test can show this, which is why it survived every check until the
+    // first real update.
+    icon: launch.installed ? launch.stableExe : execPath,
     iconIndex: 0,
     description: description || '',
     ...(appUserModelId ? { appUserModelId } : {}),

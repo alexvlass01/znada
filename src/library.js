@@ -34,6 +34,31 @@ function baseName(p) {
 }
 
 // Build a pool item with metadata defaults. type: 'image' | 'folder'.
+// How old a record is compared with the same record on the other side of a merge.
+//
+// DATA-005. Without it the merge had to guess, and its guess ("the dedicated store
+// wins") threw away every edit made while that store was unreadable. addedAt could
+// not stand in: it is when the photo arrived, not when it was last touched.
+//
+// One counter per RECORD, by owner decision 2026-08-21 — not one per field. The
+// accepted cost is that two edits to the same photo from two sides do not combine.
+// The reason is fragility, not effort: per-field counters have to be bumped in every
+// place any field changes, and a single missed place is a new silent loss.
+//
+// Records written before this existed have no rev; they read as 0, which is older
+// than anything edited since.
+function revOf(item) {
+  const value = Number(item && item.rev);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+// The ONLY place a revision moves. Everything that changes a record goes through it,
+// including the fields main.js used to assign directly.
+function bumpRev(item) {
+  if (item && typeof item === "object") item.rev = revOf(item) + 1;
+  return item;
+}
+
 function makeItem(type, p, extra = {}) {
   const item = {
     id: idFor(p),
@@ -43,6 +68,8 @@ function makeItem(type, p, extra = {}) {
     favorite: !!extra.favorite,
     tags: Array.isArray(extra.tags) ? extra.tags.slice() : [],
     author: typeof extra.author === 'string' ? extra.author : '',
+    // A fresh record starts at zero: nothing has happened to it yet.
+    rev: revOf(extra),
   };
   const aspect = aspectOf(extra);
   if (aspect) item.aspect = aspect;
@@ -74,6 +101,7 @@ function setAspect(library, id, p, aspect) {
   if (!it || it.type !== 'image' || it.path !== p || !Number.isFinite(value) || value <= 0) return false;
   if (Math.abs(aspectOf(it) - value) < 0.0001) return false;
   it.aspect = value;
+  bumpRev(it);
   return true;
 }
 
@@ -92,6 +120,27 @@ function addPath(library, type, p, extra) {
   return addItem(library, makeItem(type, p, extra));
 }
 
+// For the fields main.js used to assign straight onto the record — source and author
+// when a photo arrives from the internet. Those writes bypassed every mutator here,
+// so a rule of "remember to bump the counter" would have missed them, and a missed
+// bump is precisely the silent loss this task is about.
+//
+// Returns whether anything actually changed: a write of the same value must not make
+// a record look newer than it is, or an untouched side would start winning merges.
+function updateItem(library, id, patch) {
+  const it = getItem(library, id);
+  if (!it || !patch || typeof patch !== "object") return false;
+  let changed = false;
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === "id" || key === "rev") continue;
+    if (it[key] === value) continue;
+    it[key] = value;
+    changed = true;
+  }
+  if (changed) bumpRev(it);
+  return changed;
+}
+
 function getItem(library, id) {
   return library && id && library[id] ? library[id] : null;
 }
@@ -105,6 +154,7 @@ function toggleFavorite(library, id) {
   const it = getItem(library, id);
   if (!it) return false;
   it.favorite = !it.favorite;
+  bumpRev(it);
   return it.favorite;
 }
 
@@ -303,6 +353,7 @@ function addTag(library, id, tag) {
   if (!Array.isArray(it.tags)) it.tags = [];
   if (it.tags.includes(t)) return false;
   it.tags.push(t);
+  bumpRev(it);
   return true;
 }
 function removeTag(library, id, tag) {
@@ -312,6 +363,7 @@ function removeTag(library, id, tag) {
   const i = it.tags.indexOf(t);
   if (i < 0) return false;
   it.tags.splice(i, 1);
+  bumpRev(it);
   return true;
 }
 // All distinct tags across the pool, sorted.
@@ -383,6 +435,9 @@ function migrateConfig(cfg) {
 }
 
 module.exports = {
+  revOf,
+  bumpRev,
+  updateItem,
   pathKey, isUnderPath, idFor, baseName, makeItem, aspectOf, setAspect, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
   resolveIds, flattenImages, ephemeralFolderImages, recentImages,

@@ -9,9 +9,9 @@
     "src/tray.js"
   ],
   "stats": {
-    "total": 380,
-    "contextualized": 376,
-    "coveragePct": 98.9,
+    "total": 383,
+    "contextualized": 379,
+    "coveragePct": 99,
     "unresolved": 4
   },
   "entries": {
@@ -2130,7 +2130,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 3298,
+          "line": 3379,
           "column": 19,
           "via": "tMain",
           "confidence": "high"
@@ -2143,7 +2143,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 3301,
+          "line": 3382,
           "column": 21,
           "via": "tMain",
           "confidence": "high"
@@ -2156,7 +2156,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 3302,
+          "line": 3383,
           "column": 72,
           "via": "tMain",
           "confidence": "high"
@@ -2169,7 +2169,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 3295,
+          "line": 3376,
           "column": 22,
           "via": "tMain",
           "confidence": "high"
@@ -2182,7 +2182,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 3295,
+          "line": 3376,
           "column": 61,
           "via": "tMain",
           "confidence": "high"
@@ -2364,7 +2364,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 2613,
+          "line": 2690,
           "column": 19,
           "via": "tMain",
           "confidence": "high"
@@ -2373,7 +2373,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 2724,
+          "line": 2801,
           "column": 19,
           "via": "tMain",
           "confidence": "high"
@@ -2397,7 +2397,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 2639,
+          "line": 2716,
           "column": 19,
           "via": "tMain",
           "confidence": "high"
@@ -2406,7 +2406,7 @@
           "type": "dialog-title",
           "area": "native-file-picker",
           "file": "main.js",
-          "line": 2748,
+          "line": 2825,
           "column": 19,
           "via": "tMain",
           "confidence": "high"
@@ -5234,7 +5234,7 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 234,
+          "line": 266,
           "column": 45,
           "via": "helper-key:reportChannelSuccess",
           "confidence": "high",
@@ -5244,7 +5244,7 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 242,
+          "line": 274,
           "column": 45,
           "via": "helper-key:reportChannelFailure",
           "confidence": "high",
@@ -5276,7 +5276,7 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 240,
+          "line": 272,
           "column": 82,
           "via": "literal-reference",
           "confidence": "high",
@@ -5290,7 +5290,7 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 1302,
+          "line": 1362,
           "column": 53,
           "via": "helper-key:reportChannelSuccess",
           "confidence": "high",
@@ -5300,7 +5300,7 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 1305,
+          "line": 1365,
           "column": 49,
           "via": "helper-key:reportChannelFailure",
           "confidence": "high",
@@ -5314,7 +5314,7 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 259,
+          "line": 291,
           "column": 49,
           "via": "helper-key:reportChannelFailure",
           "confidence": "high"
@@ -5323,7 +5323,7 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 264,
+          "line": 296,
           "column": 49,
           "via": "helper-key:reportChannelSuccess",
           "confidence": "high"
@@ -5336,7 +5336,7 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 874,
+          "line": 906,
           "column": 57,
           "via": "helper-key:reportChannelFailure",
           "confidence": "high",
@@ -5346,11 +5346,31 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 879,
+          "line": 911,
           "column": 57,
           "via": "helper-key:reportChannelSuccess",
           "confidence": "high",
           "function": "run"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 980,
+          "column": 68,
+          "via": "helper-key:reportChannelSuccess",
+          "confidence": "high",
+          "function": "checkLiveFolderReachability"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 981,
+          "column": 58,
+          "via": "helper-key:reportChannelFailure",
+          "confidence": "high",
+          "function": "checkLiveFolderReachability"
         },
         {
           "type": "event-message",
@@ -5369,11 +5389,35 @@
           "type": "event-message",
           "area": "preferences.event-journal",
           "file": "main.js",
-          "line": 412,
+          "line": 444,
           "column": 42,
           "via": "helper-key:reportChannelFailure",
           "confidence": "high",
           "function": "reportLibraryStoreProblem"
+        }
+      ]
+    },
+    "journal.wallpaperSource": {
+      "contexts": [
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 247,
+          "column": 47,
+          "via": "helper-key:reportChannelFailure",
+          "confidence": "high",
+          "function": "reportMissingSources"
+        },
+        {
+          "type": "event-message",
+          "area": "preferences.event-journal",
+          "file": "main.js",
+          "line": 258,
+          "column": 72,
+          "via": "helper-key:reportChannelSuccess",
+          "confidence": "high",
+          "function": "reportMissingSources"
         }
       ]
     },
@@ -5383,7 +5427,7 @@
           "type": "notification-title",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 243,
+          "line": 275,
           "column": 18,
           "via": "literal-reference",
           "confidence": "high",
@@ -5397,7 +5441,7 @@
           "type": "notification-body",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 244,
+          "line": 276,
           "column": 17,
           "via": "literal-reference",
           "confidence": "high",
@@ -5411,7 +5455,7 @@
           "type": "notification-title",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 1306,
+          "line": 1366,
           "column": 22,
           "via": "literal-reference",
           "confidence": "high",
@@ -5425,7 +5469,7 @@
           "type": "notification-body",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 1307,
+          "line": 1367,
           "column": 21,
           "via": "literal-reference",
           "confidence": "high",
@@ -5439,7 +5483,7 @@
           "type": "notification-title",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 260,
+          "line": 292,
           "column": 20,
           "via": "literal-reference",
           "confidence": "high"
@@ -5452,7 +5496,7 @@
           "type": "notification-body",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 261,
+          "line": 293,
           "column": 19,
           "via": "literal-reference",
           "confidence": "high"
@@ -5465,7 +5509,7 @@
           "type": "notification-title",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 413,
+          "line": 445,
           "column": 16,
           "via": "literal-reference",
           "confidence": "high",
@@ -5479,7 +5523,7 @@
           "type": "notification-body",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 414,
+          "line": 446,
           "column": 35,
           "via": "literal-reference",
           "confidence": "high",
@@ -5493,7 +5537,7 @@
           "type": "notification-body",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 414,
+          "line": 446,
           "column": 70,
           "via": "literal-reference",
           "confidence": "high",
@@ -5507,7 +5551,7 @@
           "type": "notification-title",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 4841,
+          "line": 4931,
           "column": 20,
           "via": "literal-reference",
           "confidence": "high"
@@ -5520,10 +5564,38 @@
           "type": "notification-body",
           "area": "windows-notification",
           "file": "main.js",
-          "line": 4842,
+          "line": 4932,
           "column": 19,
           "via": "literal-reference",
           "confidence": "high"
+        }
+      ]
+    },
+    "notify.wallpaperSourceMissingTitle": {
+      "contexts": [
+        {
+          "type": "notification-title",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 248,
+          "column": 18,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "reportMissingSources"
+        }
+      ]
+    },
+    "notify.wallpaperSourceMissingBody": {
+      "contexts": [
+        {
+          "type": "notification-body",
+          "area": "windows-notification",
+          "file": "main.js",
+          "line": 249,
+          "column": 17,
+          "via": "literal-reference",
+          "confidence": "high",
+          "function": "reportMissingSources"
         }
       ]
     },

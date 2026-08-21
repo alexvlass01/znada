@@ -45,7 +45,10 @@ ok('manual installed shortcut is update-stable and carries AUMID', () => {
   });
   assert.strictEqual(path.win32.normalize(result.target), updateExe);
   assert.strictEqual(result.args, '--processStart "Znada.exe"');
-  assert.strictEqual(result.icon, exe);
+  // NOT the versioned exe: that folder is deleted when the old version is cleaned up.
+  // The stub beside Update.exe is what Squirrel repoints at each new version.
+  assert.strictEqual(path.win32.normalize(result.icon),
+    path.win32.normalize('C:' + String.fromCharCode(92) + 'Users' + String.fromCharCode(92) + 'u' + String.fromCharCode(92) + 'AppData' + String.fromCharCode(92) + 'Local' + String.fromCharCode(92) + 'Znada' + String.fromCharCode(92) + 'Znada.exe'));
   assert.strictEqual(result.appUserModelId, 'com.squirrel.Znada.Znada');
 });
 
@@ -191,6 +194,35 @@ ok('ярлык в папке с именем продукта не считае�
     productName: 'Znada',
   });
   assert.strictEqual(targets.length, 2, 'the same folder was listed twice under two names');
+});
+
+
+// Found by the first real update, 2026-08-21, and only a two-version run could find it.
+//
+// The shortcut correctly targets the stable Update.exe, but its ICON was taken from
+// process.execPath, which points inside app-<version>. Squirrel deletes that folder once
+// the old version is cleaned up, so the entry in the Start menu would end up with a
+// working target and a dead icon. Squirrel keeps a stub beside Update.exe and repoints it
+// at the current version on every update; that is the only path an icon may name.
+ok('иконка ярлыка переживает обновление', () => {
+  const installedExe = path.win32.join('C:', 'Users', 'u', 'AppData', 'Local', 'Znada', 'app-1.7.0', 'Znada.exe');
+  const details = launch.shortcutDetails(installedExe, { installed: true });
+  const icon = path.win32.normalize(details.icon);
+
+  assert.ok(!/app-\d/.test(icon), `icon points inside a version folder and dies with it: ${icon}`);
+  assert.strictEqual(icon, path.win32.join('C:', 'Users', 'u', 'AppData', 'Local', 'Znada', 'Znada.exe'));
+  assert.strictEqual(
+    path.win32.normalize(details.target),
+    path.win32.join('C:', 'Users', 'u', 'AppData', 'Local', 'Znada', 'Update.exe'),
+    'the target must stay on the stable launcher',
+  );
+});
+
+ok('портативная сборка берёт иконку из своего же exe', () => {
+  const portable = path.win32.join('D:', 'Znada', 'Znada.exe');
+  const details = launch.shortcutDetails(portable, { installed: false });
+  assert.strictEqual(path.win32.normalize(details.icon), portable,
+    'there is no stable stub outside an install, so the exe itself is the icon');
 });
 
 console.log(`\nAll ${passed} Windows-launch tests passed.`);

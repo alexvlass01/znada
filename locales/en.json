@@ -331,7 +331,8 @@
     "themeSchedule": "Scheduled Windows theme switch",
     "thumbs": "Thumbnail service",
     "liveFolder": "Live folder \"{name}\"",
-    "libraryStore": "Library file"
+    "libraryStore": "Library file",
+    "wallpaperSource": "Configured wallpaper source"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada couldn't change the wallpaper",
@@ -344,7 +345,9 @@
     "libraryStoreDamagedBody": "A copy of the damaged file was saved next to it. Your library keeps working and changes are saved elsewhere, but nothing is written over that file. Click to open Znada.",
     "libraryStoreLockedBody": "The library file could not be opened — it may be locked by another program. Nothing is written over it. Click to open Znada.",
     "testTitle": "Znada notification test",
-    "testBody": "Windows notifications from Znada are working."
+    "testBody": "Windows notifications from Znada are working.",
+    "wallpaperSourceMissingTitle": "Znada could not find your wallpaper",
+    "wallpaperSourceMissingBody": "The picture it was set to is not there any more. If it is on a drive or folder that moved, put it back and the wallpaper returns on the next change."
   },
   "toast": {
     "applied": "Wallpaper applied",

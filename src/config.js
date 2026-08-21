@@ -243,10 +243,18 @@ function load(configPath) {
     cfg = freshDefaults();
   }
   const stored = libraryStore.load(configPath);
-  cfg.library = libraryStore.mergeLibraries(stored.library, inlineLibrary);
+  // DATA-005. Records carry a revision now, so which side is newer is answered rather
+  // than guessed, and a tombstone keeps a deleted photo deleted instead of letting the
+  // returning file resurrect it. Pool and trash have to be merged TOGETHER: deciding
+  // them apart is what allowed a record and its own tombstone to disagree.
+  const mergedPool = libraryStore.mergePool(
+    { library: stored.library, trash: stored.trash },
+    { library: inlineLibrary, trash: inlineTrash },
+  );
+  cfg.library = mergedPool.library;
   // Photos the user removed, kept so they can be put back (LIB-006). Lives with the
   // pool rather than in config.json for the same reason the pool does.
-  cfg.libraryTrash = libraryStore.mergeTrash(stored.trash, inlineTrash);
+  cfg.libraryTrash = mergedPool.trash;
   // Callers need to know how the pool got here: an unreadable store must not be
   // overwritten, and a merge that pulled ids out of the inline copy has to be
   // persisted rather than living only in memory. Non-enumerable so it never reaches

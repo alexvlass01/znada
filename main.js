@@ -40,7 +40,8 @@ const cloudDevProfile = require('./src/cloud/dev-profile'); // isolated userData
 const diagnosticsGate = require('./src/diagnostics-gate'); // production-safe gate for dev-only diagnostics
 const galleryPayloadMod = require('./src/gallery-payload'); // viewer payload sanitizing/windowing
 const hotkey = require('./src/hotkey'); // accelerator parsing + atomic globalShortcut replacement
-const windowsLaunch = require('./src/windows-launch'); // stable Squirrel launch targets for Run/.lnk
+const windowsLaunch = require('./src/windows-launch');
+const applyOutcome = require('./src/apply-outcome'); // пустой слот против исчезнувшего источника // stable Squirrel launch targets for Run/.lnk
 
 // Match the AppUserModelID written into the Start Menu shortcut by our
 // electron-winstaller/Squirrel package (`name: Znada`, `exe: Znada.exe`).
@@ -224,11 +225,42 @@ function reportChannelSuccess(channel, messageKey, { params } = {}) {
 }
 
 // Wallpaper-apply outcomes flow through here from the applyForTheme wrapper.
-// 'no-wallpaper' (nothing configured / deliberately emptied slot) and
-// 'gamemode-blocked' (deliberate postpone) are states, not breakages.
-const APPLY_EXPECTED_REASONS = new Set(['no-wallpaper', 'gamemode-blocked']);
+//
+// Reasons this channel stays quiet about. 'no-wallpaper' (nothing configured at all,
+// or a slot the user emptied) and 'gamemode-blocked' (a deliberate postpone) are
+// states rather than breakages. 'wallpaper-missing' IS a breakage — it is reported,
+// just by the channel below that owns it, so the user gets one notification and not
+// two for the same event.
+const APPLY_EXPECTED_REASONS = new Set(['no-wallpaper', 'gamemode-blocked', 'wallpaper-missing']);
+
+// A configured photo that is not there any more: the disk was unplugged, the folder
+// was renamed, the file was deleted from outside the app.
+//
+// Its own channel on purpose. It is independent of whether the apply SUCCEEDED — with
+// two monitors and one broken source the desktop still changes, and that half used to
+// pass in silence. Journal-only would not do here: the checklist expects Windows to
+// say something, and unlike a live folder that merely stopped indexing, this is the
+// user's wallpaper not going up.
+function reportMissingSources(result) {
+  const missing = Array.isArray(result.missing) ? result.missing : [];
+  if (missing.length) {
+    reportChannelFailure('wallpaper-source', 'journal.wallpaperSource', {
+      titleKey: 'notify.wallpaperSourceMissingTitle',
+      bodyKey: 'notify.wallpaperSourceMissingBody',
+    });
+    return;
+  }
+  // Recovery is about the SOURCE, not about the apply. Tying it to a successful apply
+  // would leave the channel stuck on "broken" whenever the file came back but the COM
+  // call failed for its own reasons — and would report a recovery on paths that never
+  // looked at a source at all (a game-mode postpone, a failed monitor enumeration).
+  // sourcesChecked marks the results that actually resolved every slot.
+  if (result.sourcesChecked) reportChannelSuccess('wallpaper-source', 'journal.wallpaperSource');
+}
+
 function reportApplyOutcome(result, isManual) {
   if (!result) return;
+  reportMissingSources(result);
   if (result.ok) {
     // Any successful apply (manual or auto) proves the pipeline works again.
     reportChannelSuccess('wallpaper-auto', 'journal.wallpaperAuto');
@@ -932,6 +964,24 @@ function startLiveFolderWatchers() {
   return syncLiveFolderWatchers();
 }
 
+// One stat per watched root, and the same channels the full pass uses — so the
+// edge-trigger state is shared and a folder cannot be reported broken twice, once
+// by each path.
+//
+// Journal-only, deliberately: LF-QA1 settled that a folder that stopped indexing is
+// tolerated quietly. What earns a notification is the wallpaper itself failing to go
+// up, and that is reported separately by the wallpaper-source channel.
+function checkLiveFolderReachability() {
+  for (const item of liveFolderItems()) {
+    let reachable = false;
+    try { reachable = fs.statSync(item.path).isDirectory(); }
+    catch { reachable = false; }
+    const params = { name: path.basename(item.path) };
+    if (reachable) reportChannelSuccess(`live-folder:${item.id}`, 'journal.liveFolder', { params });
+    else reportChannelFailure(`live-folder:${item.id}`, 'journal.liveFolder', { notify: false, params });
+  }
+}
+
 function liveFolderWindowVisible() {
   return !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized());
 }
@@ -942,6 +992,16 @@ function scheduleLiveFolderFullScan(reason, delayMs) {
     liveFolderFullScanTimer = null;
     const visibleOnly = reason === 'hourly' || reason === 'window-visible';
     if (visibleOnly && !liveFolderWindowVisible()) {
+      // The hourly pass is the only thing that notices a watched folder has gone
+      // away — and it used to return here without doing anything at all. The app
+      // lives in the tray, so in normal use it never ran: the journal stayed empty
+      // exactly when it was meant to speak (BUG-014, second cause).
+      //
+      // What is expensive is re-indexing the tree, and that can still wait for the
+      // window; measurements behind LF-QA5 are the reason it waits. Asking whether
+      // the root is still there costs one stat per folder, so it happens whether or
+      // not anyone is looking.
+      checkLiveFolderReachability();
       scheduleLiveFolderFullScan('hourly', LIVE_FOLDER_FULL_SCAN_MS);
       return;
     }
@@ -1539,7 +1599,7 @@ async function applyForTheme(themeName, isManual = false, targetMonitors = null)
     // Only known short reasons; a raw error message may carry a file path and
     // redaction does not exist until stage 4.
     const reason = result && result.ok ? 'ok' : ((result && result.reason) || 'error');
-    endSpan({ status: ['ok', 'gamemode-blocked', 'no-wallpaper'].includes(reason) ? reason : 'error' });
+    endSpan({ status: ['ok', 'gamemode-blocked', 'no-wallpaper', 'wallpaper-missing'].includes(reason) ? reason : 'error' });
     reportApplyOutcome(result, isManual); // journal + edge-triggered notification (T2/T3)
     return result;
   } catch (err) {
@@ -1560,23 +1620,33 @@ async function applyForThemeCore(themeName, isManual = false, targetMonitors = n
 
   // Preferred path: per-monitor via COM
   if (monitors.length) {
-    const items = [];
+    // Every monitor's outcome is recorded, not just the usable ones: a path that
+    // resolves to nothing is what "the source went away" looks like from here, and
+    // dropping it on the floor is what made an unplugged disk silent.
+    const targets = [];
     for (const m of monitors) {
       if (targetMonitors && !targetMonitors.includes(m.id)) continue;
       const p = wallpaperFor(m.id, theme);
-      if (p && fs.existsSync(p)) items.push({ id: m.id, path: await ensureWallpaperReady(p) });
+      targets.push({ id: m.id, path: p, exists: !!(p && fs.existsSync(p)) });
+    }
+    const outcome = applyOutcome.classifyApplyTargets(targets);
+    const items = [];
+    for (const target of outcome.applied) {
+      items.push({ id: target.id, path: await ensureWallpaperReady(target.path) });
     }
     persistSlideshowPosition();
-    if (!items.length) return { ok: false, reason: 'no-wallpaper', theme };
+    if (!items.length) {
+      return { ok: false, reason: outcome.reason, theme, missing: outcome.missingPaths, sourcesChecked: true };
+    }
     const pos = COM_POS[config.style] != null ? COM_POS[config.style] : 4;
     try {
       await wpHost.apply(pos, items); // быстрый путь: живой COM-хост (без перекомпиляции)
-      return { ok: true, theme };
+      return { ok: true, theme, missing: outcome.missingPaths, sourcesChecked: true };
     } catch (eHost) {
       try {
         fs.writeFileSync(APPLY_DATA_PATH, JSON.stringify({ position: pos, items }), 'utf8');
         await runCom(['-Mode', 'apply', '-DataFile', APPLY_DATA_PATH]); // фоллбек: spawn-per-call
-        return { ok: true, theme };
+        return { ok: true, theme, missing: outcome.missingPaths, sourcesChecked: true };
       } catch (err) {
         console.error('Ошибка применения per-monitor (COM), пробую legacy single:', err);
         // fall through to legacy single
@@ -1586,16 +1656,21 @@ async function applyForThemeCore(themeName, isManual = false, targetMonitors = n
 
   // Fallback: single wallpaper for all monitors (older Windows / COM failure)
   const target = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
+  // The same fork on the single-wallpaper path. Fixing only the per-monitor loop
+  // would have left this one silent on exactly the machines that fall back to it.
+  const legacy = applyOutcome.classifyApplyTargets([
+    { id: 'legacy', path: target, exists: !!(target && fs.existsSync(target)) },
+  ]);
   if (target && fs.existsSync(target)) {
     try {
       await setWallpaper(target);
-      return { ok: true, theme, path: target };
+      return { ok: true, theme, path: target, missing: legacy.missingPaths, sourcesChecked: true };
     } catch (err) {
       console.error('Ошибка смены обоев:', err);
-      return { ok: false, reason: err.message, theme };
+      return { ok: false, reason: err.message, theme, missing: legacy.missingPaths, sourcesChecked: true };
     }
   }
-  return { ok: false, reason: 'no-wallpaper', theme };
+  return { ok: false, reason: legacy.reason, theme, missing: legacy.missingPaths, sourcesChecked: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -2367,7 +2442,9 @@ ipcMain.handle('cloud-add', async (e, item) => {
       const aspect = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
       const id = addToPool('image', stored, { aspect });
       const it = config.library[id];
-      if (it) it.source = 'znada:' + item.id; // stable marker for the "added ✓" indicator
+      // Through updateItem, not straight onto the record: a field written directly
+      // leaves the revision untouched, and an untouched revision loses the next merge.
+      if (it) library.updateItem(config.library, it.id, { source: 'znada:' + item.id });
       saveConfig();
       return { config, id, error: null };
     });
@@ -2918,6 +2995,10 @@ ipcMain.handle('library-remove-many', async (e, rawRecords) => withLibraryLock(a
     // the oldest entry at the next start.
     const pushed = libraryStore.pushEntry(config.libraryTrash, {
       item: JSON.parse(JSON.stringify(rec.item)),
+      // DATA-005. The tombstone has to be NEWER than the record it buries, or a merge
+      // cannot tell "deleted after the last edit" from "edited after the deletion" —
+      // and gets it wrong in the direction that brings the photo back.
+      rev: library.revOf(rec.item) + 1,
       removedAt: now,
       via: rec.named ? '' : removalReason(rec.item),
       group: removalGroup,
@@ -4019,14 +4100,23 @@ ipcMain.handle('internet-add', async (e, item, query) => {
       const id = addToPool('image', stored, { aspect });
       const it = config.library[id];
       if (it) {
-        it.source = online.allowedPageUrl(item) ? item.page : '';
-        if (typeof item.artist === 'string' && item.artist.trim()) it.author = item.artist.trim().slice(0, 120);
+        // DATA-005. Every field goes through updateItem: assigning straight onto the
+        // record leaves its revision untouched, and an untouched revision loses the
+        // next merge — which is the silent loss this whole task is about.
+        library.updateItem(config.library, id, {
+          source: online.allowedPageUrl(item) ? item.page : '',
+        });
+        if (typeof item.artist === 'string' && item.artist.trim()) {
+          library.updateItem(config.library, id, { author: item.artist.trim().slice(0, 120) });
+        }
         // Both providers hide part of the metadata behind a per-item endpoint, so it is
         // fetched here, on the explicit download, rather than for every card in the feed.
         let extraTags = [];
         if (item.provider === 'gelbooru') {
           const artists = await gelbooruArtistsForItem(item);
-          if (!it.author && artists.label) it.author = artists.label;
+          if (!it.author && artists.label) {
+            library.updateItem(config.library, id, { author: artists.label });
+          }
           extraTags = artists.tags;
         } else if (item.provider === 'wallhaven') {
           extraTags = await wallhavenTagsForItem(item);
@@ -5019,6 +5109,17 @@ module.exports = {
     // гасит таймер. Второй вход имитирует то единственное место, где таймер взводится
     // не ради смены обоев, а ради перепроверки игрового режима.
     nextChangeState: () => nextChangeState(),
+    // BUG-014. Проверять «сообщил ли о пропавшем источнике» надо на настоящем пути:
+    // чистое правило само по себе не доказывает, что main его зовёт и что отчёт уходит
+    // в нужный канал. Мониторы подставляются, потому что их опрос идёт через процесс,
+    // который в тестах намеренно заблокирован.
+    applyForTheme: (theme, isManual) => applyForTheme(theme, isManual),
+    setMonitorsCache: (list) => { monitorsCache = Array.isArray(list) ? list : []; },
+    checkLiveFolderReachability: () => checkLiveFolderReachability(),
+    // Проверять надо не саму функцию, а что плановый обход её ЗОВЁТ при скрытом окне:
+    // ровно эта развилка и молчала.
+    runHourlyLiveFolderPass: () => scheduleLiveFolderFullScan(String("hourly"), 0),
+    windowVisibleForLiveFolders: () => liveFolderWindowVisible(),
     blockIntervalLikeGameMode: () => retrySlideshowIntervalSoon(),
     disposeForTests: () => {
       libraryWriter.dispose();

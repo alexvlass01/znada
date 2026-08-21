@@ -215,6 +215,73 @@ function boundedTrash(input) {
   return out;
 }
 
+// Which VERSION of each record wins when both files carry one — and whether a photo
+// that is absent from one side was deleted or was simply never there.
+//
+// DATA-005. The old rule was "the dedicated store wins by id", whole record at a time.
+// It is not arbitrary: it protects against a rollback to a build that knows nothing
+// about the store file and writes its pool back into config.json. But the same rule
+// then discarded every edit made while the store was unreadable, because nothing said
+// which side was newer. Records carry a revision now, so the question is answered
+// instead of guessed. A tie still goes to the store — that is the old rule, kept as
+// the tie-break it always really was.
+//
+// Absence is NOT deletion. Those are different events and telling them apart is what
+// tombstones are for: without them, a returning store resurrects photos the user threw
+// away. A tombstone newer than the record wins and the photo stays gone; a record newer
+// than the tombstone means it was put back, and the tombstone is stale.
+function revOf(entry) {
+  const value = Number(entry && entry.rev);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+// One tombstone per photo: the newest, because that is the one that says what happened
+// last. Two sides can each hold a stale copy of the same removal.
+function newestTombstones(entries) {
+  const byId = new Map();
+  for (const entry of entries) {
+    if (!entry || !entry.item || !entry.item.id) continue;
+    const seen = byId.get(entry.item.id);
+    if (!seen || revOf(entry) > revOf(seen)) byId.set(entry.item.id, entry);
+  }
+  return [...byId.values()];
+}
+
+function mergePool(fromStore, fromConfig) {
+  const store = fromStore && typeof fromStore === "object" ? fromStore : {};
+  const config = fromConfig && typeof fromConfig === "object" ? fromConfig : {};
+
+  const library = {};
+  for (const [id, item] of Object.entries(config.library || {})) {
+    if (id && item && typeof item === "object") library[id] = item;
+  }
+  for (const [id, item] of Object.entries(store.library || {})) {
+    if (!id || !item || typeof item !== "object") continue;
+    const rival = library[id];
+    if (!rival || revOf(item) >= revOf(rival)) library[id] = item;
+  }
+
+  const kept = [];
+  for (const entry of newestTombstones([
+    ...(Array.isArray(store.trash) ? store.trash : []),
+    ...(Array.isArray(config.trash) ? config.trash : []),
+  ])) {
+    const id = entry.item.id;
+    const record = library[id];
+    if (!record) { kept.push(entry); continue; }
+    if (revOf(entry) > revOf(record)) { delete library[id]; kept.push(entry); continue; }
+    if (revOf(record) > revOf(entry)) continue; // put back after the deletion: the tombstone is stale
+    // Equal revisions mean NOTHING IS KNOWN about the order — the usual case being two
+    // records written before revisions existed, both reading as 0. Deciding here would
+    // be the same guessing this task removes, and the wrong guess either resurrects a
+    // deleted photo or deletes a live one. So the pair is left exactly as it was found,
+    // for the repair paths that already handle a photo being active and removed at once.
+    kept.push(entry);
+  }
+
+  return { library, trash: boundedTrash(kept) };
+}
+
 // Which pool wins when both files carry one. The dedicated store is authoritative:
 // it is what current builds write. Ids found only in the config copy are kept
 // rather than dropped — an older build that was rolled back knows nothing about
@@ -359,5 +426,6 @@ module.exports = {
   validateStoreShape,
   describeStoreDamage,
   VERSION, SUFFIX, TRASH_LIMIT, storePathFor, emptyStore, normalizeStore, normalizeTrashEntry,
-  boundedTrash, pushEntry, mergeLibraries, mergeTrash, load, save, createWriter,
+  boundedTrash, pushEntry, mergeLibraries, mergePool, newestTombstones, mergeTrash,
+  load, save, createWriter,
 };

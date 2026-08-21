@@ -206,6 +206,51 @@ function backupsIn(dir) {
     assert.strictEqual(backupsIn(dir).length, 2, 'each start backs the damaged file up once');
   });
 
+  // DATA-005, and the scenario the whole task exists for — run through the real path,
+  // because the module tests around the merge rule prove only that the rule is right,
+  // not that the app reaches it.
+  //
+  // The store is damaged, so an edit goes inline. Then a REPAIRED store comes back
+  // carrying an older copy of the same photo. Before revisions the store won by virtue
+  // of being the store, and the tag added meanwhile disappeared without a word.
+  await test('тег, поставленный при повреждённом файле, переживает его возврат', async (dir) => {
+    const photo = path.join(dir, 'old1.png');
+    fs.writeFileSync(photo, 'x');
+    writeProfile(dir, {
+      config: {
+        autoSwitch: true,
+        style: 'fill',
+        monitors: {},
+        library: { old1: item('old1', photo) },
+      },
+      store: CORRUPT,
+    });
+
+    const first = H.loadMain(dir);
+    first.__test.loadConfig();
+    await first.invoke('library-add-tag', 'old1', 'sunset');
+    const bumped = first.__test.getConfig().library.old1.rev;
+    assert.ok(bumped > 0, 'the edit left the record looking untouched, so no merge could favour it');
+    first.__test.disposeForTests();
+    H.unloadMain();
+
+    // The repaired file holds the same photo as it was BEFORE the tag: older, and with
+    // no tag. It is a perfectly valid store — just behind.
+    fs.writeFileSync(storeFile(dir), JSON.stringify({
+      version: 1,
+      library: { old1: Object.assign(item('old1', photo), { rev: bumped - 1, tags: [] }) },
+      trash: [],
+    }), 'utf8');
+
+    const second = H.loadMain(dir);
+    second.__test.loadConfig();
+    assert.strictEqual(second.__test.isUnsafeToWrite(), false, 'the repaired file was still refused');
+    assert.deepStrictEqual(
+      second.__test.getConfig().library.old1.tags, ['sunset'],
+      'the tag added while the file was unreadable was thrown away when the file came back',
+    );
+  });
+
   await test('putting the file back ends the degraded mode and keeps records only config had', async (dir) => {
     const good = { version: 1, library: { keep: item('keep', path.join(dir, 'keep.png')) }, trash: [] };
     writeProfile(dir, {
