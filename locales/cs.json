@@ -252,6 +252,7 @@
     "error": "Chyba: {e}",
     "add": "Přidat do knihovny",
     "added": "Přidáno do knihovny",
+    "remove": "Odebrat z knihovny",
     "nsfwNeedsKey": "NSFW vyžaduje API klíč (Nastavení)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Plánované přepnutí motivu Windows",
     "thumbs": "Služba miniatur",
     "liveFolder": "Živá složka \"{name}\"",
-    "libraryStore": "Soubor knihovny"
+    "libraryStore": "Soubor knihovny",
+    "wallpaperSource": "Zdroj nastavené tapety",
+    "poolConsistency": "Přiřazení tapety opraveno po přerušeném ukládání"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada nedokázala změnit tapetu",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Kopie poškozeného souboru byla uložena vedle. Knihovna nadále funguje a změny se ukládají jinam, přes tento soubor se nic nepřepisuje. Kliknutím otevřete Znada.",
     "libraryStoreLockedBody": "Soubor knihovny se nepodařilo otevřít — může být uzamčen jiným programem. Nic se nepřepisuje. Kliknutím otevřete Znada.",
     "testTitle": "Test oznámení Znada",
-    "testBody": "Oznámení Windows od Znada fungují."
+    "testBody": "Oznámení Windows od Znada fungují.",
+    "wallpaperSourceMissingTitle": "Znada nemohla najít vaši tapetu",
+    "wallpaperSourceMissingBody": "Nastavený obrázek již není k dispozici. Pokud byl disk nebo složka přesunuta, vraťte je a tapeta se načte při příští změně.",
+    "poolConsistencyTitle": "Znada opravila nastavení tapety",
+    "poolConsistencyBody": "Ukládání bylo přerušeno (pravděpodobně výpadkem napájení nebo vynuceným vypnutím) a monitor zůstal přiřazen k neúplně uloženému obrázku. Nastavení bylo vyčištěno. Vaše fotografie nebyly dotčeny."
   },
   "toast": {
     "applied": "Tapeta byla použita",
@@ -426,5 +433,21 @@
     "aurora": "Polární záře",
     "color": "Barva z fotky",
     "soon": "Další již brzy"
+  },
+  "card": {
+    "saveAs": "Uložit jako…",
+    "copyFile": "Kopírovat obrázek",
+    "copyLink": "Kopírovat odkaz",
+    "copyingFile": "Kopírování obrázku…",
+    "copiedFile": "Obrázek zkopírován",
+    "copiedLink": "Odkaz zkopírován",
+    "saving": "Příprava obrázku…",
+    "saved": "Uloženo",
+    "addToLibrary": "Přidat do knihovny",
+    "copyFailed": "Obrázek se nepodařilo zkopírovat",
+    "linkFailed": "Odkaz se nepodařilo zkopírovat",
+    "saveFailed": "Obrázek se nepodařilo uložit",
+    "noSource": "Tento obrázek nemá zdrojovou stránku",
+    "downloading": "Stahování obrázku…"
   }
 }

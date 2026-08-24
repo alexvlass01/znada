@@ -252,6 +252,7 @@
     "error": "Błąd: {e}",
     "add": "Dodaj do biblioteki",
     "added": "Dodano do biblioteki",
+    "remove": "Usuń z biblioteki",
     "nsfwNeedsKey": "Wyszukiwanie NSFW wymaga skonfigurowania klucza API w ustawieniach",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Zmiana motywu wg harmonogramu",
     "thumbs": "Usługa miniatur",
     "liveFolder": "Aktywny folder „{name}”",
-    "libraryStore": "Plik biblioteki"
+    "libraryStore": "Plik biblioteki",
+    "wallpaperSource": "Źródło skonfigurowanej tapety",
+    "poolConsistency": "Przypisanie tapety naprawione po przerwanym zapisie"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada nie mogła zmienić tapety",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Obok zapisano kopię uszkodzonego pliku. Biblioteka nadal działa, a zmiany są zapisywane w innym miejscu, bez nadpisywania tego pliku. Kliknij, aby otworzyć Znada.",
     "libraryStoreLockedBody": "Nie udało się otworzyć pliku biblioteki — może być zablokowany przez inny program. Nic nie zostanie nadpisane. Kliknij, aby otworzyć Znada.",
     "testTitle": "Test powiadomień Znada",
-    "testBody": "Powiadomienia Windows z Znada działają."
+    "testBody": "Powiadomienia Windows z Znada działają.",
+    "wallpaperSourceMissingTitle": "Znada nie mogła znaleźć Twojej tapety",
+    "wallpaperSourceMissingBody": "Ustawionego obrazu nie ma już w tym miejscu. Jeśli dysk lub folder został przeniesiony, przywróć go, a tapeta powróci przy następnej zmianie.",
+    "poolConsistencyTitle": "Znada naprawiła ustawienie tapety",
+    "poolConsistencyBody": "Zapis został przerwany (prawdopodobnie przez brak zasilania lub wymuszone zamknięcie) i monitor wskazywał na obraz, którego zapisywanie nie dobiegło końca. Ustawienie zostało wyczyszczone. Twoje zdjęcia nie zostały naruszone."
   },
   "toast": {
     "applied": "Zastosowano tapetę",
@@ -426,5 +433,21 @@
     "aurora": "Zorza",
     "color": "Kolor ze zdjęcia",
     "soon": "Więcej opcji wkrótce"
+  },
+  "card": {
+    "saveAs": "Zapisz jako…",
+    "copyFile": "Kopiuj obraz",
+    "copyLink": "Kopiuj link",
+    "copyingFile": "Kopiowanie obrazu…",
+    "copiedFile": "Obraz skopiowany",
+    "copiedLink": "Link skopiowany",
+    "saving": "Przygotowywanie obrazu…",
+    "saved": "Zapisano",
+    "addToLibrary": "Dodaj do biblioteki",
+    "copyFailed": "Nie udało się skopiować obrazu",
+    "linkFailed": "Nie udało się skopiować linku",
+    "saveFailed": "Nie udało się zapisać obrazu",
+    "noSource": "Ten obraz nie ma strony źródłowej",
+    "downloading": "Pobieranie obrazu…"
   }
 }

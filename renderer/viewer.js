@@ -279,6 +279,10 @@ function normalizePayload(payload) {
 }
 
 function setPayload(payload) {
+  // Reusing the viewer window for a different gallery is a new context. An Undo from
+  // the previous payload must not remain floating over (and appear to belong to) the
+  // newly opened card.
+  dismissViewerNotice();
   const next = normalizePayload(payload);
   VIEWER.items = next.items;
   VIEWER.index = next.index;
@@ -290,6 +294,14 @@ function setPayload(payload) {
 
 function currentEntry() {
   return VIEWER.items[VIEWER.index] || null;
+}
+
+// A fit-to-screen image closes on a background click. Interactive controls and the
+// whole Undo notice are not background: clicking its text or padding must not close
+// the viewer while the user is aiming for the action.
+function blocksViewerClose(target) {
+  return !!(target && typeof target.closest === 'function'
+    && target.closest('button, .media-notice'));
 }
 
 function setState(message, hidden = false) {
@@ -429,15 +441,317 @@ function prefetchNeighbors(center) {
   }
 }
 
-function markAdded(entry) {
-  if (!entry) return;
+// ONL-008. The viewer's button used to latch exactly the way the grid's did: add once
+// and it sat there disabled, with the only way back through the Library tab. It is a
+// two-way control now, and it removes through the same `library-remove-many` everything
+// else uses — trash, Undo, nothing deleted from disk.
+//
+// The viewer has no pool of its own, so "which record is this photo" comes from the
+// payload (`entry.pooled`, already in the shape the removal IPC takes) and is kept up to
+// date here as the user adds and removes.
+function syncAddAction(entry, add) {
+  if (!entry || !add) return;
+  const removable = !!(entry.added && entry.pooled && (entry.pooled.id || entry.pooled.path));
+  // Added but unidentifiable: an honest dead end is better than a button that would
+  // remove the wrong thing. In practice this only happens if the add reported no record.
+  add.textContent = t(entry.added ? (removable ? 'online.remove' : 'online.added') : 'online.add');
+  add.classList.toggle('suggested', !entry.added);
+  add.classList.toggle('danger', removable);
+  add.disabled = !!entry.added && !removable;
+}
+
+// The Library tab already offers Undo in its toast. The fullscreen viewer is a
+// separate document, so it needs its own small, transient notice rather than trying
+// to reach into the main window's DOM. Only one notice is live at a time because main
+// intentionally keeps only the latest removal snapshot.
+const VIEWER_NOTICE = { element: null, timer: null };
+
+function dismissViewerNotice() {
+  clearTimeout(VIEWER_NOTICE.timer);
+  VIEWER_NOTICE.timer = null;
+  const element = VIEWER_NOTICE.element;
+  VIEWER_NOTICE.element = null;
+  if (element) element.remove();
+}
+
+function createViewerNotice(message) {
+  const root = $('#viewerRoot');
+  if (!root) return null;
+  dismissViewerNotice();
+  const element = document.createElement('div');
+  element.className = 'media-notice';
+  element.setAttribute('role', 'status');
+  element.setAttribute('aria-live', 'polite');
+  const text = document.createElement('span');
+  text.textContent = message;
+  element.appendChild(text);
+  root.appendChild(element);
+  VIEWER_NOTICE.element = element;
+  return { element, text };
+}
+
+function finishViewerNotice(notice, message, delay = 2400) {
+  if (!notice || VIEWER_NOTICE.element !== notice.element) return;
+  notice.element.textContent = '';
+  notice.text = document.createElement('span');
+  notice.text.textContent = message;
+  notice.element.appendChild(notice.text);
+  clearTimeout(VIEWER_NOTICE.timer);
+  VIEWER_NOTICE.timer = setTimeout(() => {
+    if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
+  }, delay);
+}
+
+function showViewerMessage(message, delay = 2400) {
+  const notice = createViewerNotice(message);
+  if (!notice) return;
+  VIEWER_NOTICE.timer = setTimeout(() => {
+    if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
+  }, delay);
+}
+
+// A notice with something to press — the viewer's equivalent of the main window's
+// toast-with-an-action, used after a save to offer adding the picture to the library.
+function showViewerAction(message, actionLabel, onAction, delay = 6000) {
+  const notice = createViewerNotice(message);
+  if (!notice) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'media-notice-action';
+  button.textContent = actionLabel;
+  button.addEventListener('click', async () => {
+    if (button.disabled) return;
+    button.disabled = true;
+    await onAction();
+    // The notice may already have been replaced by whatever the action itself said.
+    if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
+  });
+  notice.element.appendChild(button);
+  VIEWER_NOTICE.timer = setTimeout(() => {
+    if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
+  }, delay);
+}
+
+// Keep the state transition separate and small enough to test directly. A transport
+// success is not enough: main must report that something was actually restored. On
+// every error/empty result the viewer remains honestly in its post-removal state.
+function applyViewerUndoResult(entry, pooled, res) {
+  if (!entry || !res || res.error || !(Number(res.restored) > 0)) return false;
   entry.added = true;
-  const actions = $('#viewerActions');
-  const add = actions && actions.querySelector('[data-action="add"]');
-  if (add) {
-    add.textContent = t('online.added');
-    add.disabled = true;
+  entry.pooled = pooled;
+  return true;
+}
+
+// Navigation rebuilds #viewerActions. Never keep using the button captured before an
+// IPC await: it may have been detached while the user stepped away and back. Resolve
+// the currently mounted action only after the result is known.
+function syncCurrentAddAction(entry) {
+  if (currentEntry() !== entry) return false;
+  const add = $('#viewerActions [data-action="add"]');
+  if (!add) return false;
+  syncAddAction(entry, add);
+  return true;
+}
+
+function showRemovalUndo(entry, pooled, token) {
+  const notice = createViewerNotice(t('library.removedToast'));
+  if (!notice) return;
+  const undo = document.createElement('button');
+  undo.type = 'button';
+  undo.className = 'media-notice-action';
+  undo.textContent = t('library.undo');
+  notice.element.appendChild(undo);
+  undo.addEventListener('click', async () => {
+    if (undo.disabled) return;
+    undo.disabled = true;
+    clearTimeout(VIEWER_NOTICE.timer);
+    VIEWER_NOTICE.timer = null;
+
+    const currentAdd = currentEntry() === entry
+      ? $('#viewerActions [data-action="add"]')
+      : null;
+    if (currentAdd) currentAdd.disabled = true;
+
+    let res;
+    try { res = await window.viewerApi.libraryUndoRemove(token); }
+    catch { res = null; }
+    // A newer removal replaces both main's one-level snapshot and this notice. Do not
+    // let the older asynchronous callback repaint or mutate a now-unrelated card.
+    if (VIEWER_NOTICE.element !== notice.element) return;
+
+    const restored = applyViewerUndoResult(entry, pooled, res);
+    syncCurrentAddAction(entry);
+    finishViewerNotice(notice, t(restored ? 'library.undoneToast' : 'library.undoFailed'), 3000);
+  });
+  VIEWER_NOTICE.timer = setTimeout(() => {
+    if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
+  }, 6000);
+}
+
+// ONL-009. The same right-click menu the grid has. The viewer is where a picture is
+// actually being looked at full size, which is where "save this one" and "put it on
+// that monitor" get decided — so it gets the menu rather than a reduced imitation.
+//
+// What it CANNOT do is a separate question from what the picture can: there is no tag
+// editor, favourites list or details sheet in this window, so those are left out by
+// naming what this surface implements. Everything named here is genuinely wired.
+const VIEWER_ACTIONS = ['add', 'assign', 'saveAs', 'copyFile', 'copyLink', 'openSource', 'remove'];
+
+function viewerSubjectFor(entry) {
+  if (!entry) return null;
+  const pooled = entry.added && entry.pooled ? entry.pooled : null;
+  if (entry.kind === 'internet') return CardActions.internetSubject(entry.raw, pooled);
+  if (entry.kind === 'cloud') return CardActions.cloudSubject(entry.raw, pooled);
+  // A local picture: the pool record if the payload carried one, otherwise just a file.
+  return CardActions.localSubject({ path: entry.path, type: 'image', id: pooled ? pooled.id : '' }, pooled);
+}
+
+// The monitor chooser, drawn by the same module the main window uses. Its data comes
+// from main because this window holds no config of its own.
+async function openViewerAssign(entry, descriptor, point) {
+  let targets;
+  try { targets = await window.viewerApi.cardAssignTargets(); }
+  catch { targets = null; }
+  const root = $('#viewerRoot');
+  if (!root) return;
+  closeViewerPopup();
+
+  const pop = document.createElement('div');
+  pop.className = 'lib-popup card-menu viewer-popup';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', t('library.assignTo'));
+  const title = document.createElement('div');
+  title.className = 'lib-popup-title';
+  title.textContent = t('library.assignTo');
+  pop.appendChild(title);
+
+  AssignRows.build(pop, targets && targets.monitors, targets && targets.separateThemes, {
+    idPrefix: 'viewerAssignMonitor',
+    monitorLabel: (row) => t('monitor.label', { n: row.number }),
+    slotLabel: (slot) => (slot.themeIcon
+      ? t(slot.theme === 'dark' ? 'design.darkTheme' : 'design.lightTheme')
+      : t('library.assignAction')),
+    onPick: async (monitorId, theme) => {
+      // Close FIRST. The picture may still have to be downloaded, and a chooser that
+      // lingers for seconds while that happens reads as a frozen app — the exact
+      // complaint this behaviour drew in the main window.
+      closeViewerPopup();
+      let id = entry.added && entry.pooled ? entry.pooled.id : '';
+      if (!id) {
+        showViewerMessage(t('card.downloading'), 20000);
+        id = await addViewerCardToLibrary(entry, descriptor);
+        if (!id) return;   // the add reports its own failure
+      }
+      let res;
+      try { res = await window.viewerApi.libraryAssign(id, monitorId, theme); }
+      catch { res = null; }
+      showViewerMessage(t(res && res.ok !== false ? 'library.assignedToast' : 'library.assignMissingToast'));
+    },
+  });
+
+  root.appendChild(pop);
+  const spot = CardMenu.placeAt(
+    point || { x: 40, y: 40 },
+    { width: pop.offsetWidth, height: pop.offsetHeight },
+    { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight },
+  );
+  pop.style.left = `${spot.left}px`;
+  pop.style.top = `${spot.top}px`;
+  VIEWER_POPUP.element = pop;
+  const dismiss = (e) => { if (!pop.contains(e.target)) closeViewerPopup(); };
+  VIEWER_POPUP.dismiss = dismiss;
+  setTimeout(() => document.addEventListener('mousedown', dismiss, true), 0);
+}
+
+const VIEWER_POPUP = { element: null, dismiss: null };
+
+function closeViewerPopup() {
+  if (VIEWER_POPUP.dismiss) document.removeEventListener('mousedown', VIEWER_POPUP.dismiss, true);
+  VIEWER_POPUP.dismiss = null;
+  if (VIEWER_POPUP.element) VIEWER_POPUP.element.remove();
+  VIEWER_POPUP.element = null;
+}
+
+// One place this window turns an online card into a library record, so the menu and
+// the action button cannot disagree about what "added" means.
+async function addViewerCardToLibrary(entry, descriptor) {
+  let res;
+  try {
+    res = descriptor.kind === 'cloud'
+      ? await window.viewerApi.cloudAdd(entry.raw)
+      : await window.viewerApi.internetAdd(entry.raw, entry.query || '');
+  } catch { res = { error: 'download' }; }
+  if (!res || res.error) {
+    showViewerMessage(t('online.error', { e: (res && res.error) || '?' }));
+    return '';
   }
+  entry.added = true;
+  entry.pooled = res.id ? { id: res.id, path: '', type: 'image' } : null;
+  syncCurrentAddAction(entry);
+  return res.id || '';
+}
+
+function openViewerCardMenu(entry, point) {
+  const subject = viewerSubjectFor(entry);
+  if (!subject) return;
+  const descriptor = CardActions.descriptorFor(subject);
+  const groups = CardActions.menuGroupsFor(subject, { only: VIEWER_ACTIONS });
+  if (!groups.length) return;
+
+  const transfer = (action) => CardTransfer.run(action, {
+    bridge: window.viewerApi,
+    descriptor,
+    t,
+    notify: ({ message, actionLabel, onAction }) => {
+      if (!message) return;
+      if (actionLabel && onAction) showViewerAction(message, actionLabel, onAction);
+      else showViewerMessage(message);
+    },
+    onAddToLibrary: () => addViewerCardToLibrary(entry, descriptor),
+  });
+
+  const handlers = {
+    add: () => addViewerCardToLibrary(entry, descriptor),
+    assign: () => openViewerAssign(entry, descriptor, point),
+    remove: () => removeViewerCard(entry),
+    saveAs: () => transfer('saveAs'),
+    copyFile: () => transfer('copyFile'),
+    copyLink: () => transfer('copyLink'),
+    openSource: () => transfer('openSource'),
+  };
+
+  CardMenu.openMenu({
+    groups,
+    point,
+    ariaLabel: t('library.cardActions'),
+    root: $('#viewerRoot') || document.body,
+    labelFor: (action) => t(action.labelKey),
+    onPick: (action) => { const run = handlers[action.id]; if (run) run(); },
+  });
+}
+
+// Taking the picture back out. Shared by the action button and the menu, so the two
+// cannot drift into removing it in different ways.
+async function removeViewerCard(entry) {
+  if (!entry || !entry.added || !entry.pooled) return false;
+  const removedPoolRecord = { ...entry.pooled };
+  let res;
+  try { res = await window.viewerApi.libraryRemoveMany([entry.pooled]); }
+  catch { res = { error: 'remove' }; }
+  if (!res || res.error || !res.affected) {
+    // A removal that came back having changed nothing has no error code to report, and
+    // "Error: ?" says nothing. Use the same wording the Library tab uses for it.
+    setState(res && !res.error
+      ? t('library.massDeleteFailed')
+      : t('online.error', { e: (res && res.error) || '?' }));
+    return false;
+  }
+  entry.added = false;
+  entry.pooled = null;
+  if (res.undo) showRemovalUndo(entry, removedPoolRecord, res.undo.token);
+  else showViewerMessage(t('library.removedToast'));
+  syncCurrentAddAction(entry);
+  return true;
 }
 
 function renderActions(entry) {
@@ -447,28 +761,20 @@ function renderActions(entry) {
   if (!entry || (entry.kind !== 'cloud' && entry.kind !== 'internet')) return;
 
   const add = document.createElement('button');
-  add.className = 'media-action suggested';
+  add.className = 'media-action';
   add.dataset.action = 'add';
-  add.textContent = entry.added ? t('online.added') : t('online.add');
-  add.disabled = !!entry.added;
+  syncAddAction(entry, add);
   add.addEventListener('click', async () => {
     if (add.disabled) return;
+    const removing = !!entry.added;
+    // Re-adding is a new decision. Leaving an older Undo action on screen would make
+    // it unclear whether the user is undoing the removal or the fresh add.
+    if (!removing) dismissViewerNotice();
     add.disabled = true;
-    let res;
-    try {
-      res = entry.kind === 'cloud'
-        ? await window.viewerApi.cloudAdd(entry.raw)
-        : await window.viewerApi.internetAdd(entry.raw, entry.query || '');
-    } catch {
-      res = { error: 'download' };
-    }
-    if (res && !res.error) {
-      markAdded(entry);
-    } else {
-      add.disabled = false;
-      add.textContent = t('online.add');
-      setState(t('online.error', { e: (res && res.error) || '?' }));
-    }
+    if (removing) await removeViewerCard(entry);
+    else await addViewerCardToLibrary(entry, CardActions.descriptorFor(viewerSubjectFor(entry)));
+    add.disabled = false;
+    syncAddAction(entry, add);
   });
   actions.appendChild(add);
 }
@@ -598,6 +904,24 @@ function initEvents() {
   const close = $('#viewerClose');
   if (close) close.addEventListener('click', () => window.viewerApi.close());
   const root = $('#viewerRoot');
+
+  // ONL-009. Right-click anywhere on the picture opens the same menu the grid has.
+  // Bound to the stage rather than to a card, because here there is only ever the one
+  // picture being looked at.
+  const stage = $('#viewerStage');
+  if (stage) {
+    stage.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openViewerCardMenu(currentEntry(), { x: e.clientX, y: e.clientY });
+    });
+  }
+  // The keyboard route, the same two keys the grid answers to.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
+    e.preventDefault();
+    openViewerCardMenu(currentEntry(), null);
+  });
   const fullscreen = $('#viewerFullscreen');
   if (fullscreen) fullscreen.addEventListener('click', async () => {
     // Drop focus so the next arrow-key press doesn't paint a focus ring on the button.
@@ -619,7 +943,7 @@ function initEvents() {
       POINTER.y = e.clientY;
       POINTER.t = Date.now();
       POINTER.button = e.button;
-      POINTER.blocked = !!e.target.closest('button');
+      POINTER.blocked = blocksViewerClose(e.target);
       // Start panning when the photo is zoomed in (but not when pressing a control).
       if (e.button === 0 && !POINTER.blocked && ZOOM.scale > 1) {
         PAN.active = true;
@@ -657,7 +981,7 @@ function initEvents() {
         const stage = $('#viewerStage');
         if (stage) stage.style.cursor = ZOOM.scale > 1 ? 'grab' : '';
       }
-      if (POINTER.button !== 0 || POINTER.blocked || e.button !== 0 || e.target.closest('button')) return;
+      if (POINTER.button !== 0 || POINTER.blocked || e.button !== 0 || blocksViewerClose(e.target)) return;
       const dx = Math.abs(e.clientX - POINTER.x);
       const dy = Math.abs(e.clientY - POINTER.y);
       const dt = Date.now() - POINTER.t;

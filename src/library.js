@@ -54,8 +54,15 @@ function revOf(item) {
 
 // The ONLY place a revision moves. Everything that changes a record goes through it,
 // including the fields main.js used to assign directly.
-function bumpRev(item) {
-  if (item && typeof item === "object") item.rev = revOf(item) + 1;
+function bumpRev(item, afterRev = 0) {
+  if (item && typeof item === "object") {
+    // A restore/re-import is a NEW event after the tombstone it supersedes. Merely
+    // incrementing the record's old revision can still leave it older than that
+    // tombstone, so callers may provide the revision this write must beat.
+    const after = Number(afterRev);
+    const floor = Number.isFinite(after) && after > 0 ? after : 0;
+    item.rev = Math.max(revOf(item), floor) + 1;
+  }
   return item;
 }
 

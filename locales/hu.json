@@ -252,6 +252,7 @@
     "error": "Hiba: {e}",
     "add": "Hozzáadás a könyvtárhoz",
     "added": "Hozzáadva a könyvtárhoz",
+    "remove": "Eltávolítás a könyvtárból",
     "nsfwNeedsKey": "NSFW-hez API kulcs szükséges (Beállítások)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Ütemezett Windows témaváltás",
     "thumbs": "Bélyegkép szolgáltatás",
     "liveFolder": "Élő mappa \"{name}\"",
-    "libraryStore": "Könyvtárfájl"
+    "libraryStore": "Könyvtárfájl",
+    "wallpaperSource": "Beállított háttérkép forrása",
+    "poolConsistency": "Háttérkép-hozzárendelés helyreállítva egy megszakadt mentés után"
   },
   "notify": {
     "wallpaperFailedTitle": "A Znada nem tudta megváltoztatni a háttérképet",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "A sérült fájl másolata el lett mentve mellé. A könyvtár továbbra is működik, és a módosítások máshová kerülnek mentésre anélkül, hogy felülírnák azt a fájlt. Kattintson a Znada megnyitásához.",
     "libraryStoreLockedBody": "A könyvtárfájlt nem sikerült megnyitni — lehet, hogy egy másik program zárolta. Semmi sem lett felülírva. Kattintson a Znada megnyitásához.",
     "testTitle": "Znada értesítés tesztje",
-    "testBody": "A Znada Windows értesítései működnek."
+    "testBody": "A Znada Windows értesítései működnek.",
+    "wallpaperSourceMissingTitle": "A Znada nem találta a háttérképét",
+    "wallpaperSourceMissingBody": "A beállított kép már nem található ezen a helyen. Ha a meghajtó vagy a mappa áthelyezésre került, állítsa vissza, és a háttérkép a következő váltáskor betöltődik.",
+    "poolConsistencyTitle": "A Znada helyreállított egy háttérkép-beállítást",
+    "poolConsistencyBody": "Egy mentés megszakadt (valószínűleg áramkimaradás vagy kényszerített leállítás miatt), és a monitor egy nem teljesen mentett képre hivatkozott. A beállítás törölve lett. A fényképei nem sérültek."
   },
   "toast": {
     "applied": "Háttérkép alkalmazva",
@@ -402,7 +409,7 @@
     "stealthSub": "Várjon akár 5 percet egy teljes képernyős ablakra; ha az asztal látható marad, váltson mindenképpen",
     "stealthTooltip": "A Znada vár, amíg az asztalt be nem fedi egy teljes képernyős ablak, mielőtt megváltoztatná a háttérképeket. Ha ez nem történik meg 5 percen belül, mindenképpen átvált, hogy az ütemezések ne álljanak le.",
     "stealthScopeTitle": "Alkalmazás",
-    "stealthScopeSub": "Válassza ki, mikor kell a Luminának megpróbálnia elrejteni a háttérképváltást",
+    "stealthScopeSub": "Válassza ki, mikor próbálja meg a Znada elrejteni a háttérképváltást",
     "stealthScopeStartup": "Indítás",
     "stealthScopeWakeup": "Ébredés",
     "stealthScopeInterval": "Időköz"
@@ -426,5 +433,21 @@
     "aurora": "Sarki fény",
     "color": "Szín a fotóból",
     "soon": "Hamarosan több is érkezik"
+  },
+  "card": {
+    "saveAs": "Mentés másként…",
+    "copyFile": "Kép másolása",
+    "copyLink": "Hivatkozás másolása",
+    "copyingFile": "Kép másolása…",
+    "copiedFile": "Kép átmásolva",
+    "copiedLink": "Hivatkozás átmásolva",
+    "saving": "Kép előkészítése…",
+    "saved": "Elmentve",
+    "addToLibrary": "Hozzáadás a könyvtárhoz",
+    "copyFailed": "Nem sikerült másolni a képet",
+    "linkFailed": "Nem sikerült másolni a hivatkozást",
+    "saveFailed": "Nem sikerült elmenteni a képet",
+    "noSource": "Ennek a képnek nincs forrásoldala",
+    "downloading": "Kép letöltése…"
   }
 }

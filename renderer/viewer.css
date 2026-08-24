@@ -138,6 +138,18 @@ body {
   background: #3584e4;
 }
 
+/* ONL-008: the same button takes the photo back OUT of the library. Tinted rather than
+   solid — it sits over the photo, and the action is reversible (it goes to the trash). */
+.media-action.danger {
+  border-color: rgba(224, 27, 36, 0.55);
+  background: rgba(224, 27, 36, 0.22);
+}
+
+.media-action.danger:hover:not(:disabled) {
+  border-color: rgba(224, 27, 36, 0.7);
+  background: rgba(224, 27, 36, 0.38);
+}
+
 .media-action:disabled {
   cursor: default;
   opacity: 0.62;
@@ -218,6 +230,66 @@ body {
 
 .media-state[hidden] {
   display: none;
+}
+
+/* The fullscreen viewer is its own window, so removals cannot reuse the main
+   window's toast. Keep this above the footer and fullscreen control, with a real
+   button that remains usable over every background mode. */
+.media-notice {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  bottom: 66px;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100% - 40px));
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 13px;
+  background: rgba(20, 20, 23, 0.9);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
+  font-size: 13px;
+  backdrop-filter: blur(18px);
+  animation: media-notice-in 120ms ease-out;
+}
+
+.media-notice > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-notice-action {
+  min-height: 30px;
+  flex: 0 0 auto;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #62a0ea;
+  font: inherit;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.media-notice-action:hover:not(:disabled) {
+  background: rgba(98, 160, 234, 0.16);
+  color: #99c1f1;
+}
+
+.media-notice-action:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+@keyframes media-notice-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* Subtle "still loading full quality" badge shown while a low-res preview is on
@@ -350,3 +422,103 @@ body {
     white-space: nowrap;
   }
 }
+
+/* ONL-009 — the shared card menu, drawn inside the viewer.
+   The viewer has no design tokens of its own (it is a dark overlay over a photo, not a
+   themed page), so the shared menu markup is given viewer-native colours here rather
+   than importing the app stylesheet. Structure and behaviour still come from
+   renderer/card-menu.js, so only the paint differs between the two windows. */
+.media-viewer .lib-popup {
+  position: fixed;
+  z-index: 14;
+  min-width: 210px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(24, 24, 27, 0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(18px);
+  color: #fff;
+}
+
+.media-viewer .lib-context-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* One current row, and it is the focused one — pointing at a row focuses it. Giving
+   hover its own rule as well lit the row under the pointer AND the row that still held
+   focus, which read as two selected rows at once. */
+.media-viewer .lib-context-item:focus {
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
+.media-viewer .lib-context-item.danger { color: #ff7a86; }
+
+.media-viewer .lib-context-item.danger:focus {
+  background: rgba(224, 27, 36, 0.24);
+}
+
+.media-viewer .lib-popup-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.media-viewer .lib-popup-title {
+  padding: 4px 8px 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.media-viewer .lib-popup-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+}
+
+.media-viewer .lib-popup-mon {
+  flex: 0 0 74px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.media-viewer .lib-popup-btn {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.media-viewer .lib-popup-btn:hover,
+.media-viewer .lib-popup-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.2);
+  outline: none;
+}
+
+.media-viewer .lib-popup-btn .theme-ic { width: 14px; height: 14px; }

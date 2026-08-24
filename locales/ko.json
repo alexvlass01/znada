@@ -252,6 +252,7 @@
     "error": "오류: {e}",
     "add": "라이브러리에 추가",
     "added": "라이브러리에 추가됨",
+    "remove": "라이브러리에서 제거",
     "nsfwNeedsKey": "NSFW에는 API 키가 필요합니다 (설정)",
     "sourceLumina": "Znada",
     "sourceInternet": "인터넷",
@@ -331,7 +332,9 @@
     "themeSchedule": "예약된 Windows 테마 전환",
     "thumbs": "썸네일 서비스",
     "liveFolder": "라이브 폴더 \"{name}\"",
-    "libraryStore": "라이브러리 파일"
+    "libraryStore": "라이브러리 파일",
+    "wallpaperSource": "설정된 배경화면 소스",
+    "poolConsistency": "중단된 저장 후 배경화면 할당이 복구되었습니다"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada에서 배경화면을 변경할 수 없습니다",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "손상된 파일의 복사본이 옆에 저장되었습니다. 라이브러리는 계속 작동하며 변경 사항은 해당 파일을 덮어쓰지 않고 다른 위치에 저장됩니다. 클릭하여 Znada를 여세요.",
     "libraryStoreLockedBody": "라이브러리 파일을 열 수 없습니다 — 다른 프로그램에서 사용 중일 수 있습니다. 아무것도 덮어쓰지 않았습니다. 클릭하여 Znada를 여세요.",
     "testTitle": "Znada 알림 테스트",
-    "testBody": "Znada의 Windows 알림이 작동 중입니다."
+    "testBody": "Znada의 Windows 알림이 작동 중입니다.",
+    "wallpaperSourceMissingTitle": "Znada가 배경화면을 찾을 수 없습니다",
+    "wallpaperSourceMissingBody": "설정되었던 이미지가 더 이상 원래 위치에 없습니다. 드라이브나 폴더를 이동한 경우 제자리로 복원하면 다음 전환 시 배경화면이 다시 적용됩니다.",
+    "poolConsistencyTitle": "Znada가 배경화면 설정을 복구했습니다",
+    "poolConsistencyBody": "정전이나 강제 종료 등으로 인해 저장이 중단되어 모니터가 저장이 완료되지 않은 이미지에 연결되어 있었습니다. 해당 설정이 초기화되었습니다. 사진 파일에는 영향이 없습니다."
   },
   "toast": {
     "applied": "배경화면이 적용되었습니다",
@@ -426,5 +433,21 @@
     "aurora": "오로라",
     "color": "사진의 색상",
     "soon": "더 많은 항목이 곧 제공됩니다"
+  },
+  "card": {
+    "saveAs": "다른 이름으로 저장…",
+    "copyFile": "이미지 복사",
+    "copyLink": "링크 복사",
+    "copyingFile": "이미지 복사 중…",
+    "copiedFile": "이미지가 복사되었습니다",
+    "copiedLink": "링크가 복사되었습니다",
+    "saving": "이미지 준비 중…",
+    "saved": "저장됨",
+    "addToLibrary": "라이브러리에 추가",
+    "copyFailed": "이미지를 복사할 수 없습니다",
+    "linkFailed": "링크를 복사할 수 없습니다",
+    "saveFailed": "이미지를 저장할 수 없습니다",
+    "noSource": "이 이미지에는 원본 페이지가 없습니다",
+    "downloading": "이미지 다운로드 중…"
   }
 }

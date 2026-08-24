@@ -190,6 +190,43 @@ const L = require('../src/library');
 const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000 + Number(id.replace(/\D/g, '') || 0), file: '' });
 
 {
+  // DATA-005: exercise the same boundaries as the app. A deletion is normalized
+  // by pushEntry, normalized again on save, parsed/normalized on load, and only
+  // then compared with an older record returning from the other file. Testing
+  // mergePool with a hand-written tombstone misses every persistence boundary
+  // where its top-level revision can be dropped.
+  const dir = freshDir();
+  const cfgPath = path.join(dir, 'config.json');
+  const stale = item('deleted', { rev: 5 });
+  const pushed = S.pushEntry([], {
+    item: stale,
+    removedAt: 2000,
+    rev: 6,
+  });
+
+  ok('a pushed tombstone keeps its top-level revision',
+    pushed.trash.length === 1 && pushed.trash[0].rev === 6);
+  ok('a tombstone can be saved after the deletion',
+    S.save({}, cfgPath, pushed.trash) === true);
+
+  const reloaded = S.load(cfgPath);
+  const merged = S.mergePool(reloaded, {
+    library: { deleted: stale },
+    trash: [],
+  });
+  ok('push -> save/load -> merge cannot resurrect a stale record',
+    reloaded.trash[0].rev === 6
+    && !merged.library.deleted
+    && merged.trash.length === 1
+    && merged.trash[0].rev === 6);
+
+  const numericText = S.normalizeTrashEntry({ item: stale, removedAt: 2000, rev: '7' });
+  const malformed = S.normalizeTrashEntry({ item: stale, removedAt: 2000, rev: -3 });
+  ok('tombstone revisions are normalized without retaining malformed values',
+    numericText.rev === 7 && !Object.prototype.hasOwnProperty.call(malformed, 'rev'));
+}
+
+{
   const dir = freshDir();
   const cfgPath = path.join(dir, 'config.json');
   const cfg = C.freshDefaults();
@@ -266,6 +303,27 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
   ] });
   ok('a photo removed twice keeps one entry, the newest',
     dup.trash.length === 1 && dup.trash[0].item.tags[0] === 'new');
+}
+
+{
+  const clockMovedBack = S.normalizeStore({ version: 1, library: {}, trash: [
+    { item: item('clock', { rev: 5, tags: ['older-revision'] }), removedAt: 9000, rev: 6 },
+    { item: item('clock', { rev: 7, tags: ['newer-revision'] }), removedAt: 1000, rev: 8 },
+  ] });
+  ok('a higher tombstone revision wins even when the wall clock moved backwards',
+    clockMovedBack.trash.length === 1
+    && clockMovedBack.trash[0].rev === 8
+    && clockMovedBack.trash[0].item.tags[0] === 'newer-revision');
+}
+
+{
+  const legacyTie = S.normalizeStore({ version: 1, library: {}, trash: [
+    { item: item('legacy-tie', { tags: ['older-time'] }), removedAt: 100 },
+    { item: item('legacy-tie', { tags: ['newer-time'] }), removedAt: 900 },
+  ] });
+  ok('equal or legacy revisions still use removedAt as their tie-break',
+    legacyTie.trash.length === 1
+    && legacyTie.trash[0].item.tags[0] === 'newer-time');
 }
 
 {
@@ -369,19 +427,22 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
   // pending version there is no retry and the quit-time flush has nothing to save.
   let failNext = true;
   const seen = [];
+  let failureHooks = 0;
   let fire = null;
   const w = S.createWriter({
     configPath: 'C:/p/config.json',
     saveFn: (lib) => { seen.push(Object.keys(lib).length); if (failNext) { failNext = false; return false; } return true; },
+    onWriteFailure: () => { failureHooks++; },
     setTimer: (fn) => { fire = fn; return 1; },
     clearTimer: () => { fire = null; },
   });
   w.markDirty({ a: 1, b: 2 });
   fire();
-  ok('a failed write keeps the pool pending', seen.length === 1 && w.isPending());
+  ok('a failed write keeps the pool pending', seen.length === 1 && w.isPending() && failureHooks === 1);
   ok('...and schedules its own retry', typeof fire === 'function');
   fire();
-  ok('...which writes the same data and clears it', seen.length === 2 && seen[1] === 2 && !w.isPending());
+  ok('...which writes the same data and clears it',
+    seen.length === 2 && seen[1] === 2 && !w.isPending() && failureHooks === 1);
 }
 
 {

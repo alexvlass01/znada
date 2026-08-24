@@ -19,7 +19,9 @@ function ok(name, condition) {
 }
 
 const detailsStart = renderer.indexOf('async function openCardDetails(record)');
-const detailsEnd = renderer.indexOf('function openLocalCardContextMenu(', detailsStart);
+// ONL-009 replaced openLocalCardContextMenu with the shared card menu, so the block
+// now ends at the first thing after the details sheet.
+const detailsEnd = renderer.indexOf('// ONL-009. One menu for every card in this window', detailsStart);
 ok('details view has a bounded implementation block', detailsStart >= 0 && detailsEnd > detailsStart);
 const detailsBlock = renderer.slice(detailsStart, detailsEnd);
 
@@ -41,7 +43,9 @@ ok('main validates details paths and stored source URLs',
   && main.includes('config.library[id]'));
 
 const mainDetailsStart = main.indexOf('// --- Details view ("Подробнее")');
-const mainDetailsEnd = main.indexOf("ipcMain.handle('library-add-tag'", mainDetailsStart);
+// ONL-009 added the card-action handlers between the details block and library-add-tag,
+// so the block now ends at that section header instead of sweeping them in.
+const mainDetailsEnd = main.indexOf('// ONL-009 — card actions', mainDetailsStart);
 const mainDetailsBlock = main.slice(mainDetailsStart, mainDetailsEnd);
 ok('reveal checks the disk asynchronously instead of blocking Electron main',
   mainDetailsBlock.includes('await fs.promises.access(p, fs.constants.F_OK)')
@@ -81,8 +85,24 @@ ok('very large tag sets stay bounded and report the hidden count',
   && locales.every((locale) => typeof locale.library.moreTags === 'string'
     && locale.library.moreTags.includes('{n}')));
 
-ok('details appear in the local context menu without replacing existing actions',
-  renderer.includes("appendContextMenuItem(pop, t('library.details'), () => openCardDetails(freshRecord))"));
+// ONL-009 moved the menu onto the shared action registry, so this asks the registry
+// what a local card offers instead of matching the old inline call.
+{
+  const CardActions = require('../renderer/card-actions');
+  const offered = CardActions.actionsFor(
+    CardActions.localSubject({ path: 'C:/photos/a.jpg', type: 'image', id: 'p1' },
+      { id: 'p1', type: 'image', path: 'C:/photos/a.jpg' }),
+  ).map((a) => a.id);
+  ok('details appear in the local context menu without replacing existing actions',
+    offered.includes('details')
+    && ['assign', 'favorite', 'tags', 'remove'].every((id) => offered.includes(id))
+    && renderer.includes('details: () => openCardDetails(record),'));
+  // The sheet reads metadata from a file on disk, so it stays local-only for now;
+  // making it work for a card with no file is its own task.
+  ok('details are not offered for an online card that has no file yet',
+    !CardActions.actionsFor(CardActions.internetSubject({ page: 'https://x/1', full: 'https://x/1.jpg' }))
+      .map((a) => a.id).includes('details'));
+}
 
 ok('the modal stays above app popovers while toasts stay visible above it',
   /\.lib-modal-backdrop\s*\{[\s\S]*?z-index:\s*250;/.test(styles)

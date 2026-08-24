@@ -1254,8 +1254,68 @@ select option {
   border-right: 2px solid var(--text-dim);
   border-bottom: 2px solid var(--text-dim);
   transform: translateY(-65%) rotate(45deg);
+  transition: transform 120ms ease, border-color 120ms ease;
   pointer-events: none;
 }
+/* BUG-021: the list is open, so the chevron points the other way. Driven by a class the
+   script sets, because the script already knows the exact open and close moments and
+   this needs nothing from the selector engine. */
+.select-wrap.open::after {
+  transform: translateY(-20%) rotate(-135deg);
+  border-color: var(--text);
+}
+
+/* BUG-021 — our own dropdown list.
+   Windows draws the popup of a native <select> itself and ignores every style on this
+   page, which is why it arrived as a white sheet with a blue highlight in the middle of
+   Adwaita chrome. This is an ordinary element, so it simply follows the theme. The
+   CLOSED control above is untouched: it was always ours. */
+.select-menu {
+  position: fixed;
+  z-index: 260;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+  cursor: pointer;
+  user-select: none;
+}
+.select-option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* One highlight for both routes: the pointer sets it on hover, the arrow keys set it
+   too, so the keyboard is never following a different row than the eye. */
+.select-option.active { background: var(--row-hover); }
+.select-option.selected { font-weight: 700; }
+.select-option.selected::after {
+  content: "✓";
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.select-option.disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+.select-option.disabled.active { background: transparent; }
 
 /* ---------- Footer ---------- */
 .footer-note {
@@ -1791,14 +1851,15 @@ html.dark .lib-folder-front { fill: #d99a34; }
   font: inherit; font-size: 13px; line-height: 1.25; text-align: left;
   cursor: pointer;
 }
-.lib-context-item:hover,
-.lib-context-item:focus-visible {
-  background: var(--row-hover);
-  outline: 2px solid var(--accent); outline-offset: -2px;
-}
+/* Exactly ONE row is ever the current one, and it is the focused one. Pointing at a row
+   focuses it (card-menu.js), so hover needs no rule of its own — and must not have one:
+   with both, the row the mouse is over and the row that still held focus lit up at the
+   same time and read as two selected rows at once. The keyboard ring stays separate, so
+   a mouse user gets the highlight without a focus outline. */
+.lib-context-item:focus { background: var(--row-hover); }
+.lib-context-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lib-context-item.danger { color: var(--destructive); }
-.lib-context-item.danger:hover,
-.lib-context-item.danger:focus-visible { background: rgba(224, 27, 36, 0.12); }
+.lib-context-item.danger:focus { background: rgba(224, 27, 36, 0.12); }
 
 /* tags */
 /* The search stays pinned inside the rail; only the chip list scrolls. There is no
@@ -2014,6 +2075,16 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-card .wh-add { opacity: 0; font-size: 18px; line-height: 26px; }
 .lib-card:hover .wh-add { opacity: 1; }
 .lib-card .wh-add.added { opacity: 1; background: var(--accent); }
+/* ONL-008: the "added" badge is also the way back out. Under the pointer (or keyboard
+   focus) the ✓ turns into a − and the chip turns red, so the second direction is
+   discoverable without putting a second control on the card. */
+.lib-card .wh-add .wh-add-undo { display: none; }
+.lib-card .wh-add.added:hover,
+.lib-card .wh-add.added:focus-visible { background: var(--destructive); }
+.lib-card .wh-add.added:hover .wh-add-glyph,
+.lib-card .wh-add.added:focus-visible .wh-add-glyph { display: none; }
+.lib-card .wh-add.added:hover .wh-add-undo,
+.lib-card .wh-add.added:focus-visible .wh-add-undo { display: inline; }
 
 /* Cloud favorite heart (C5): top-LEFT, distinct from the local star and the "+" add. */
 .lib-card .cloud-fav { left: 6px; right: auto; }

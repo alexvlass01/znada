@@ -252,6 +252,7 @@
     "error": "Hata: {e}",
     "add": "Kütüphaneye Ekle",
     "added": "Kütüphaneye eklendi",
+    "remove": "Kütüphaneden kaldır",
     "nsfwNeedsKey": "Yetişkin içerik araması ayarlar bölümünde API anahtarı gerektirir",
     "sourceLumina": "Znada",
     "sourceInternet": "İnternet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Zamanlanmış Tema Değişimi",
     "thumbs": "Küçük resim hizmeti",
     "liveFolder": "Canlı Klasör «{name}»",
-    "libraryStore": "Kütüphane dosyası"
+    "libraryStore": "Kütüphane dosyası",
+    "wallpaperSource": "Ayarlanan duvar kağıdı kaynağı",
+    "poolConsistency": "Kesintiye uğrayan kaydetmeden sonra duvar kağıdı ataması onarıldı"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada duvar kağıdını değiştiremedi",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Hasarlı dosyanın bir kopyası yanına kaydedildi. Kütüphaneniz çalışmaya devam eder ve değişiklikler başka bir yere kaydedilir, bu dosyanın üzerine yazılmaz. Znada'yı açmak için tıklayın.",
     "libraryStoreLockedBody": "Kütüphane dosyası açılamadı — başka bir program tarafından kilitlenmiş olabilir. Üzerine hiçbir şey yazılmadı. Znada'yı açmak için tıklayın.",
     "testTitle": "Znada bildirim testi",
-    "testBody": "Znada'nın Windows bildirimleri çalışıyor."
+    "testBody": "Znada'nın Windows bildirimleri çalışıyor.",
+    "wallpaperSourceMissingTitle": "Znada duvar kağıdınızı bulamadı",
+    "wallpaperSourceMissingBody": "Seçilen görsel artık mevcut konumunda değil. Sürücü veya klasör taşındıysa geri getirin; bir sonraki değişimde duvar kağıdı uygulanacaktır.",
+    "poolConsistencyTitle": "Znada bir duvar kağıdı ayarını onardı",
+    "poolConsistencyBody": "Kaydetme işlemi kesintiye uğradı (muhtemelen güç kesintisi veya zorla kapatma nedeniyle) ve bir monitör kaydedilmesi tamamlanmamış bir görsele bağlı kaldı. Ayar temizlendi. Fotoğraflarınıza dokunulmadı."
   },
   "toast": {
     "applied": "Duvar kağıdı uygulandı",
@@ -426,5 +433,21 @@
     "aurora": "Kutup Işıkları",
     "color": "Resimden Renk Çıkar",
     "soon": "Yakında daha fazla stil"
+  },
+  "card": {
+    "saveAs": "Farklı kaydet…",
+    "copyFile": "Görseli kopyala",
+    "copyLink": "Bağlantıyı kopyala",
+    "copyingFile": "Görsel kopyalanıyor…",
+    "copiedFile": "Görsel kopyalandı",
+    "copiedLink": "Bağlantı kopyalandı",
+    "saving": "Görsel hazırlanıyor…",
+    "saved": "Kaydedildi",
+    "addToLibrary": "Kütüphaneye ekle",
+    "copyFailed": "Görsel kopyalanamadı",
+    "linkFailed": "Bağlantı kopyalanamadı",
+    "saveFailed": "Görsel kaydedilemedi",
+    "noSource": "Bu görselin kaynak sayfası yok",
+    "downloading": "Görsel indiriliyor…"
   }
 }

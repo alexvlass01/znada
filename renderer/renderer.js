@@ -12,6 +12,9 @@ function diagSpan(category, name) {
 if (!window.api) {
   let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, slideshowCurrentPath: {}, triggers: { onStartup: false, onWakeup: false, stealth: { enabled: false, startup: true, wakeup: true, interval: false, timeoutMin: 5 } }, onlineSources: { lumina: false, internet: true }, onlineSort: 'date_added', onlinePurity: { sfw: true, sketchy: true, nsfw: false } };
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
+  let mockUndo = []; // last mock removal, so the preview can exercise the Undo toast
+  let mockUndoToken = '';
+  let mockUndoSeq = 0;
   let mockSc = { desktop: false, startmenu: false };
   let mockCloud = { signedIn: false, user: null };
   let mockEventLog = [
@@ -104,16 +107,34 @@ if (!window.api) {
     libraryAddPaths: async (paths) => { (paths || []).forEach((p) => mockAdd('image', p)); return { config: mock, added: (paths || []).length }; },
     libraryRemoveMany: async (records) => {
       let removed = 0;
+      mockUndo = [];
+      mockUndoToken = '';
       for (const rec of (Array.isArray(records) ? records : [])) {
         const id = rec && (typeof rec === 'string' ? rec : rec.id);
         if (!id || !mock.library[id]) continue;
+        mockUndo.push(mock.library[id]);
         delete mock.library[id];
         for (const m of Object.values(mock.monitors)) for (const th of ['light', 'dark']) if (m[th] && m[th].itemIds) m[th].itemIds = m[th].itemIds.filter((x) => x !== id);
         removed += 1;
       }
-      return { config: mock, removed, hidden: 0, warning: null, undo: null };
+      // `affected` and `undo` are what the real handler returns and what the callers
+      // branch on — without them the preview cannot exercise removal at all.
+      if (removed) mockUndoToken = `mock-${++mockUndoSeq}`;
+      return {
+        config: mock, affected: removed, removed, hidden: 0, warning: null,
+        undo: removed ? { count: removed, token: mockUndoToken } : null,
+      };
     },
-    libraryUndoRemove: async () => ({ config: mock, restored: 0 }),
+    libraryUndoRemove: async (token) => {
+      if (!mockUndoToken || token !== mockUndoToken) {
+        return { config: mock, restored: 0, error: 'stale_undo' };
+      }
+      const restored = mockUndo.length;
+      for (const it of mockUndo) mock.library[it.id] = it;
+      mockUndo = [];
+      mockUndoToken = '';
+      return { config: mock, restored };
+    },
     libraryHiddenList: async () => ({ images: [] }),
     libraryRestore: async () => ({ config: mock, restored: 0 }),
     libraryDeleteForever: async () => ({ config: mock, deleted: 0, failed: 0, error: null }),
@@ -199,7 +220,13 @@ if (!window.api) {
       return { items, error: null };
     },
     internetThumbnail: async (item) => ({ dataUrl: item && String(item.thumb || '').startsWith('data:') ? item.thumb : '', error: null }),
-    internetAdd: async () => ({ config: mock, error: null }),
+    // Records the source page the real handler records, so the preview can show a card
+    // going in and back out again (ONL-008) rather than always looking un-added.
+    internetAdd: async (item) => {
+      const id = mockAdd('image', 'C:/fake/online-' + ((item && item.id) || Object.keys(mock.library).length) + '.jpg');
+      mock.library[id].source = (item && item.page) || '';
+      return { config: mock, id, error: null };
+    },
     openGalleryViewer: async () => ({ ok: true }),
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
     setSlideshowIndex: async (monitorId, which, index) => {
@@ -374,21 +401,25 @@ function toastAction(msg, actionLabel, onAction) {
 
 // Success message for a removal. It never claims more than happened, and it only
 // offers undo when main actually kept a snapshot to undo from.
-async function undoLastRemoval() {
+async function undoLastRemoval(token) {
   let res;
-  try { res = await window.api.libraryUndoRemove(); }
+  try { res = await window.api.libraryUndoRemove(token); }
   catch { res = null; }
   if (!res || res.error) { toast(t('library.undoFailed')); return; }
   config = res.config || config;
-  renderLibrary();
+  // ONL-008 made this reachable from the Online tab too. A full re-render there would
+  // refetch the feed and throw away the user's place in it, and the only thing that can
+  // be out of date is which cards show as added — so re-derive just that.
+  if (LIB.filter === 'online') { renderLibRailTags(); refreshOnlineAddedState(); }
+  else renderLibrary();
   renderPreviews();
   renderHome();
   toast(t('library.undoneToast'));
 }
 
-function toastRemoved(count, canUndo) {
+function toastRemoved(count, undoToken) {
   const msg = t('library.removedToastN', { n: count });
-  if (canUndo) toastAction(msg, t('library.undo'), undoLastRemoval);
+  if (undoToken) toastAction(msg, t('library.undo'), () => undoLastRemoval(undoToken));
   else toast(msg);
 }
 
@@ -2449,10 +2480,16 @@ function openGalleryViewer(items, index = 0) {
   if (!list.length) return;
   closeLibPopup();
   hideOnlineTagSuggest();
-  const payloadItems = list.map((entry) => ({
-    ...entry,
-    added: entry.added || isGalleryItemAdded(entry),
-  }));
+  const payloadItems = list.map((entry) => {
+    const pooled = galleryPoolRecord(entry);
+    return {
+      ...entry,
+      added: entry.added || !!pooled,
+      // Which library record this online photo already has, if any. The viewer window
+      // has no pool of its own, so without this it could only ever add (ONL-008).
+      pooled: pooled ? { id: pooled.id || '', path: pooled.path || '', type: pooled.type || 'image' } : null,
+    };
+  });
   const payload = galleryPayloadWindow(payloadItems, index);
   window.api.openGalleryViewer({
     items: payload.items,
@@ -2460,11 +2497,10 @@ function openGalleryViewer(items, index = 0) {
   }).catch(() => toast(t('viewer.loadError')));
 }
 
-function isGalleryItemAdded(entry) {
-  if (!entry || !entry.raw) return false;
-  if (entry.kind === 'cloud') return cloudAlreadyAdded(entry.raw);
-  if (entry.kind === 'internet') return internetAlreadyAdded(entry.raw);
-  return false;
+function galleryPoolRecord(entry) {
+  if (!entry || !entry.raw) return null;
+  if (entry.kind !== 'cloud' && entry.kind !== 'internet') return null;
+  return OnlineAdd.pooledItem((config && config.library) || {}, entry.kind, entry.raw);
 }
 
 // ---- Multi-selection helpers ----
@@ -2916,39 +2952,23 @@ async function assignLibraryRecords(records, monitorId, th) {
   };
 }
 
+// The rows themselves now live in renderer/assign-rows.js so the fullscreen viewer
+// draws exactly the same chooser. This supplies the wording and this window's data.
+// Единый режим (separateThemes off): у монитора один слот — одна кнопка «Назначить».
 function appendAssignRows(pop, onPick) {
   const title = document.createElement('div');
   title.className = 'lib-popup-title';
   title.textContent = t('library.assignTo');
   pop.appendChild(title);
 
-  const mons = monitorList.length ? monitorList : [{ id: null, primary: true }];
-  mons.forEach((m, i) => {
-    const row = document.createElement('div');
-    row.className = 'lib-popup-row';
-    row.setAttribute('role', 'group');
-    const lbl = document.createElement('span');
-    lbl.className = 'lib-popup-mon';
-    const monitorLabel = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
-    lbl.textContent = monitorLabel;
-    lbl.id = `libAssignMonitor-${Date.now()}-${i}`;
-    row.setAttribute('aria-labelledby', lbl.id);
-    row.appendChild(lbl);
-    // Единый режим (separateThemes off): у монитора один слот — одна кнопка «Назначить».
-    const themes = (config && config.separateThemes === false)
-      ? [['light', '', t('library.assignAction')]]
-      : [['light', 'light', t('design.lightTheme')], ['dark', 'dark', t('design.darkTheme')]];
-    themes.forEach(([th, ic, label]) => {
-      const b = document.createElement('button');
-      b.className = ic ? 'lib-popup-btn with-ic' : 'lib-popup-btn';
-      // Icon is static markup; the label stays a text node so it can never be parsed as HTML.
-      if (ic) b.insertAdjacentHTML('afterbegin', THEME_ICON_SVG[ic]);
-      b.appendChild(document.createTextNode(label));
-      b.setAttribute('aria-label', `${monitorLabel} — ${label}`);
-      b.addEventListener('click', (e) => { e.stopPropagation(); onPick(m.id, th); });
-      row.appendChild(b);
-    });
-    pop.appendChild(row);
+  AssignRows.build(pop, monitorList, config && config.separateThemes, {
+    icons: THEME_ICON_SVG,
+    idPrefix: `libAssignMonitor-${Date.now()}`,
+    monitorLabel: (row) => t('monitor.label', { n: row.number }),
+    slotLabel: (slot) => (slot.themeIcon
+      ? t(slot.theme === 'dark' ? 'design.darkTheme' : 'design.lightTheme')
+      : t('library.assignAction')),
+    onPick,
   });
 }
 
@@ -3209,16 +3229,29 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
   };
   if (options.assign !== false) {
     appendAssignRows(pop, async (monitorId, th) => {
+      // Close BEFORE doing the work, not after. For a photo that is already on disk
+      // everything below is instant, so this never showed; for an online one the
+      // picture still has to be downloaded, and the menu sat on screen for seconds
+      // looking stuck. The removal button next door has always closed first.
+      closeLibPopup();
+      // `options.pending` marks a source that has to be fetched: it names the message
+      // to show while waiting, AND says the producer reports its own failures, so we
+      // do not talk over it with a second, vaguer one.
+      const remote = !!options.pending && !state.item;
+      if (remote) toast(t(options.pending));
       let res;
       if (!state.item && options.assignmentRecord) {
         res = await assignLibraryRecord(options.assignmentRecord, monitorId, th);
         if (res.item) state.item = res.item;
       } else {
         const item = await ensureItem();
-        if (!item) return;
+        if (!item) {
+          // Silence here used to leave the menu open with no explanation at all.
+          if (!remote) toast(t('library.assignMissingToast'));
+          return;
+        }
         res = await assignLibraryItem(item.id, monitorId, th);
       }
-      closeLibPopup();
       refreshAssignedHighlights();
       renderPreviews();
       renderHome();
@@ -3304,7 +3337,7 @@ async function removeRecordFromLibrary(record) {
   renderLibrary();
   renderPreviews();
   renderHome();
-  toastRemoved(affected, !!res.undo);
+  toastRemoved(affected, res.undo && res.undo.token);
 }
 
 // --- Details view (UX1 step C) -------------------------------------------
@@ -3596,122 +3629,135 @@ async function openCardDetails(record) {
   } catch { /* metadata is optional; the sheet stays usable without it */ }
 }
 
-function openLocalCardContextMenu(record, card, point = null) {
-  closeLibPopup();
-  const current = poolItemForRecord(record);
-  const freshRecord = current
-    ? localSelectionRecord(current.path, current.type, current.id) : record;
-  const actions = window.CardInteraction.actionsFor(freshRecord);
-  const pop = document.createElement('div');
-  pop.className = 'lib-popup lib-context-menu';
-  pop.id = 'libPopup';
-  pop.setAttribute('role', 'menu');
-  pop.setAttribute('aria-label', t('library.cardActions'));
-  pop.addEventListener('contextmenu', (e) => e.preventDefault());
+// ONL-009. One menu for every card in this window, and the same one the fullscreen
+// viewer draws. The split is deliberate and the owner asked for it explicitly:
+//   WHICH actions apply  → renderer/card-actions.js (pure, tested)
+//   HOW a menu behaves   → renderer/card-menu.js (shared with the viewer)
+//   WHAT an action means → here, where the rest of this window's machinery lives.
+// Adding an action later means one registry entry plus one handler, not a fourth menu.
 
-  // A removed photo is not part of the library, so offering to assign or tag it
-  // would quietly bring it back through a side door. Put it back first.
-  const removedView = inRemovedView();
-  if (removedView) {
-    appendContextMenuItem(pop, t('library.restore'), () => restorePaths([freshRecord.path]));
-    appendContextMenuItem(pop, t('library.details'), () => openCardDetails(freshRecord));
-    // The separator belongs to the delete action; drawing it on its own would leave a
-    // stray line at the bottom of the menu.
-    if (freshRecord.type !== 'folder' && FEATURES.physicalDelete) {
-      const sep = document.createElement('div');
-      sep.className = 'lib-popup-sep';
-      pop.appendChild(sep);
-      appendContextMenuItem(pop, t('library.deleteForever'), () => deleteForever([freshRecord.path]), { danger: true });
-    }
-  }
-
-  if (!removedView && actions.open) {
-    appendContextMenuItem(pop, t('library.open'), () => enterFolder(freshRecord.path, baseName(freshRecord.path)));
-  }
-  if (!removedView && actions.assign) {
-    appendContextMenuItem(pop, t('library.assign'), () => {
-      openAssignMenu(current, card, () => ensurePoolItemForRecord(freshRecord), {
-        assign: true, tags: false, remove: false, assignmentRecord: freshRecord,
-      });
-    });
-  }
-  if (!removedView && actions.favorite) {
-    const isFavorite = !!(current && current.favorite);
-    appendContextMenuItem(pop, t(isFavorite ? 'library.favoriteRemove' : 'library.favoriteAdd'), () => {
-      toggleFavoriteForRecord(freshRecord, card);
-    });
-  }
-  if (!removedView && actions.tags) {
-    appendContextMenuItem(pop, t('library.editTags'), () => {
-      openAssignMenu(current, card, () => ensurePoolItemForRecord(freshRecord), {
-        assign: false, tags: true, remove: false, focusTags: true,
-      });
-    });
-  }
-  if (!removedView && actions.details) {
-    appendContextMenuItem(pop, t('library.details'), () => openCardDetails(freshRecord));
-  }
-  if (!removedView && actions.remove) {
-    const sep = document.createElement('div');
-    sep.className = 'lib-popup-sep';
-    pop.appendChild(sep);
-    appendContextMenuItem(pop, t('library.remove'), () => removeRecordFromLibrary(freshRecord), { danger: true });
-  }
-
-  document.body.appendChild(pop);
-  const rect = card.getBoundingClientRect();
-  const wantedLeft = point && Number.isFinite(point.x) ? point.x : rect.left + 12;
-  const wantedTop = point && Number.isFinite(point.y) ? point.y : rect.top + 12;
-  const left = Math.max(8, Math.min(wantedLeft, window.innerWidth - pop.offsetWidth - 8));
-  const top = Math.max(8, Math.min(wantedTop, window.innerHeight - pop.offsetHeight - 8));
-  pop.style.left = `${left}px`;
-  pop.style.top = `${top}px`;
-  armLibPopupDismiss(card);
-
-  const items = Array.from(pop.querySelectorAll('[role="menuitem"]'));
-  pop.addEventListener('keydown', (e) => {
-    const index = items.indexOf(document.activeElement);
-    let next = -1;
-    if (e.key === 'ArrowDown') next = index < 0 ? 0 : (index + 1) % items.length;
-    else if (e.key === 'ArrowUp') next = index < 0 ? items.length - 1 : (index - 1 + items.length) % items.length;
-    else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = items.length - 1;
-    else if (e.key === 'Tab') {
-      e.preventDefault();
-      e.stopPropagation();
-      closeLibPopup({ restoreFocus: true });
-      return;
-    }
-    else if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      closeLibPopup({ restoreFocus: true });
-      return;
-    }
-    if (next >= 0) {
-      e.preventDefault();
-      items[next].focus();
-    }
+// Everything that needs the actual picture goes through main's single "get the file"
+// path, and what each action MEANS lives in card-transfer.js so the viewer runs the
+// same code. This window only supplies its bridge and its way of speaking.
+function runCardTransfer(action, descriptor) {
+  if (!descriptor) return Promise.resolve();
+  return CardTransfer.run(action, {
+    bridge: window.api,
+    descriptor,
+    t,
+    notify: ({ message, actionLabel, onAction }) => {
+      if (!message) return;
+      if (actionLabel && onAction) toastAction(message, actionLabel, onAction);
+      else toast(message);
+    },
+    // The owner's decision: an export is an export, so nothing was added to the
+    // library. Offering it as one explicit click keeps that honest and still handy.
+    onAddToLibrary: () => addCardToLibrary(descriptor),
   });
-  requestAnimationFrame(() => { if (items[0] && items[0].isConnected) items[0].focus(); });
+}
+
+// The one place an online card becomes a library record, whichever menu asked for it.
+async function addCardToLibrary(descriptor) {
+  if (!descriptor || descriptor.kind === 'local') return null;
+  let res;
+  try {
+    res = descriptor.kind === 'cloud'
+      ? await window.api.cloudAdd(descriptor.item)
+      : await window.api.internetAdd(descriptor.item, INTERNET.q);
+  } catch { res = { error: 'download' }; }
+  if (res && res.config) config = res.config;
+  if (!res || res.error) { toast(t('online.error', { e: (res && res.error) || '?' })); return null; }
+  toast(t('online.added'));
+  refreshPoolDependentChrome();
+  refreshOnlineAddedState();
+  return res.id || null;
+}
+
+function openCardMenu(subject, card, point = null) {
+  if (!subject) return;
+  closeLibPopup();
+  const descriptor = CardActions.descriptorFor(subject);
+  const groups = CardActions.menuGroupsFor(subject, { physicalDelete: FEATURES.physicalDelete });
+  if (!groups.length) return;
+
+  // Local actions still speak the record/pool-item language the rest of this file
+  // uses; resolving it once here keeps the handlers below thin.
+  const record = subject.kind === 'local'
+    ? localSelectionRecord(subject.path, subject.type, subject.id) : null;
+  const current = record ? poolItemForRecord(record) : null;
+
+  const handlers = {
+    open: () => enterFolder(subject.path, baseName(subject.path)),
+    assign: () => {
+      if (subject.kind === 'local') {
+        openAssignMenu(current, card, () => ensurePoolItemForRecord(record), {
+          assign: true, tags: false, remove: false, assignmentRecord: record,
+        });
+        return;
+      }
+      // An online picture has to be downloaded before a monitor can show it. The
+      // assign menu already takes a "produce the pool item" callback and only calls
+      // it once the user commits to a monitor, so the download happens then and not
+      // merely because the menu was opened.
+      openAssignMenu(null, card, async () => {
+        const id = await addCardToLibrary(descriptor);
+        return id && config.library ? config.library[id] : null;
+      }, { assign: true, tags: false, remove: false, pending: 'card.downloading' });
+    },
+    favorite: () => toggleFavoriteForRecord(record, card),
+    tags: () => openAssignMenu(current, card, () => ensurePoolItemForRecord(record), {
+      assign: false, tags: true, remove: false, focusTags: true,
+    }),
+    details: () => openCardDetails(record),
+    add: () => addCardToLibrary(descriptor),
+    remove: () => (subject.kind === 'local'
+      ? removeRecordFromLibrary(record)
+      : removeOnlineFromLibrary(config.library ? config.library[subject.id] : null)),
+    restore: () => restorePaths([subject.path]),
+    deleteForever: () => deleteForever([subject.path]),
+    saveAs: () => runCardTransfer('saveAs', descriptor),
+    copyFile: () => runCardTransfer('copyFile', descriptor),
+    copyLink: () => runCardTransfer('copyLink', descriptor),
+    openSource: () => runCardTransfer('openSource', descriptor),
+  };
+
+  CardMenu.openMenu({
+    groups,
+    point,
+    anchor: card,
+    ariaLabel: t('library.cardActions'),
+    // The star reads "add" or "remove" depending on the photo, so the label is asked
+    // for at draw time rather than baked into the registry.
+    labelFor: (action) => (action.id === 'favorite' && current && current.favorite
+      ? t('library.favoriteRemove') : t(action.labelKey)),
+    onPick: (action) => {
+      const run = handlers[action.id];
+      if (run) run();
+    },
+  });
 }
 
 function bindLocalCardContextMenu(card, record) {
-  card.setAttribute('aria-haspopup', 'menu');
-  card.setAttribute('aria-expanded', 'false');
-  card.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (librarySelectionBatchPending()) return;
-    card.focus({ preventScroll: true });
-    openLocalCardContextMenu(card.__selectionRecord || record, card, { x: e.clientX, y: e.clientY });
-  });
-  card.addEventListener('keydown', (e) => {
-    if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (librarySelectionBatchPending()) return;
-    openLocalCardContextMenu(card.__selectionRecord || record, card);
+  CardMenu.bind(card, (point) => {
+    const source = card.__selectionRecord || record;
+    const current = poolItemForRecord(source);
+    const fresh = current ? localSelectionRecord(current.path, current.type, current.id) : source;
+    // A removed photo is not part of the library, so the menu must not offer to
+    // assign or tag it — that would quietly revive it through a side door.
+    openCardMenu(CardActions.localSubject({ ...fresh, removedView: inRemovedView() }, current), card, point);
+  }, () => librarySelectionBatchPending());
+}
+
+// `kind` is 'internet' or 'cloud' — they are NOT interchangeable: a catalogue card has
+// no source page and only a short-lived signed link, so it must never be offered the
+// two link actions: there is no page, and the link it does have expires.
+function bindOnlineCardContextMenu(card, kind, item) {
+  CardMenu.bind(card, (point) => {
+    const pooled = OnlineAdd.pooledItem((config && config.library) || {}, kind, item);
+    const subject = kind === 'cloud'
+      ? CardActions.cloudSubject(item, pooled)
+      : CardActions.internetSubject(item, pooled);
+    openCardMenu(subject, card, point);
   });
 }
 
@@ -3881,7 +3927,7 @@ function initLibrary() {
       renderLibrary();
       renderPreviews();
       renderHome();
-      toastRemoved(affected, !!res.undo);
+      toastRemoved(affected, res.undo && res.undo.token);
     } finally {
       libraryBatchRemovePending = false;
       syncSelectionUI();
@@ -4559,12 +4605,100 @@ async function loadZnadaResults(reset, generation) {
   return (res.items || []).map((item) => onlineGridDescriptor('cloud', item));
 }
 
-// Already imported? Cloud items carry a stable "znada:<id>" source marker.
-// Записи, скачанные до переименования, несут прежнюю метку "lumina:<id>" — она
-// остаётся действительной, иначе они снова показались бы нескачанными.
-function cloudAlreadyAdded(item) {
-  const markers = ['znada:' + item.id, 'lumina:' + item.id];
-  return Object.values(config.library || {}).some((it) => markers.includes(it.source));
+// ONL-008. One control for BOTH kinds of online card: "+" downloads the photo into the
+// library, "✓" takes it back out. Which of the two it is comes from src/online-add.js
+// (it knows the "znada:"/"lumina:" and page-URL markers); this only draws the answer and
+// calls the IPC.
+//
+// Adding is unchanged. Removing goes through the SAME `library-remove-many` the Library
+// tab uses, so the photo lands in the trash with a working Undo. Nothing is deleted from
+// disk here — that stays off in production.
+function attachOnlineAddButton(card, kind, item, addFn) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'lib-menu-btn wh-add';
+  const glyph = document.createElement('span');
+  glyph.className = 'wh-add-glyph';
+  // The way back out only has to be legible while the pointer (or focus) is on the
+  // button, so the "added" badge stays a badge and still says how to undo itself.
+  const undoGlyph = document.createElement('span');
+  undoGlyph.className = 'wh-add-undo';
+  undoGlyph.textContent = '−';
+  btn.append(glyph, undoGlyph);
+
+  const sync = (pool) => {
+    const state = OnlineAdd.buttonState(pool || (config && config.library) || {}, kind, item);
+    glyph.textContent = state.glyph;
+    btn.classList.toggle('added', state.added);
+    btn.title = t(state.titleKey);
+    btn.setAttribute('aria-label', btn.title);
+    btn.setAttribute('aria-pressed', state.added ? 'true' : 'false');
+    return state;
+  };
+  // Re-derivable from the pool at any moment. An Undo, or a second card showing the same
+  // photo, has to be able to put every mounted button back in step — the state is the
+  // library's, not the button's.
+  card.__syncOnlineAdd = sync;
+  sync();
+
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (btn.disabled) return;
+    const state = sync();
+    btn.disabled = true;
+    try {
+      if (state.action === 'remove') await removeOnlineFromLibrary(state.pooled);
+      else await addOnlineToLibrary(addFn);
+    } finally {
+      btn.disabled = false;
+      refreshOnlineAddedState();
+    }
+  });
+  card.appendChild(btn);
+  return btn;
+}
+
+async function addOnlineToLibrary(addFn) {
+  let res;
+  try { res = await addFn(); } catch { res = { error: 'download' }; }
+  if (res && res.config) config = res.config;
+  if (!res || res.error) { toast(t('online.error', { e: (res && res.error) || '?' })); return false; }
+  toast(t('online.added'));
+  refreshPoolDependentChrome();
+  return true;
+}
+
+async function removeOnlineFromLibrary(pooled) {
+  const payload = OnlineAdd.removalPayload(pooled);
+  if (!payload) { toast(t('library.massDeleteFailed')); return false; }
+  let res;
+  try { res = await window.api.libraryRemoveMany(payload); }
+  catch { res = null; }
+  if (!res || res.error || !res.affected) { toast(t('library.massDeleteFailed')); return false; }
+  config = res.config || config;
+  refreshPoolDependentChrome();
+  toastRemoved(res.affected, res.undo && res.undo.token);
+  return true;
+}
+
+// What outside the Online grid can go stale when a photo enters or leaves the pool.
+// The Library grid itself is NOT in this list on purpose: leaving the Online tab tears
+// it down and builds it again, and re-rendering it from here would refetch the feed.
+function refreshPoolDependentChrome() {
+  renderLibRailTags();
+  renderPreviews();
+  renderHome();
+}
+
+// Every mounted online card re-asks the pool. One index for the whole pass: otherwise
+// each card would walk the entire library.
+function refreshOnlineAddedState() {
+  const grid = $('#whGrid');
+  if (!grid) return;
+  const index = OnlineAdd.sourceIndex((config && config.library) || {});
+  grid.querySelectorAll('.lib-card').forEach((card) => {
+    if (typeof card.__syncOnlineAdd === 'function') card.__syncOnlineAdd(index);
+  });
 }
 
 function buildCloudCard(item) {
@@ -4576,22 +4710,8 @@ function buildCloudCard(item) {
   if (item.thumb_url) card.style.backgroundImage = `url("${item.thumb_url}")`;
   const label = [item.width && item.height ? `${item.width}×${item.height}` : '', item.title].filter(Boolean).join(' · ');
   card.title = item.title || '';
-  const add = document.createElement('button');
-  add.className = 'lib-menu-btn wh-add';
-  const markAdded = () => { add.textContent = '✓'; add.classList.add('added'); add.disabled = true; add.title = t('online.added'); };
-  if (cloudAlreadyAdded(item)) markAdded();
-  else { add.textContent = '+'; add.title = t('online.add'); }
-  add.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (add.disabled) return;
-    add.disabled = true;
-    let res;
-    try { res = await window.api.cloudAdd(item); } catch { res = { error: 'download' }; }
-    if (res && res.config) config = res.config;
-    if (res && !res.error) { markAdded(); toast(t('online.added')); }
-    else { add.disabled = false; toast(t('online.error', { e: (res && res.error) || '?' })); }
-  });
-  card.appendChild(add);
+  attachOnlineAddButton(card, 'cloud', item, () => window.api.cloudAdd(item));
+  bindOnlineCardContextMenu(card, 'cloud', item);
 
   // Cloud favorite heart (account-synced; signed-in only). Distinct from the local
   // Library "Избранное" (a star on local cards).
@@ -4797,12 +4917,6 @@ async function loadMoreOnline() {
   finalizeOnlineFeed();
 }
 
-// Already in the pool? Online items carry their source page; we match on it so the
-// "added ✓" survives re-searches (was only set in-session before — fixed).
-function internetAlreadyAdded(item) {
-  return Object.values(config.library || {}).some((it) => it.source && it.source === item.page);
-}
-
 function setInternetCardThumbnail(card, item) {
   if (!item.thumb) return;
   if (item.provider === 'wallhaven') {
@@ -4824,27 +4938,8 @@ function buildInternetCard(item) {
   setInternetCardThumbnail(card, item);
   const label = [item.resolution, item.category].filter(Boolean).join(' · ');
   card.title = label;
-  const add = document.createElement('button');
-  add.className = 'lib-menu-btn wh-add';
-  const markAdded = () => {
-    add.textContent = '✓';
-    add.classList.add('added');
-    add.disabled = true;
-    add.title = t('online.added');
-  };
-  if (internetAlreadyAdded(item)) markAdded();
-  else { add.textContent = '+'; add.title = t('online.add'); }
-  add.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (add.disabled) return;
-    add.disabled = true;
-    let res;
-    try { res = await window.api.internetAdd(item, INTERNET.q); } catch (err) { res = { error: 'download' }; }
-    if (res && res.config) config = res.config;
-    if (res && !res.error) { markAdded(); toast(t('online.added')); }
-    else { add.disabled = false; toast(t('online.error', { e: (res && res.error) || '?' })); }
-  });
-  card.appendChild(add);
+  attachOnlineAddButton(card, 'internet', item, () => window.api.internetAdd(item, INTERNET.q));
+  bindOnlineCardContextMenu(card, 'internet', item);
   card.addEventListener('mouseenter', () => setLibStatus(label || t('online.source')));
   card.addEventListener('click', () => openGalleryFromCard(card, card.__galleryItem));
   return card;
@@ -5508,6 +5603,10 @@ async function init() {
   await loadI18n();
   applyI18n();
   applyThemeToUI(currentTheme);
+  // BUG-021. Every <select> keeps its value, its options and its `change` event; only
+  // the popup Windows used to draw is replaced. Attaching once here covers all of them
+  // — none is created later, and applyI18n rewrites option text in place.
+  SelectPopup.attachAll(document);
   setMonitors(await window.api.getMonitors());
   await renderConfig();
   if (!config.firstRunDone) enterFirstRun();
@@ -5908,6 +6007,11 @@ async function init() {
     config = cfg;
     renderConfig();
     renderHome();
+    // The Online grid's added/remove badges are derived from the pool, so a change made
+    // ANYWHERE else has to reach them — most obviously the fullscreen viewer, which can
+    // now add and remove too (ONL-008). Rebuilding the feed here would refetch it and
+    // lose the user's place, so only the badges are re-derived.
+    if (LIB.filter === 'online') refreshOnlineAddedState();
     // Only rebuild the Library grid when its CONTENTS actually changed. Unrelated config
     // broadcasts (theme, schedule, viewer background, …) used to flash the whole grid and
     // drop the scroll to the top. Two cheaper paths avoid a full rebuild: an assignment-only

@@ -67,6 +67,11 @@ const DEFAULT_CONFIG = {
   // purity = the SFW/Sketchy/NSFW content filter.
   onlineSort: 'date_added',
   onlinePurity: { sfw: true, sketchy: true, nsfw: false },
+  // ONL-009. Folder the "Save as…" dialog opens in, remembered between runs at the
+  // owner's request. Never used as storage the app relies on: an export leaves no
+  // library record, so a folder that disappears (a removed drive) costs nothing —
+  // main falls back to Downloads and clears this.
+  lastSaveDir: '',
   // Fullscreen gallery viewer backdrop behind the (contained) photo.
   // 'ambient' = blurred copy of the photo, 'charcoal' = deep dark + vignette,
   // 'aurora' = subtle animated accent glow, 'color' = gradient from the photo's dominant color.
@@ -200,6 +205,10 @@ function normalize(cfg) {
   if (!cfg.onlinePurity.sfw && !cfg.onlinePurity.sketchy && !cfg.onlinePurity.nsfw) cfg.onlinePurity.sfw = true;
 
   if (!['ambient', 'charcoal', 'aurora', 'color'].includes(cfg.viewerBackground)) cfg.viewerBackground = 'ambient';
+
+  // Only ever a string. Whether the folder still exists is checked when the dialog
+  // opens, not here: a config load must not touch the disk to normalize a field.
+  if (typeof cfg.lastSaveDir !== 'string') cfg.lastSaveDir = '';
 
   if (!Array.isArray(cfg.libraryTrash)) cfg.libraryTrash = [];
 

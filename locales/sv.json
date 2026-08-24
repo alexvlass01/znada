@@ -252,6 +252,7 @@
     "error": "Fel: {e}",
     "add": "Lägg till i bibliotek",
     "added": "Tillagd i bibliotek",
+    "remove": "Ta bort från bibliotek",
     "nsfwNeedsKey": "NSFW kräver en API-nyckel (Inställningar)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Schemalagt byte av Windows-tema",
     "thumbs": "Tjänst för miniatyrbilder",
     "liveFolder": "Live-mapp \"{name}\"",
-    "libraryStore": "Biblioteksfil"
+    "libraryStore": "Biblioteksfil",
+    "wallpaperSource": "Källa för konfigurerad bakgrund",
+    "poolConsistency": "Bakgrundstilldelning reparerades efter avbruten sparning"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada kunde inte ändra bakgrunden",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "En kopia av den skadade filen sparades bredvid den. Biblioteket fortsätter att fungera och ändringar sparas någon annanstans utan att skriva över den filen. Klicka för att öppna Znada.",
     "libraryStoreLockedBody": "Biblioteksfilen kunde inte öppnas — den kan vara låst av ett annat program. Inget skrevs över. Klicka för att öppna Znada.",
     "testTitle": "Znada meddelandetest",
-    "testBody": "Windows-meddelanden från Znada fungerar."
+    "testBody": "Windows-meddelanden från Znada fungerar.",
+    "wallpaperSourceMissingTitle": "Znada kunde inte hitta din bakgrundsbild",
+    "wallpaperSourceMissingBody": "Den valda bilden finns inte längre kvar. Om enheten eller mappen flyttades, återställ den så återkommer bakgrunden vid nästa byte.",
+    "poolConsistencyTitle": "Znada reparerade en bakgrundsinställning",
+    "poolConsistencyBody": "En sparning avbröts (förmodligen på grund av strömavbrott eller tvingad avstängning) och en skärm blev kopplad till en bild som inte sparades färdigt. Inställningen har rensats. Dina foton påverkades inte."
   },
   "toast": {
     "applied": "Bakgrundsbild tillämpad",
@@ -426,5 +433,21 @@
     "aurora": "Norrsken",
     "color": "Färg från foto",
     "soon": "Fler kommer snart"
+  },
+  "card": {
+    "saveAs": "Spara som…",
+    "copyFile": "Kopiera bild",
+    "copyLink": "Kopiera länk",
+    "copyingFile": "Kopierar bild…",
+    "copiedFile": "Bild kopierad",
+    "copiedLink": "Länk kopierad",
+    "saving": "Förbereder bild…",
+    "saved": "Sparad",
+    "addToLibrary": "Lägg till i bibliotek",
+    "copyFailed": "Kunde inte kopiera bilden",
+    "linkFailed": "Kunde inte kopiera länken",
+    "saveFailed": "Kunde inte spara bilden",
+    "noSource": "Denna bild har ingen källsida",
+    "downloading": "Laddar ner bild…"
   }
 }

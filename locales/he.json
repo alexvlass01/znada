@@ -252,6 +252,7 @@
     "error": "שגיאה: {e}",
     "add": "הוסף לספרייה",
     "added": "נוסף לספרייה",
+    "remove": "הסר מהספרייה",
     "nsfwNeedsKey": "NSFW דורש מפתח API (הגדרות)",
     "sourceLumina": "Znada",
     "sourceInternet": "אינטרנט",
@@ -331,7 +332,9 @@
     "themeSchedule": "החלפת ערכת נושא מתוזמנת",
     "thumbs": "שירות תמונות ממוזערות",
     "liveFolder": "תיקייה חיה \"{name}\"",
-    "libraryStore": "קובץ הספרייה"
+    "libraryStore": "קובץ הספרייה",
+    "wallpaperSource": "מקור הרקע שהוגדר",
+    "poolConsistency": "הקצאת הרקע תוקנה לאחר שמירה שנקטעה"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada לא הצליח לשנות את הרקע",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "עותק של הקובץ הפגום נשמר לצידו. הספרייה ממשיכה לפעול והשינויים נשמרים במקום אחר מבלי לדרוס קובץ זה. לחץ לפתיחת Znada.",
     "libraryStoreLockedBody": "לא ניתן היה לפתוח את קובץ הספרייה — ייתכן שהוא נעול על ידי תוכנית אחרת. שום דבר לא נדרס. לחץ לפתיחת Znada.",
     "testTitle": "בדיקת התראות Znada",
-    "testBody": "התראות Windows מ-Znada עובדות."
+    "testBody": "התראות Windows מ-Znada עובדות.",
+    "wallpaperSourceMissingTitle": "Znada לא מצא את הרקע שלך",
+    "wallpaperSourceMissingBody": "התמונה שהוגדרה אינה נמצאת עוד במקומה. אם הכונן או התיקייה הועברו, החזר אותם והרקע יחזור בהחלפה הבאה.",
+    "poolConsistencyTitle": "Znada תיקן הגדרת רקע",
+    "poolConsistencyBody": "השמירה נקטעה (ככל הנראה עקב הפסקת חשמל או כיבוי מאולץ) והצג נשאר מקושר לתמונה שלא סיימה להישמר. ההגדרה נוקתה. התמונות שלך לא נפגעו."
   },
   "toast": {
     "applied": "הרקע הוחל",
@@ -426,5 +433,21 @@
     "aurora": "זוהר הקוטב",
     "color": "צבע מהתמונה",
     "soon": "עוד יגיעו בקרוב"
+  },
+  "card": {
+    "saveAs": "שמירה בשם…",
+    "copyFile": "העתק תמונה",
+    "copyLink": "העתק קישור",
+    "copyingFile": "מעתיק תמונה…",
+    "copiedFile": "התמונה הועתקה",
+    "copiedLink": "הקישור הועתק",
+    "saving": "מכין תמונה…",
+    "saved": "נשמר",
+    "addToLibrary": "הוסף לספרייה",
+    "copyFailed": "לא ניתן היה להעתיק את התמונה",
+    "linkFailed": "לא ניתן היה להעתיק את הקישור",
+    "saveFailed": "לא ניתן היה לשמור את התמונה",
+    "noSource": "לתמונה זו אין דף מקור",
+    "downloading": "מוריד תמונה…"
   }
 }

@@ -41,7 +41,8 @@ const diagnosticsGate = require('./src/diagnostics-gate'); // production-safe ga
 const galleryPayloadMod = require('./src/gallery-payload'); // viewer payload sanitizing/windowing
 const hotkey = require('./src/hotkey'); // accelerator parsing + atomic globalShortcut replacement
 const windowsLaunch = require('./src/windows-launch');
-const applyOutcome = require('./src/apply-outcome'); // пустой слот против исчезнувшего источника // stable Squirrel launch targets for Run/.lnk
+const applyOutcome = require('./src/apply-outcome'); // пустой слот против исчезнувшего источника
+const poolConsistency = require('./src/pool-consistency'); // ссылки слотов против содержимого пула // stable Squirrel launch targets for Run/.lnk
 
 // Match the AppUserModelID written into the Start Menu shortcut by our
 // electron-winstaller/Squirrel package (`name: Znada`, `exe: Znada.exe`).
@@ -378,17 +379,24 @@ async function importWallpaper(srcPath) {
 }
 
 // Download a remote image into the app's data dir (content-addressed, like importWallpaper).
-async function downloadWallpaperFromUrl(url, fetchOptions = {}) {
-  await fs.promises.mkdir(WALLPAPERS_DIR, { recursive: true });
+async function downloadImageTo(dir, url, fetchOptions = {}) {
+  await fs.promises.mkdir(dir, { recursive: true });
   const res = await fetch(url, fetchOptions);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 16);
   let ext = '.jpg';
   try { const e = path.extname(new URL(url).pathname).toLowerCase(); if (/^\.[a-z0-9]{2,5}$/.test(e)) ext = e; } catch {}
-  const dest = path.join(WALLPAPERS_DIR, `wp-${hash}${ext}`);
+  const dest = path.join(dir, `wp-${hash}${ext}`);
   if (!fs.existsSync(dest)) await fs.promises.writeFile(dest, buf);
   return dest;
+}
+
+// Downloading INTO the library. ONL-009 also needs the same picture somewhere the
+// library does not own — an export or a clipboard copy must not leave an orphan file
+// inside wallpapers/ for the sweeper to find — hence the split above.
+async function downloadWallpaperFromUrl(url, fetchOptions = {}) {
+  return downloadImageTo(WALLPAPERS_DIR, url, fetchOptions);
 }
 
 // Bundled Wallhaven API key — official builds only. It lives in a gitignored file
@@ -433,7 +441,10 @@ let libraryUnsafeToWrite = false;
 // src/library-store.js). Settings stay on the immediate path — they are small and
 // the user expects them saved at once — while pool edits coalesce, so adding tags
 // to a folder full of photos no longer means one full rewrite per tag.
-const libraryWriter = libraryStore.createWriter({ configPath: CONFIG_PATH });
+const libraryWriter = libraryStore.createWriter({
+  configPath: CONFIG_PATH,
+  onWriteFailure: () => enterLibraryWriteDegradedMode(),
+});
 
 // One channel for the pool file: to the user it is either usable or not, and the two
 // ways it breaks differ only in what they can do about it, which is what the
@@ -445,6 +456,19 @@ function reportLibraryStoreProblem(kind) {
     titleKey: 'notify.libraryStoreFailedTitle',
     bodyKey: kind === 'broken' ? 'notify.libraryStoreDamagedBody' : 'notify.libraryStoreLockedBody',
   });
+}
+
+// A store that was healthy at startup can still become unwritable later (locked tmp,
+// full disk, permissions). From that first failed write onward config.json becomes the
+// fail-closed copy for every pool edit until restart. Merely retaining the writer retry
+// is insufficient: a later tag/favourite changes the in-memory pool while the pending
+// trash array may already have been replaced.
+function enterLibraryWriteDegradedMode() {
+  if (libraryUnsafeToWrite) return;
+  libraryUnsafeToWrite = true;
+  console.error('Пул перестал записываться — новые изменения сохраняются inline до перезапуска.');
+  configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: true });
+  reportLibraryStoreProblem('unreadable');
 }
 
 function loadConfig() {
@@ -499,14 +523,37 @@ function loadConfig() {
   }
   libraryUnsafeToWrite = false;
 
+  // DATA-005. The two files are written atomically each but not together, and the
+  // settings go first, so a power cut in the pool writer's window leaves a slot naming
+  // a record that never reached disk. It fails quietly — the slot looks filled and
+  // resolves to nothing — so it is repaired here and SAID OUT LOUD. Only in the healthy
+  // mode: in the degraded one the pool is knowingly incomplete, and "repairing" against
+  // it would throw away references to records that are merely unreadable right now.
+  const repaired = poolConsistency.repairDanglingSlots(config.monitors, config.library);
+  if (repaired) {
+    console.error(`Ссылок в никуда убрано: ${repaired} (файлы обоев не тронуты).`);
+    reportChannelFailure('pool-consistency', 'journal.poolConsistency', {
+      titleKey: 'notify.poolConsistencyTitle',
+      bodyKey: 'notify.poolConsistencyBody',
+    });
+    saveSettingsOnly();
+  }
+
   // A config written before the split still carries the pool inline, and a build that
   // was rolled back may have added ids there since. Either way the merged result has
   // to reach the store BEFORE config.json is allowed to stop carrying it — and only
   // if that write is confirmed, which configMod.save now reports.
   if (!source.storeExisted || source.mergedInline || source.broken || source.normalizeAdded) {
     const ok = libraryStore.save(config.library, CONFIG_PATH, config.libraryTrash);
-    configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: !ok });
-    if (!ok) console.error('Не удалось создать файл пула — inline-копия в config.json сохранена.');
+    if (ok) {
+      configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: false });
+    } else {
+      // This is the same state as a writer that becomes unwritable later. Merely
+      // keeping the inline copy in THIS save is not enough: the next settings-only
+      // save would otherwise strip it again while the store still contains nothing.
+      enterLibraryWriteDegradedMode();
+      console.error('Не удалось создать файл пула — inline-копия в config.json сохранена.');
+    }
   }
 }
 
@@ -558,13 +605,39 @@ function clearRemovedState(paths) {
   return changed;
 }
 
+// A record brought back after a removal must be newer than the tombstone it replaces.
+// Dropping the trash row without moving the record's revision works in the current
+// process, but loses on the next recovery merge if an older copy of the store returns.
+// Match by id OR canonical path: old entries and ephemeral/live-folder cards are not
+// guaranteed to arrive with both fields populated.
+function markRecordRevived(item) {
+  if (!item || typeof item !== 'object') return false;
+  const id = typeof item.id === 'string' ? item.id : '';
+  const key = pathKey(item.path);
+  let matched = false;
+  let newestRemovalRev = 0;
+  for (const entry of (config.libraryTrash || [])) {
+    if (!entry || !entry.item) continue;
+    const sameId = id && entry.item.id === id;
+    const samePath = key && pathKey(entry.item.path) === key;
+    if (!sameId && !samePath) continue;
+    matched = true;
+    newestRemovalRev = Math.max(newestRemovalRev, library.revOf(entry));
+  }
+  if (!matched) return false;
+  library.bumpRev(item, newestRemovalRev);
+  return true;
+}
+
 // The ONLY way a photo enters the active pool in main. Going through one funnel is
 // what makes "active and removed at the same time" impossible: every entry point —
 // import, drag and drop, download, materialize, assign — clears the removed state as
 // part of becoming active, instead of six call sites each having to remember.
 function addToPool(type, srcPath, extra) {
   const id = library.addPath(config.library, type, srcPath, extra);
-  if (id && clearRemovedState(srcPath)) poolRevivals++;
+  const item = id ? library.getItem(config.library, id) : null;
+  const revisionMoved = markRecordRevived(item);
+  if (id && (clearRemovedState(srcPath) || revisionMoved)) poolRevivals++;
   return id;
 }
 
@@ -641,10 +714,29 @@ function saveConfig() {
   // In the degraded mode this single call already wrote the pool inline, so calling
   // saveLibrarySoon() as well would write the same bytes twice.
   const inlined = libraryUnsafeToWrite;
-  configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: inlined });
-  if (!inlined) saveLibrarySoon();
+  // DATA-005. The pool goes FIRST. Settings used to be written synchronously while the
+  // records they name sat in a 1200 ms debounce, so every assignment opened a window in
+  // which a crash left a slot pointing at nothing. Written this way round the worst a
+  // crash can leave is a record nobody references — an orphan, which the collector moves
+  // to wallpapers/.trash rather than deleting.
+  //
+  // This is not the tag path and does not undo the split storage: tags and favourites go
+  // through savePoolOnly(), which still coalesces. Only settings that can name a record
+  // pay for the ordering, and those are user actions, not bursts.
+  // Mark AND flush: flushing alone writes only what someone already marked, so an edit
+  // that reached the pool without marking it would never have been written at all.
+  let keepInline = inlined;
+  if (!inlined) {
+    saveLibrarySoon();
+    // A failed flush leaves the newest pool pending for retry, but settings must not
+    // point at that in-memory-only record. Keep the same pool inline until a later
+    // successful save can safely remove it again.
+    keepInline = !libraryWriter.flush();
+  }
+  const saved = configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline });
   slideshowPositionDirty = false;
   broadcastConfig();
+  return saved;
 }
 
 // For handlers that provably touch settings and nothing else. Keeps a switch flip from
@@ -2958,6 +3050,11 @@ ipcMain.handle('library-remove-many', async (e, rawRecords) => withLibraryLock(a
   // removals: without this, removing a folder of 520 photos kept 500 of their records
   // and lost the stars and tags of the rest with nothing on screen saying so.
   const removalGroup = `${now.toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  // The main window replaces its one toast when another removal happens, but the
+  // fullscreen viewer is a separate document and can still show the older action.
+  // Carry the group as an opaque token so that stale Undo can never restore a newer,
+  // unrelated removal.
+  undo.token = removalGroup;
   // Each entry records WHY it went: named by the user, or carried along by a folder.
   // Putting a folder back may only undo the second kind.
   //
@@ -3124,15 +3221,18 @@ ipcMain.handle('library-remove-many', async (e, rawRecords) => withLibraryLock(a
     hidden: hiddenResult.updated + dirResult.updated,
     error: null,
     warning,
-    undo: lastLibraryRemoval ? { count: records.length } : null,
+    undo: lastLibraryRemoval ? { count: records.length, token: lastLibraryRemoval.token } : null,
   };
 }));
 
 // Put back exactly what the last removal took away. Only the most recent removal is
 // kept — this backs the "Undo" in the toast, not a full history.
-ipcMain.handle('library-undo-remove', async () => withLibraryLock(async () => {
+ipcMain.handle('library-undo-remove', async (e, expectedToken) => withLibraryLock(async () => {
   const undo = lastLibraryRemoval;
   if (!undo) return { config, restored: 0, error: 'nothing_to_undo' };
+  if (expectedToken && undo.token !== expectedToken) {
+    return { config, restored: 0, error: 'stale_undo' };
+  }
 
   const undoRestoredIds = new Set();
   const failedItems = [];
@@ -3146,7 +3246,9 @@ ipcMain.handle('library-undo-remove', async () => withLibraryLock(async () => {
       failedItems.push(item);
       continue;
     }
-    if (!config.library[item.id]) config.library[item.id] = item;
+    const activeItem = config.library[item.id] || item;
+    markRecordRevived(activeItem);
+    if (!config.library[item.id]) config.library[item.id] = activeItem;
     undoRestoredIds.add(item.id);
     dropFromLibraryTrash(item.id);
   }
@@ -3202,7 +3304,7 @@ ipcMain.handle('library-undo-remove', async () => withLibraryLock(async () => {
   lastLibraryRemoval = failedItems.length ? {
     items: failedItems,
     slots: (undo.slots || []).filter((snap) => snap.itemIds.some((id) => failedIds.has(id))),
-    paths: [], dirs: [], legacy: undo.legacy, at: undo.at,
+    paths: [], dirs: [], legacy: undo.legacy, at: undo.at, token: undo.token,
   } : null;
 
   saveConfig();
@@ -3517,7 +3619,9 @@ ipcMain.handle('library-restore', async (e, rawPaths) => withLibraryLock(async (
     if (!wanted.has(pathKey(entry.item.path)) && !cameWithRestoredFolder(entry)) continue;
     restoreOwnCopyFile(entry.item);
     if (recordTargetLost(entry.item.path)) continue;  // nothing to point the record at
-    if (!config.library[entry.item.id]) config.library[entry.item.id] = entry.item;
+    const activeItem = config.library[entry.item.id] || entry.item;
+    markRecordRevived(activeItem);
+    if (!config.library[entry.item.id]) config.library[entry.item.id] = activeItem;
     restoreSlotPlacements(entry);
     if (entry.item.type === 'folder') restoredFolderIds.push(entry.item.id);
     dropFromLibraryTrash(entry.item.id);
@@ -3585,8 +3689,12 @@ ipcMain.handle('library-ensure-sizes', async () => {
   let changed = false;
   for (const it of Object.values(config.library || {})) {
     if (it && it.type === 'image' && it.path && typeof it.size !== 'number') {
-      try { it.size = (await fs.promises.stat(it.path)).size; } catch { it.size = 0; }
-      changed = true;
+      let size = 0;
+      try { size = (await fs.promises.stat(it.path)).size; } catch {}
+      // `size` is derived metadata, but it is still part of the whole-record snapshot
+      // selected by DATA-005 recovery. A direct assignment leaves the revision tied
+      // with an older store copy, so that copy wins and silently discards this write.
+      if (library.updateItem(config.library, it.id, { size })) changed = true;
     }
   }
   if (changed) saveConfig();
@@ -3684,6 +3792,204 @@ ipcMain.handle('item-copy-path', async (e, p) => {
     await clipboard.writeText(p);
     return true;
   } catch { return false; }
+});
+
+// ---------------------------------------------------------------------------
+// ONL-009 — card actions (right-click menu), shared by both windows
+// ---------------------------------------------------------------------------
+// The fullscreen viewer is a second window with its own bridge, so these cannot use
+// isTrustedMainWindowSender: they would work in the grid and silently fail in the
+// viewer, which is exactly the split ONL-008 was fixed for.
+function isTrustedAppSender(event) {
+  if (!event || !event.sender) return false;
+  const windows = [mainWindow, galleryWindow];
+  return windows.some((w) => w && !w.isDestroyed() && event.sender === w.webContents);
+}
+
+// Exports and clipboard copies land here, NOT in wallpapers/. A file inside wallpapers/
+// with no pool record pointing at it is an orphan, and the sweeper is entitled to move
+// it to .trash — which would be a surprising thing to happen to a user's export.
+const CARD_EXPORT_DIR = path.join(app.getPath('userData'), 'export-cache');
+
+// Descriptors come from the renderer, so nothing in them is trusted. A pool id is
+// looked up rather than believed, and every URL is validated by src/online.js before
+// it reaches the network — the same rule the download path already follows.
+function normalizeCardDescriptor(raw) {
+  const card = raw && typeof raw === 'object' ? raw : {};
+  const kind = ['local', 'internet', 'cloud'].includes(card.kind) ? card.kind : 'local';
+  const id = typeof card.id === 'string' ? card.id : '';
+  const item = card.item && typeof card.item === 'object' ? card.item : null;
+  return { kind, id, item };
+}
+
+function pooledImageFor(descriptor) {
+  const item = descriptor.id && config.library ? config.library[descriptor.id] : null;
+  if (!item || item.type !== 'image' || !item.path) return null;
+  return fs.existsSync(item.path) ? item : null;
+}
+
+// The page a card came from. For a downloaded photo that is the source we stored; for
+// a live online card it is the provider's page, validated here. Our own catalogue has
+// neither — its download link is signed and short-lived — and returns ''.
+function resolveCardPageUrl(descriptor) {
+  const pooled = descriptor.id && config.library ? config.library[descriptor.id] : null;
+  if (pooled && typeof pooled.source === 'string') {
+    const stored = itemDetails.normalizeHttpUrl(pooled.source);
+    if (stored) return stored;
+  }
+  if (descriptor.kind === 'internet' && descriptor.item && online.allowedPageUrl(descriptor.item)) {
+    return itemDetails.normalizeHttpUrl(descriptor.item.page) || '';
+  }
+  return '';
+}
+
+// THE one place anything obtains the actual image file. "Save as", "copy picture" and
+// assigning an online photo to a monitor all cross the same boundary — does this thing
+// have a local file — so they all cross it here, once, instead of growing three
+// download paths that then have to be fixed three times.
+//
+// `managed` decides ownership, not location alone: a managed copy is one the library is
+// about to take responsibility for; an unmanaged one is a throwaway for export.
+async function ensureCardFile(descriptor, opts = {}) {
+  const managed = !!opts.managed;
+  const dir = managed ? WALLPAPERS_DIR : CARD_EXPORT_DIR;
+
+  // Already ours and still on disk: nothing to fetch, whatever the card claims.
+  const pooled = pooledImageFor(descriptor);
+  if (pooled) return { path: pooled.path, error: null };
+
+  try {
+    if (descriptor.kind === 'cloud') {
+      const client = cloudClient();
+      if (!client) return { path: '', error: 'unavailable' };
+      const id = descriptor.item && descriptor.item.id;
+      if (!id) return { path: '', error: 'badItem' };
+      // Always a FRESH signed URL. The one the card is holding may already be dead,
+      // and it must never be reused or handed further.
+      const dl = await client.getDownload(id, { token: _cloudToken || undefined });
+      if (!dl.ok) { cloudHandleAuthError(dl); return { path: '', error: dl.error.code }; }
+      return { path: await downloadImageTo(dir, dl.data.url), error: null };
+    }
+
+    if (descriptor.kind === 'internet') {
+      if (!online.allowedDownloadUrl(descriptor.item)) return { path: '', error: 'badItem' };
+      const stored = await downloadImageTo(dir, descriptor.item.full, {
+        headers: internetRequestHeaders(descriptor.item),
+      });
+      return { path: stored, error: null };
+    }
+
+    // Local, but the record's file is gone. Saying so beats a silent no-op.
+    return { path: '', error: 'missing' };
+  } catch (err) {
+    console.error('card file:', err);
+    return { path: '', error: 'download' };
+  }
+}
+
+// What the assign chooser needs, for a window that does not hold the config. The main
+// window already has both; the fullscreen viewer has neither, and giving it the two
+// values is cheaper and safer than giving it the whole config.
+ipcMain.handle('card-assign-targets', (e) => {
+  if (!isTrustedAppSender(e)) return { monitors: [], separateThemes: true };
+  return {
+    monitors: (monitorsCache || []).map((m) => ({ id: m.id, primary: !!m.primary })),
+    separateThemes: config.separateThemes !== false,
+  };
+});
+
+ipcMain.handle('card-open-source', async (e, raw) => {
+  if (!isTrustedAppSender(e)) return { ok: false, error: 'denied' };
+  const url = resolveCardPageUrl(normalizeCardDescriptor(raw));
+  if (!url) return { ok: false, error: 'noSource' };
+  try {
+    await shell.openExternal(url);
+    return { ok: true, error: null };
+  } catch (err) {
+    console.error('card open source:', err);
+    return { ok: false, error: 'open' };
+  }
+});
+
+ipcMain.handle('card-copy-link', async (e, raw) => {
+  if (!isTrustedAppSender(e)) return { ok: false, error: 'denied' };
+  const url = resolveCardPageUrl(normalizeCardDescriptor(raw));
+  if (!url) return { ok: false, error: 'noSource' };
+  try {
+    await clipboard.writeText(url);
+    return { ok: true, error: null };
+  } catch (err) {
+    console.error('card copy link:', err);
+    return { ok: false, error: 'copy' };
+  }
+});
+
+// The picture itself onto the clipboard, so it pastes into a chat or an editor. Not a
+// file handle: Windows' file-drop clipboard format is not something Electron exposes,
+// and promising "paste into a folder" without being able to deliver it would be worse
+// than the honest, useful thing.
+ipcMain.handle('card-copy-file', async (e, raw) => {
+  if (!isTrustedAppSender(e)) return { ok: false, error: 'denied' };
+  const descriptor = normalizeCardDescriptor(raw);
+  const file = await ensureCardFile(descriptor, { managed: false });
+  if (file.error) return { ok: false, error: file.error };
+  try {
+    const image = nativeImage.createFromPath(file.path);
+    if (image.isEmpty()) return { ok: false, error: 'badImage' };
+    clipboard.writeImage(image);
+    return { ok: true, error: null };
+  } catch (err) {
+    console.error('card copy file:', err);
+    return { ok: false, error: 'copy' };
+  }
+});
+
+// Where the save dialog opens. A remembered folder that has since vanished (a removed
+// drive) must not break the dialog, so it is checked and quietly dropped.
+function saveDialogStartDir() {
+  const remembered = typeof config.lastSaveDir === 'string' ? config.lastSaveDir : '';
+  try {
+    if (remembered && fs.statSync(remembered).isDirectory()) return remembered;
+  } catch { /* gone — fall through */ }
+  try { return app.getPath('downloads'); } catch { return app.getPath('home'); }
+}
+
+ipcMain.handle('card-save-as', async (e, raw) => {
+  if (!isTrustedAppSender(e)) return { ok: false, error: 'denied' };
+  const descriptor = normalizeCardDescriptor(raw);
+  const file = await ensureCardFile(descriptor, { managed: false });
+  if (file.error) return { ok: false, error: file.error };
+
+  const parent = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+  const suggested = path.join(saveDialogStartDir(), path.basename(file.path));
+  let res;
+  try {
+    res = await dialog.showSaveDialog(parent, {
+      defaultPath: suggested,
+      filters: [{ name: 'Image', extensions: [path.extname(file.path).replace('.', '') || 'jpg'] }],
+    });
+  } catch (err) {
+    console.error('card save dialog:', err);
+    return { ok: false, error: 'save' };
+  }
+  if (res.canceled || !res.filePath) return { ok: false, error: null, canceled: true };
+
+  try {
+    await fs.promises.copyFile(file.path, res.filePath);
+  } catch (err) {
+    console.error('card save copy:', err);
+    return { ok: false, error: 'save' };
+  }
+  // Remembered only after a save that actually worked, so a failed attempt cannot
+  // leave the dialog pointing somewhere unusable next time.
+  const dir = path.dirname(res.filePath);
+  if (dir && dir !== config.lastSaveDir) {
+    config.lastSaveDir = dir;
+    saveSettingsOnly();
+  }
+  // Deliberately no library record: the owner's decision is that an export is an
+  // export. Offering to add it afterwards is the renderer's job, as an explicit click.
+  return { ok: true, error: null, path: res.filePath };
 });
 
 ipcMain.handle('library-add-tag', (e, id, tag) => {
@@ -5116,6 +5422,8 @@ module.exports = {
     applyForTheme: (theme, isManual) => applyForTheme(theme, isManual),
     setMonitorsCache: (list) => { monitorsCache = Array.isArray(list) ? list : []; },
     checkLiveFolderReachability: () => checkLiveFolderReachability(),
+    addToPool: (type, p, extra) => addToPool(type, p, extra),
+    saveConfig: () => saveConfig(),
     // Проверять надо не саму функцию, а что плановый обход её ЗОВЁТ при скрытом окне:
     // ровно эта развилка и молчала.
     runHourlyLiveFolderPass: () => scheduleLiveFolderFullScan(String("hourly"), 0),

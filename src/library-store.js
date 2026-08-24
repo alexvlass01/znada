@@ -55,6 +55,13 @@ function normalizeTrashEntry(raw) {
   if (typeof item.id !== 'string' || !item.id) return null;
   const at = Number(raw.removedAt);
   const entry = { item, removedAt: Number.isFinite(at) && at > 0 ? at : Date.now() };
+  // The tombstone's revision is deliberately top-level: item.rev describes the
+  // last live version, while this revision describes the later deletion. Dropping
+  // it while normalizing makes an older live record look newer after a restart and
+  // resurrects the photo. Use the same tolerant reader as mergePool so legacy or
+  // malformed values keep their existing rev=0 semantics.
+  const rev = revOf(raw);
+  if (rev > 0) entry.rev = rev;
   // WHY it was removed, not just that it was. Empty means the user named this photo;
   // a folder path means it went with that folder. Putting the folder back may only
   // undo the second kind — otherwise restoring a folder silently reverses a separate
@@ -181,19 +188,23 @@ function normalizeStore(raw) {
 // allowed to exceed the limit rather than being silently truncated. Older removals are
 // dropped whole to make room.
 function boundedTrash(input) {
-  const seen = new Set();
-  const all = [];
+  const byId = new Map();
   for (const candidate of (Array.isArray(input) ? input : [])) {
     const entry = normalizeTrashEntry(candidate);
     if (!entry) continue;
-    all.push(entry);
+    const previous = byId.get(entry.item.id);
+    // DATA-005 revisions are the ordering authority. Wall-clock may move backwards
+    // (manual correction, time sync, restored future-dated backup), so removedAt may
+    // only break a revision tie; it must never discard a later deletion event.
+    if (!previous
+      || revOf(entry) > revOf(previous)
+      || (revOf(entry) === revOf(previous) && entry.removedAt > previous.removedAt)) {
+      byId.set(entry.item.id, entry);
+    }
   }
-  all.sort((a, b) => b.removedAt - a.removedAt);
-  const unique = all.filter((e) => {
-    if (seen.has(e.item.id)) return false;   // a re-removed photo keeps its newest entry
-    seen.add(e.item.id);
-    return true;
-  });
+  // The revision has selected WHICH event survives. Display order and the 500-entry
+  // horizon remain chronological, exactly as before.
+  const unique = [...byId.values()].sort((a, b) => b.removedAt - a.removedAt);
 
   // Entries carry the id of the removal that wrote them. Inferring it from the
   // timestamp instead would merge two separate removals that happened in the same
@@ -376,6 +387,7 @@ function createWriter({
   configPath,
   delayMs = 1200,
   saveFn = save,
+  onWriteFailure = null,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
 } = {}) {
@@ -396,6 +408,12 @@ function createWriter({
     writes++;
     const okWrite = saveFn(library, configPath, trash);
     if (okWrite) { pending = null; retries = 0; return true; }
+    // The caller may need to enter a fail-closed mode immediately. In Znada this
+    // writes the current pool inline so a later tag/favourite edit cannot be lost
+    // while the dedicated file is unavailable. Reporting must never break retries.
+    if (typeof onWriteFailure === 'function') {
+      try { onWriteFailure(); } catch (err) { console.error('library write failure hook:', err); }
+    }
     // Bounded retry so a transient failure heals on its own instead of waiting for
     // the user's next edit. It stays pending either way, so quit-time flush still has it.
     if (retries < MAX_RETRIES) {

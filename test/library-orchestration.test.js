@@ -354,6 +354,224 @@ console.log('\nmain.js orchestration\n');
     assert.strictEqual(reloaded.libraryTrash.length, 0, 'the photo came back out of the trash after a restart');
   });
 
+  // ---- DATA-005: recovery order must remain true when writes/restores fail ---
+
+  await test('a failed pool-first flush keeps an inline copy before settings name the record', async (dir) => {
+    H.writeJson(cfgFile(dir), baseConfig());
+    H.writeJson(storeFile(dir), { version: 1, library: {}, trash: [] });
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    const photo = H.writeImage(path.join(dir, 'wallpapers', 'flush-failed.png'));
+    const id = m.__test.addToPool('image', photo, {});
+    m.__test.getConfig().monitors = {
+      MON1: { light: { itemIds: [id] }, dark: { itemIds: [] } },
+    };
+
+    // Block only the atomic pool rename path. config.json remains writable, so this
+    // reproduces the dangerous half-success rather than a generic full-disk failure.
+    fs.mkdirSync(`${storeFile(dir)}.tmp`);
+    m.__test.saveConfig();
+
+    const settings = JSON.parse(fs.readFileSync(cfgFile(dir), 'utf8'));
+    const store = JSON.parse(fs.readFileSync(storeFile(dir), 'utf8'));
+    assert.ok(!store.library[id], 'precondition: the pool write unexpectedly succeeded');
+    assert.ok(settings.library && settings.library[id],
+      'settings named an in-memory-only record without carrying its inline fallback');
+    assert.ok(m.__test.poolWritePending(), 'the failed pool write was not retained for retry');
+    assert.ok(m.__test.isUnsafeToWrite(), 'a runtime write failure did not enter fail-closed mode');
+
+    // Pool-only edits happen after the ordered settings write too. Once the store has
+    // failed, they must update the inline copy rather than trusting a pending retry.
+    await m.invoke('library-add-tag', id, 'after-failure');
+    const afterTag = JSON.parse(fs.readFileSync(cfgFile(dir), 'utf8'));
+    assert.deepStrictEqual(afterTag.library[id].tags, ['after-failure'],
+      'a later pool-only edit was lost after the runtime store failure');
+
+    // Freeze the failed-write state like a crash, then restart while the store is still
+    // blocked. The inline copy must keep both the record and its placement alive.
+    H.unloadMain();
+    const restarted = H.loadMain(dir);
+    restarted.__test.loadConfig();
+    assert.ok(restarted.__test.getConfig().library[id], 'the record vanished after the failed flush');
+    assert.deepStrictEqual(restarted.__test.getConfig().monitors.MON1.light.itemIds, [id],
+      'startup repair discarded the user\'s assignment after the failed flush');
+    assert.strictEqual(
+      restarted.__test.eventLogEntries().filter((entry) => entry.channel === 'pool-consistency').length,
+      0,
+      'a safely inlined record was still reported as dangling',
+    );
+  });
+
+  await test('a failed startup pool migration stays inline across a settings-only save and restart', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'wallpapers', 'startup-write-failed.png'));
+    const id = library.idFor(photo);
+    H.writeJson(cfgFile(dir), baseConfig({
+      library: {
+        [id]: { id, type: 'image', path: photo, addedAt: 1, favorite: true, tags: ['inline-only'], rev: 3 },
+      },
+    }));
+    // The store itself is missing/readable-as-missing, but its atomic tmp path is
+    // blocked. loadConfig therefore reaches the migration write and fails there,
+    // rather than taking the already-covered unreadable-store branch.
+    fs.mkdirSync(`${storeFile(dir)}.tmp`);
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    assert.ok(m.__test.isUnsafeToWrite(), 'a failed startup store write did not enter fail-closed mode');
+
+    await m.invoke('set-config', { style: 'fit' });
+    const afterSetting = JSON.parse(fs.readFileSync(cfgFile(dir), 'utf8'));
+    assert.ok(afterSetting.library && afterSetting.library[id],
+      'a settings-only save stripped the only copy after startup store failure');
+
+    // Let the next start create the store normally. The old implementation had
+    // already removed the inline row above, so this restart came back empty.
+    H.unloadMain();
+    fs.rmSync(`${storeFile(dir)}.tmp`, { recursive: true, force: true });
+    const restarted = H.loadMain(dir);
+    restarted.__test.loadConfig();
+    assert.deepStrictEqual(restarted.__test.getConfig().library[id].tags, ['inline-only'],
+      'the inline-only record did not survive recovery after the startup write failure');
+    const stored = JSON.parse(fs.readFileSync(storeFile(dir), 'utf8'));
+    assert.ok(stored.library[id], 'the recovered record never reached the dedicated store');
+  });
+
+  await test('derived size metadata advances the record revision and beats the returning store', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'wallpapers', 'size-revision.png'));
+    const id = library.idFor(photo);
+    const oldItem = {
+      id, type: 'image', path: photo, addedAt: 1, favorite: false, tags: [], rev: 4,
+    };
+    H.writeJson(cfgFile(dir), baseConfig({ library: { [id]: oldItem } }));
+    fs.mkdirSync(storeFile(dir)); // degraded session keeps the revision-aware edit inline
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    await m.invoke('library-ensure-sizes');
+    const measured = m.__test.getConfig().library[id];
+    assert.ok(measured.size > 0, 'the real size handler did not persist measured metadata');
+    assert.strictEqual(measured.rev, 5, 'measuring size did not advance the whole-record revision');
+
+    H.unloadMain();
+    fs.rmSync(storeFile(dir), { recursive: true, force: true });
+    H.writeJson(storeFile(dir), { version: 1, library: { [id]: oldItem }, trash: [] });
+    const restarted = H.loadMain(dir);
+    restarted.__test.loadConfig();
+    assert.ok(restarted.__test.getConfig().library[id].size > 0,
+      'the returning stale store discarded derived metadata with an unadvanced revision');
+  });
+
+  await test('Undo makes the restored record newer than the removal after a degraded restart', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'wallpapers', 'undo-revision.png'));
+    const id = library.idFor(photo);
+    const item = { id, type: 'image', path: photo, addedAt: 1, favorite: true, tags: ['keep'], rev: 5 };
+    H.writeJson(cfgFile(dir), baseConfig({ library: { [id]: item }, libraryTrash: [] }));
+    fs.mkdirSync(storeFile(dir)); // unreadable store => edits are persisted inline
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    await m.invoke('library-remove-many', [{ id, path: photo, type: 'image' }]);
+    const tombstone = JSON.parse(JSON.stringify(m.__test.getConfig().libraryTrash[0]));
+    assert.strictEqual(tombstone.rev, 6, 'precondition: removal revision was not recorded');
+
+    await m.invoke('library-undo-remove');
+    const restored = m.__test.getConfig().library[id];
+    assert.ok(restored && restored.rev > tombstone.rev,
+      'Undo returned the old record without making it newer than its tombstone');
+
+    H.unloadMain();
+    fs.rmSync(storeFile(dir), { recursive: true, force: true });
+    H.writeJson(storeFile(dir), { version: 1, library: {}, trash: [tombstone] });
+    const restarted = H.loadMain(dir);
+    restarted.__test.loadConfig();
+    assert.ok(restarted.__test.getConfig().library[id],
+      'the returning tombstone deleted a record the user had restored with Undo');
+  });
+
+  await test('restoring from the persistent trash beats the tombstone after recovery', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'wallpapers', 'restore-revision.png'));
+    const id = library.idFor(photo);
+    const item = { id, type: 'image', path: photo, addedAt: 1, favorite: true, tags: ['keep'], rev: 5 };
+    const tombstone = { item, removedAt: 10, rev: 6 };
+    H.writeJson(cfgFile(dir), baseConfig({ library: {}, libraryTrash: [tombstone] }));
+    fs.mkdirSync(storeFile(dir));
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    await m.invoke('library-restore', [photo]);
+    const restored = m.__test.getConfig().library[id];
+    assert.ok(restored && restored.rev > tombstone.rev,
+      'Restore returned the old record without superseding the tombstone');
+
+    H.unloadMain();
+    fs.rmSync(storeFile(dir), { recursive: true, force: true });
+    H.writeJson(storeFile(dir), { version: 1, library: {}, trash: [tombstone] });
+    const restarted = H.loadMain(dir);
+    restarted.__test.loadConfig();
+    assert.ok(restarted.__test.getConfig().library[id],
+      'the returning tombstone deleted a record restored from the persistent trash');
+  });
+
+  await test('re-importing through the pool funnel supersedes a returned tombstone', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'wallpapers', 'reimport-revision.png'));
+    const id = library.idFor(photo);
+    const removedItem = { id, type: 'image', path: photo, addedAt: 1, favorite: false, tags: [], rev: 5 };
+    const tombstone = { item: removedItem, removedAt: 10, rev: 6 };
+    H.writeJson(cfgFile(dir), baseConfig({ library: {}, libraryTrash: [tombstone] }));
+    fs.mkdirSync(storeFile(dir));
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    assert.strictEqual(m.__test.addToPool('image', photo, {}), id, 'the photo was not re-imported');
+    m.__test.saveConfig();
+    const revived = m.__test.getConfig().library[id];
+    assert.ok(revived && revived.rev > tombstone.rev,
+      'the shared import/download/assignment funnel did not supersede the tombstone');
+
+    H.unloadMain();
+    fs.rmSync(storeFile(dir), { recursive: true, force: true });
+    H.writeJson(storeFile(dir), { version: 1, library: {}, trash: [tombstone] });
+    const restarted = H.loadMain(dir);
+    restarted.__test.loadConfig();
+    assert.ok(restarted.__test.getConfig().library[id],
+      'the returning tombstone deleted a photo the user re-imported');
+  });
+
+  await test('an Undo token cannot restore a newer removal from another window', async (dir) => {
+    const a = H.writeImage(path.join(dir, 'wallpapers', 'undo-a.png'));
+    const b = H.writeImage(path.join(dir, 'wallpapers', 'undo-b.png'));
+    const aId = library.idFor(a);
+    const bId = library.idFor(b);
+    H.writeJson(cfgFile(dir), baseConfig());
+    H.writeJson(storeFile(dir), {
+      version: 1,
+      library: {
+        [aId]: { id: aId, type: 'image', path: a, addedAt: 1, favorite: false, tags: [], rev: 0 },
+        [bId]: { id: bId, type: 'image', path: b, addedAt: 1, favorite: false, tags: [], rev: 0 },
+      },
+      trash: [],
+    });
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    const first = await m.invoke('library-remove-many', [{ id: aId, path: a, type: 'image' }]);
+    const second = await m.invoke('library-remove-many', [{ id: bId, path: b, type: 'image' }]);
+    assert.ok(first.undo && first.undo.token && second.undo && second.undo.token,
+      'removal did not return an opaque Undo identity');
+    assert.notStrictEqual(first.undo.token, second.undo.token, 'two removals shared one Undo identity');
+
+    const stale = await m.invoke('library-undo-remove', first.undo.token);
+    assert.strictEqual(stale.error, 'stale_undo', 'an older window undid the latest unrelated removal');
+    assert.ok(!m.__test.getConfig().library[aId] && !m.__test.getConfig().library[bId],
+      'a stale Undo changed the active pool');
+
+    const latest = await m.invoke('library-undo-remove', second.undo.token);
+    assert.strictEqual(latest.restored, 1, 'the current Undo token no longer worked');
+    assert.ok(!m.__test.getConfig().library[aId] && m.__test.getConfig().library[bId],
+      'the current Undo restored the wrong removal');
+  });
+
   // ---- LIB-007: deleting from disk is guarded at the moment it happens ------
 
   await test('a photo restored while the confirmation dialog is open is not deleted', async (dir) => {

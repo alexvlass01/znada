@@ -252,6 +252,7 @@
     "error": "Kesalahan: {e}",
     "add": "Tambahkan ke pustaka",
     "added": "Ditambahkan ke pustaka",
+    "remove": "Hapus dari pustaka",
     "nsfwNeedsKey": "NSFW membutuhkan kunci API (Pengaturan)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Pergantian tema Windows terjadwal",
     "thumbs": "Layanan gambar mini",
     "liveFolder": "Folder langsung \"{name}\"",
-    "libraryStore": "File pustaka"
+    "libraryStore": "File pustaka",
+    "wallpaperSource": "Sumber wallpaper yang dikonfigurasi",
+    "poolConsistency": "Penetapan wallpaper dipulihkan setelah penyimpanan terputus"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada tidak dapat mengubah wallpaper",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Salinan file yang rusak disimpan di sebelahnya. Pustaka tetap berfungsi dan perubahan disimpan di tempat lain tanpa menimpa file tersebut. Klik untuk membuka Znada.",
     "libraryStoreLockedBody": "File pustaka tidak dapat dibuka — mungkin sedang dikunci oleh program lain. Tidak ada yang ditimpa. Klik untuk membuka Znada.",
     "testTitle": "Uji pemberitahuan Znada",
-    "testBody": "Pemberitahuan Windows dari Znada berfungsi."
+    "testBody": "Pemberitahuan Windows dari Znada berfungsi.",
+    "wallpaperSourceMissingTitle": "Znada tidak dapat menemukan wallpaper Anda",
+    "wallpaperSourceMissingBody": "Gambar yang ditetapkan tidak lagi tersedia. Jika drive atau folder dipindahkan, kembalikan ke tempat semula dan wallpaper akan dipasang pada pergantian berikutnya.",
+    "poolConsistencyTitle": "Znada memulihkan pengaturan wallpaper",
+    "poolConsistencyBody": "Penyimpanan terhenti (mungkin karena listrik mati atau pematian paksa) dan monitor tetap terhubung ke gambar yang belum selesai disimpan. Pengaturan telah dibersihkan. Foto Anda tidak terpengaruh."
   },
   "toast": {
     "applied": "Wallpaper diterapkan",
@@ -426,5 +433,21 @@
     "aurora": "Aurora",
     "color": "Warna dari foto",
     "soon": "Lebih banyak akan segera hadir"
+  },
+  "card": {
+    "saveAs": "Simpan sebagai…",
+    "copyFile": "Salin gambar",
+    "copyLink": "Salin tautan",
+    "copyingFile": "Menyalin gambar…",
+    "copiedFile": "Gambar disalin",
+    "copiedLink": "Tautan disalin",
+    "saving": "Menyiapkan gambar…",
+    "saved": "Disimpan",
+    "addToLibrary": "Tambahkan ke pustaka",
+    "copyFailed": "Gagal menyalin gambar",
+    "linkFailed": "Gagal menyalin tautan",
+    "saveFailed": "Gagal menyimpan gambar",
+    "noSource": "Gambar ini tidak memiliki halaman sumber",
+    "downloading": "Mengunduh gambar…"
   }
 }

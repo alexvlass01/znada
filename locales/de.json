@@ -252,6 +252,7 @@
     "error": "Fehler: {e}",
     "add": "Zur Bibliothek hinzufügen",
     "added": "Zur Bibliothek hinzugefügt",
+    "remove": "Aus Bibliothek entfernen",
     "nsfwNeedsKey": "Für NSFW wird ein API-Schlüssel benötigt (Einstellungen)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Geplanter Wechsel des Windows-Designs",
     "thumbs": "Miniaturbild-Dienst",
     "liveFolder": "Live-Ordner „{name}“",
-    "libraryStore": "Bibliotheksdatei"
+    "libraryStore": "Bibliotheksdatei",
+    "wallpaperSource": "Quelle des eingerichteten Hintergrundbilds",
+    "poolConsistency": "Hintergrundbild-Zuweisung nach unterbrochener Speicherung repariert"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada konnte das Hintergrundbild nicht wechseln",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Eine Kopie der beschädigten Datei wurde daneben gespeichert. Die Bibliothek funktioniert weiter und Änderungen werden an anderer Stelle gespeichert, diese Datei wird jedoch nicht überschrieben. Klicken, um Znada zu öffnen.",
     "libraryStoreLockedBody": "Die Bibliotheksdatei konnte nicht geöffnet werden — möglicherweise wird sie von einem anderen Programm verwendet. Sie wird nicht überschrieben. Klicken, um Znada zu öffnen.",
     "testTitle": "Znada-Benachrichtigungstest",
-    "testBody": "Windows-Benachrichtigungen von Znada funktionieren."
+    "testBody": "Windows-Benachrichtigungen von Znada funktionieren.",
+    "wallpaperSourceMissingTitle": "Znada konnte Ihr Hintergrundbild nicht finden",
+    "wallpaperSourceMissingBody": "Das eingestellte Bild ist nicht mehr vorhanden. Wenn das Laufwerk oder der Ordner verschoben wurde, stellen Sie den Pfad wieder her, damit das Bild beim nächsten Wechsel geladen wird.",
+    "poolConsistencyTitle": "Znada hat eine Hintergrundbild-Einstellung repariert",
+    "poolConsistencyBody": "Ein Speichervorgang wurde unterbrochen — vermutlich durch Stromausfall oder erzwungenes Herunterfahren — und ein Monitor verwies auf ein unvollständig gespeichertes Bild. Die Einstellung wurde bereinigt. Ihre Bilder wurden nicht angetastet."
   },
   "toast": {
     "applied": "Hintergrundbild angewendet",
@@ -426,5 +433,21 @@
     "aurora": "Aurora",
     "color": "Farbe aus dem Foto",
     "soon": "Bald mehr"
+  },
+  "card": {
+    "saveAs": "Speichern unter…",
+    "copyFile": "Bild kopieren",
+    "copyLink": "Link kopieren",
+    "copyingFile": "Bild wird kopiert…",
+    "copiedFile": "Bild kopiert",
+    "copiedLink": "Link kopiert",
+    "saving": "Bild wird vorbereitet…",
+    "saved": "Gespeichert",
+    "addToLibrary": "Zur Bibliothek hinzufügen",
+    "copyFailed": "Bild konnte nicht kopiert werden",
+    "linkFailed": "Link konnte nicht kopiert werden",
+    "saveFailed": "Bild konnte nicht gespeichert werden",
+    "noSource": "Dieses Bild hat keine Quellseite",
+    "downloading": "Bild wird heruntergeladen…"
   }
 }

@@ -252,6 +252,7 @@
     "error": "Lỗi: {e}",
     "add": "Thêm vào thư viện",
     "added": "Đã thêm vào thư viện",
+    "remove": "Xóa khỏi thư viện",
     "nsfwNeedsKey": "NSFW yêu cầu khóa API (Cài đặt)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Lịch chuyển đổi chủ đề Windows",
     "thumbs": "Dịch vụ ảnh thu nhỏ",
     "liveFolder": "Thư mục động \"{name}\"",
-    "libraryStore": "Tập tin thư viện"
+    "libraryStore": "Tập tin thư viện",
+    "wallpaperSource": "Nguồn hình nền đã cấu hình",
+    "poolConsistency": "Đã khôi phục gán hình nền sau khi lưu bị gián đoạn"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada không thể đổi hình nền",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Một bản sao của tập tin bị hỏng đã được lưu bên cạnh. Thư viện vẫn tiếp tục hoạt động và các thay đổi được lưu ở nơi khác mà không ghi đè lên tập tin đó. Nhấp để mở Znada.",
     "libraryStoreLockedBody": "Không thể mở tập tin thư viện — tập tin có thể đang bị khóa bởi chương trình khác. Không có gì bị ghi đè. Nhấp để mở Znada.",
     "testTitle": "Kiểm tra thông báo Znada",
-    "testBody": "Thông báo Windows từ Znada đang hoạt động tốt."
+    "testBody": "Thông báo Windows từ Znada đang hoạt động tốt.",
+    "wallpaperSourceMissingTitle": "Znada không tìm thấy hình nền của bạn",
+    "wallpaperSourceMissingBody": "Hình ảnh đã đặt không còn ở vị trí cũ. Nếu ổ đĩa hoặc thư mục đã bị di chuyển, hãy khôi phục lại và hình nền sẽ áp dụng trong lần đổi tiếp theo.",
+    "poolConsistencyTitle": "Znada đã khôi phục cài đặt hình nền",
+    "poolConsistencyBody": "Quá trình lưu bị gián đoạn (có thể do mất điện hoặc tắt máy đột ngột) khiến màn hình trỏ tới hình ảnh lưu chưa hoàn tất. Cài đặt đã được xóa. Các bức ảnh của bạn không bị ảnh hưởng."
   },
   "toast": {
     "applied": "Đã áp dụng hình nền",
@@ -426,5 +433,21 @@
     "aurora": "Cực quang",
     "color": "Màu từ ảnh",
     "soon": "Sắp có thêm"
+  },
+  "card": {
+    "saveAs": "Lưu thành…",
+    "copyFile": "Sao chép hình ảnh",
+    "copyLink": "Sao chép liên kết",
+    "copyingFile": "Đang sao chép hình ảnh…",
+    "copiedFile": "Đã sao chép hình ảnh",
+    "copiedLink": "Đã sao chép liên kết",
+    "saving": "Đang chuẩn bị hình ảnh…",
+    "saved": "Đã lưu",
+    "addToLibrary": "Thêm vào thư viện",
+    "copyFailed": "Không thể sao chép hình ảnh",
+    "linkFailed": "Không thể sao chép liên kết",
+    "saveFailed": "Không thể lưu hình ảnh",
+    "noSource": "Hình ảnh này không có trang nguồn",
+    "downloading": "Đang tải xuống hình ảnh…"
   }
 }

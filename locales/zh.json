@@ -252,6 +252,7 @@
     "error": "加载失败: {e}",
     "add": "保存到媒体库",
     "added": "已添加到媒体库",
+    "remove": "从媒体库移除",
     "nsfwNeedsKey": "搜索成年内容需要在设置中配置 API 密钥",
     "sourceLumina": "Znada",
     "sourceInternet": "互联网",
@@ -331,7 +332,9 @@
     "themeSchedule": "定时主题切换",
     "thumbs": "缩略图服务",
     "liveFolder": "动态文件夹“{name}”",
-    "libraryStore": "媒体库文件"
+    "libraryStore": "媒体库文件",
+    "wallpaperSource": "已配置的壁纸来源",
+    "poolConsistency": "已在保存中断后修复壁纸分配"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada 无法更换壁纸",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "已在旁边保存受损文件的副本。媒体库仍可继续使用，更改将保存在其他位置，不会覆盖该文件。点击打开 Znada。",
     "libraryStoreLockedBody": "无法打开媒体库文件 — 可能已被其他程序占用。未覆盖任何内容。点击打开 Znada。",
     "testTitle": "Znada 通知测试",
-    "testBody": "Znada 的 Windows 通知工作正常。"
+    "testBody": "Znada 的 Windows 通知工作正常。",
+    "wallpaperSourceMissingTitle": "Znada 找不到您的壁纸",
+    "wallpaperSourceMissingBody": "原先设置的图片已不存在。如果驱动器或文件夹被移动，请将其恢复，壁纸将在下次更换时重新加载。",
+    "poolConsistencyTitle": "Znada 修复了一项壁纸设置",
+    "poolConsistencyBody": "保存过程意外中断（可能是断电或强制关机），导致显示器关联到未完成保存的图片。该设置已清除。您的图片文件未受任何影响。"
   },
   "toast": {
     "applied": "已成功应用壁纸",
@@ -426,5 +433,21 @@
     "aurora": "极光渐变",
     "color": "提取主色",
     "soon": "敬请期待更多效果"
+  },
+  "card": {
+    "saveAs": "另存为…",
+    "copyFile": "复制图片",
+    "copyLink": "复制链接",
+    "copyingFile": "正在复制图片…",
+    "copiedFile": "图片已复制",
+    "copiedLink": "链接已复制",
+    "saving": "正在准备图片…",
+    "saved": "已保存",
+    "addToLibrary": "添加到媒体库",
+    "copyFailed": "无法复制图片",
+    "linkFailed": "无法复制链接",
+    "saveFailed": "无法保存图片",
+    "noSource": "该图片没有来源网页",
+    "downloading": "正在下载图片…"
   }
 }

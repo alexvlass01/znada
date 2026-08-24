@@ -252,6 +252,7 @@
     "error": "Fejl: {e}",
     "add": "Føj til bibliotek",
     "added": "Føjet til biblioteket",
+    "remove": "Fjern fra bibliotek",
     "nsfwNeedsKey": "NSFW kræver en API-nøgle (Indstillinger)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Planlagt skift af Windows-tema",
     "thumbs": "Tjeneste for miniaturebilleder",
     "liveFolder": "Live-mappe \"{name}\"",
-    "libraryStore": "Biblioteksfil"
+    "libraryStore": "Biblioteksfil",
+    "wallpaperSource": "Kilde for konfigureret tapet",
+    "poolConsistency": "Tapettildeling repareret efter afbrudt gemning"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada kunne ikke skifte tapet",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "En kopi af den beskadigede fil blev gemt ved siden af den. Biblioteket fungerer fortsat, og ændringer gemmes et andet sted, uden at overskrive den fil. Klik for at åbne Znada.",
     "libraryStoreLockedBody": "Biblioteksfilen kunne ikke åbnes — den er muligvis låst af et andet program. Intet overskrives. Klik for at åbne Znada.",
     "testTitle": "Znada notifikationstest",
-    "testBody": "Windows-notifikationer fra Znada fungerer."
+    "testBody": "Windows-notifikationer fra Znada fungerer.",
+    "wallpaperSourceMissingTitle": "Znada kunne ikke finde dit tapet",
+    "wallpaperSourceMissingBody": "Det valgte billede findes ikke længere. Hvis drevet eller mappen blev flyttet, så gendan placeringen, og tapetet vender tilbage ved næste skift.",
+    "poolConsistencyTitle": "Znada har repareret en tapetindstilling",
+    "poolConsistencyBody": "En gemning blev afbrudt (formentlig på grund af strømsvigt eller tvungen nedlukning), hvilket efterlod en skærm knyttet til et ufuldstændigt gemt billede. Indstillingen er nulstillet. Dine billeder er ikke berørt."
   },
   "toast": {
     "applied": "Tapet anvendt",
@@ -426,5 +433,21 @@
     "aurora": "Nordlys",
     "color": "Farve fra foto",
     "soon": "Flere kommer snart"
+  },
+  "card": {
+    "saveAs": "Gem som…",
+    "copyFile": "Kopiér billede",
+    "copyLink": "Kopiér link",
+    "copyingFile": "Kopierer billede…",
+    "copiedFile": "Billede kopieret",
+    "copiedLink": "Link kopieret",
+    "saving": "Klargør billede…",
+    "saved": "Gemt",
+    "addToLibrary": "Føj til bibliotek",
+    "copyFailed": "Kunne ikke kopiere billedet",
+    "linkFailed": "Kunne ikke kopiere linket",
+    "saveFailed": "Kunne ikke gemme billedet",
+    "noSource": "Dette billede har ingen kildeside",
+    "downloading": "Downloader billede…"
   }
 }

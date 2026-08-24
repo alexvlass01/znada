@@ -252,6 +252,7 @@
     "error": "Virhe: {e}",
     "add": "Lisää kirjastoon",
     "added": "Lisätty kirjastoon",
+    "remove": "Poista kirjastosta",
     "nsfwNeedsKey": "NSFW vaatii API-avaimen (Asetukset)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Ajoitettu Windows-teeman vaihto",
     "thumbs": "Pikkukuvapalvelu",
     "liveFolder": "Aktiivinen kansio \"{name}\"",
-    "libraryStore": "Kirjastotiedosto"
+    "libraryStore": "Kirjastotiedosto",
+    "wallpaperSource": "Määritetyn taustakuvan lähde",
+    "poolConsistency": "Taustakuvan määritys korjattiin keskeytyneen tallennuksen jälkeen"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada ei pystynyt vaihtamaan taustakuvaa",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Kopio vioittuneesta tiedostosta tallennettiin sen viereen. Kirjasto toimii edelleen ja muutokset tallennetaan muualle ilman kyseisen tiedoston korvaamista. Napsauta avataksesi Znadan.",
     "libraryStoreLockedBody": "Kirjastotiedostoa ei voitu avata — se saattaa olla toisen ohjelman käytössä. Mitään ei korvattu. Napsauta avataksesi Znadan.",
     "testTitle": "Znada-ilmoitustesti",
-    "testBody": "Windows-ilmoitukset Znadalta toimivat."
+    "testBody": "Windows-ilmoitukset Znadalta toimivat.",
+    "wallpaperSourceMissingTitle": "Znada ei löytänyt taustakuvaasi",
+    "wallpaperSourceMissingBody": "Asetettua kuvaa ei enää löydy. Jos asema tai kansio siirrettiin, palauta se takaisin, ja taustakuva palautuu seuraavassa vaihdossa.",
+    "poolConsistencyTitle": "Znada korjasi taustakuva-asetuksen",
+    "poolConsistencyBody": "Tallennus keskeytyi (todennäköisesti sähkökatkon tai pakotetun sammutuksen vuoksi), ja näyttö jäi viittaamaan kuvaan, jonka tallennus ei valmistunut. Asetus on nollattu. Valokuviisi ei koskettu."
   },
   "toast": {
     "applied": "Taustakuva otettu käyttöön",
@@ -426,5 +433,21 @@
     "aurora": "Revontulet",
     "color": "Väri valokuvasta",
     "soon": "Lisää tulossa pian"
+  },
+  "card": {
+    "saveAs": "Tallenna nimellä…",
+    "copyFile": "Kopioi kuva",
+    "copyLink": "Kopioi linkki",
+    "copyingFile": "Kopioidaan kuvaa…",
+    "copiedFile": "Kuva kopioitu",
+    "copiedLink": "Linkki kopioitu",
+    "saving": "Valmistellaan kuvaa…",
+    "saved": "Tallennettu",
+    "addToLibrary": "Lisää kirjastoon",
+    "copyFailed": "Kuvan kopiointi epäonnistui",
+    "linkFailed": "Linkin kopiointi epäonnistui",
+    "saveFailed": "Kuvan tallennus epäonnistui",
+    "noSource": "Tällä kuvalla ei ole lähdesivua",
+    "downloading": "Ladataan kuvaa…"
   }
 }

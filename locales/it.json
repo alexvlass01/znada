@@ -252,6 +252,7 @@
     "error": "Errore: {e}",
     "add": "Aggiungi alla libreria",
     "added": "Aggiunto alla libreria",
+    "remove": "Rimuovi dalla libreria",
     "nsfwNeedsKey": "I contenuti per adulti richiedono una chiave API (Impostazioni)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Cambio programmato del tema di Windows",
     "thumbs": "Servizio miniature",
     "liveFolder": "Cartella dinamica «{name}»",
-    "libraryStore": "File della libreria"
+    "libraryStore": "File della libreria",
+    "wallpaperSource": "Origine dello sfondo configurato",
+    "poolConsistency": "Assegnazione sfondo ripristinata dopo un salvataggio interrotto"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada non ha potuto cambiare lo sfondo",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Una copia del file danneggiato è stata salvata accanto ad esso. La libreria continua a funzionare e le modifiche vengono salvate altrove, senza sovrascrivere quel file. Fai clic per aprire Znada.",
     "libraryStoreLockedBody": "Impossibile aprire il file della libreria: potrebbe essere bloccato da un altro programma. Non verrà sovrascritto. Fai clic per aprire Znada.",
     "testTitle": "Prova di notifica Znada",
-    "testBody": "Le notifiche di Windows di Znada funzionano."
+    "testBody": "Le notifiche di Windows di Znada funzionano.",
+    "wallpaperSourceMissingTitle": "Znada non ha trovato il tuo sfondo",
+    "wallpaperSourceMissingBody": "L'immagine impostata non è più disponibile. Se l'unità o la cartella è stata spostata, ripristinala e lo sfondo tornerà al prossimo cambio.",
+    "poolConsistencyTitle": "Znada ha corretto un'impostazione dello sfondo",
+    "poolConsistencyBody": "Un salvataggio è stato interrotto (probabilmente per mancanza di corrente o arresto forzato) e un monitor è rimasto associato a un'immagine non completamente salvata. L'impostazione è stata reimpostata. Le tue foto non sono state modificate."
   },
   "toast": {
     "applied": "Sfondo applicato",
@@ -426,5 +433,21 @@
     "aurora": "Aurora",
     "color": "Colore dalla foto",
     "soon": "Altri stili in arrivo"
+  },
+  "card": {
+    "saveAs": "Salva con nome…",
+    "copyFile": "Copia immagine",
+    "copyLink": "Copia link",
+    "copyingFile": "Copia dell'immagine in corso…",
+    "copiedFile": "Immagine copiata",
+    "copiedLink": "Link copiato",
+    "saving": "Preparazione dell'immagine…",
+    "saved": "Salvato",
+    "addToLibrary": "Aggiungi alla libreria",
+    "copyFailed": "Impossibile copiare l'immagine",
+    "linkFailed": "Impossibile copiare il link",
+    "saveFailed": "Impossibile salvare l'immagine",
+    "noSource": "Questa immagine non ha una pagina di origine",
+    "downloading": "Download dell'immagine…"
   }
 }

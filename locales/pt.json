@@ -252,6 +252,7 @@
     "error": "Erro: {e}",
     "add": "Adicionar à biblioteca",
     "added": "Adicionado à biblioteca",
+    "remove": "Remover da biblioteca",
     "nsfwNeedsKey": "O conteúdo NSFW requer uma chave de API (Definições)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Alteração do tema do Windows por horário",
     "thumbs": "Serviço de miniaturas",
     "liveFolder": "Pasta dinâmica «{name}»",
-    "libraryStore": "Arquivo da biblioteca"
+    "libraryStore": "Arquivo da biblioteca",
+    "wallpaperSource": "Origem do papel de parede configurado",
+    "poolConsistency": "Atribuição de papel de parede reparada após gravação interrompida"
   },
   "notify": {
     "wallpaperFailedTitle": "O Znada não conseguiu alterar o papel de parede",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Uma cópia do arquivo corrompido foi salva ao lado. A biblioteca continua funcionando e as alterações são salvas em outro local, sem sobrescrever esse arquivo. Clique para abrir o Znada.",
     "libraryStoreLockedBody": "Não foi possível abrir o arquivo da biblioteca — ele pode estar em uso por outro programa. Nada será sobrescrito. Clique para abrir o Znada.",
     "testTitle": "Teste de notificação do Znada",
-    "testBody": "As notificações do Windows do Znada estão a funcionar."
+    "testBody": "As notificações do Windows do Znada estão a funcionar.",
+    "wallpaperSourceMissingTitle": "O Znada não encontrou o seu papel de parede",
+    "wallpaperSourceMissingBody": "A imagem configurada já não se encontra no local. Se o disco ou pasta foi movido, reponha-o e o papel de parede regressará na próxima alteração.",
+    "poolConsistencyTitle": "O Znada reparou uma definição de papel de parede",
+    "poolConsistencyBody": "Um processo de gravação foi interrompido (provavelmente devido a quebra de energia ou encerramento forçado) e um monitor ficou associado a uma imagem que não terminou de ser guardada. A definição foi limpa. As suas fotografias não foram afetadas."
   },
   "toast": {
     "applied": "Papel de parede aplicado",
@@ -426,5 +433,21 @@
     "aurora": "Aurora",
     "color": "Cor da foto",
     "soon": "Mais opções em breve"
+  },
+  "card": {
+    "saveAs": "Guardar como…",
+    "copyFile": "Copiar imagem",
+    "copyLink": "Copiar ligação",
+    "copyingFile": "A copiar imagem…",
+    "copiedFile": "Imagem copiada",
+    "copiedLink": "Ligação copiada",
+    "saving": "A preparar a imagem…",
+    "saved": "Guardado",
+    "addToLibrary": "Adicionar à biblioteca",
+    "copyFailed": "Não foi possível copiar a imagem",
+    "linkFailed": "Não foi possível copiar a ligação",
+    "saveFailed": "Não foi possível guardar a imagem",
+    "noSource": "Esta imagem não tem página de origem",
+    "downloading": "A transferir imagem…"
   }
 }

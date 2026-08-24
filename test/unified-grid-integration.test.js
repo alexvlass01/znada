@@ -41,9 +41,17 @@ ok('ordinary selection clicks do not build the full virtual ordering unless Shif
 ok('all local builders use the shared checkbox and context-menu controls',
   (renderer.match(/appendSelectionToggle\(card, selectionRecord\)/g) || []).length === 3
   && (renderer.match(/bindLocalCardContextMenu\(card, selectionRecord\)/g) || []).length === 3);
-ok('local kebab controls are gone while Online keeps explicit add buttons',
+ok('local kebab controls are gone while Online keeps an explicit add control',
   !renderer.includes("textContent = '⋯'")
-  && (renderer.match(/add\.textContent = '\+'/g) || []).length >= 2);
+  && renderer.includes("btn.className = 'lib-menu-btn wh-add'"));
+// ONL-008. Both kinds of Online card go through ONE control, and it goes both ways.
+// The two builders used to carry a copy each, and each copy latched: added meant
+// disabled forever, with the only way back through the Library tab.
+ok('both kinds of Online card share one two-way add control',
+  (renderer.match(/attachOnlineAddButton\(card, '(?:cloud|internet)', item,/g) || []).length === 2
+  && renderer.includes('OnlineAdd.buttonState(')
+  && renderer.includes('await removeOnlineFromLibrary(state.pooled)')
+  && !renderer.includes('const markAdded'));
 const massAssignStart = renderer.indexOf('function openMassAssignMenu(');
 const massAssignEnd = renderer.indexOf('function closeLibPopup(', massAssignStart);
 const massAssign = renderer.slice(massAssignStart, massAssignEnd);
@@ -146,7 +154,8 @@ ok('bulk delete-from-disk skips folder cards, like the card menu does',
 const assignment = readSrc('src', 'library-assignment.js');
 ok('there is one funnel into the pool, and it clears the removed state',
   main.includes('function addToPool(type, srcPath, extra) {')
-  && main.includes('if (id && clearRemovedState(srcPath)) poolRevivals++;')
+  && main.includes('const revisionMoved = markRecordRevived(item);')
+  && main.includes('clearRemovedState(srcPath) || revisionMoved')
   && (main.match(/library\.addPath\(config\.library/g) || []).length === 1);
 // The funnel is worthless if another module creates pool entries beside it: the
 // assignment path did exactly that, so a photo could land in a slot while still
@@ -230,7 +239,12 @@ ok('the trash offers no action that would quietly revive a photo',
 ok('bulk delete-from-disk stays hidden without an image, and while the feature is off',
   renderer.includes("const hasImage = LIB.selection.values().some((r) => r.type !== 'folder');")
   && renderer.includes('purge.hidden = !restoring || !hasImage || !FEATURES.physicalDelete;')
-  && renderer.includes('if (freshRecord.type !== \'folder\' && FEATURES.physicalDelete) {')
+  // ONL-009 moved the card menu onto the shared action registry, so the switch is now
+  // handed to it rather than checked inline. Both halves of the old inline condition —
+  // images only, and only while the feature is on — are covered directly by
+  // test/card-actions.test.js; what matters here is that the flag still reaches it.
+  && renderer.includes('CardActions.menuGroupsFor(subject, { physicalDelete: FEATURES.physicalDelete })')
+  && readSrc('renderer', 'card-actions.js').includes("if (action.id === 'deleteForever' && !features.physicalDelete) return false;")
   && renderer.includes('await loadFeatureFlags();')
   && main.includes("if (!physicalDeleteEnabled) return { config, deleted: 0, error: 'disabled' };")
   && preload.includes("getFeatureFlags: () => ipcRenderer.invoke('feature-flags')"));
@@ -239,9 +253,14 @@ ok('the removed view keeps a folder a folder',
 // Deciding by entry counts was wrong: a tag or a favourite leaves the counts identical,
 // so those edits were never written. Saving the pool is safe by default now, and the
 // cheap path is opt-in for handlers that provably touch settings only.
+// The window is generous on purpose: this reads source text, so it fails on a comment
+// being added as readily as on the call being removed, and it did exactly that when the
+// write ORDER changed for DATA-005. What it really guards is covered behaviourally in
+// test/pool-consistency.test.js, which asserts the record is on disk before the settings
+// that name it. This stays as a cheap tripwire, not as the proof.
 ok('persisting the pool is safe by default',
   main.includes('function saveConfig() {')
-  && /function saveConfig\(\)[\s\S]{0,320}saveLibrarySoon\(\);/.test(main)
+  && /function saveConfig\(\)[\s\S]{0,1200}saveLibrarySoon\(\);/.test(main)
   && !main.includes('poolCounts()'));
 ok('the cheap settings path exists and is used by the settings handler',
   main.includes('function saveSettingsOnly() {')
@@ -251,7 +270,8 @@ ok('an unreadable pool file suppresses every write instead of overwriting it',
   main.includes('if (libraryUnsafeToWrite) return;')
   && main.includes('libraryUnsafeToWrite = true;'));
 ok('the inline copy is only dropped once the pool write is confirmed',
-  main.includes('configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: !ok });'));
+  /const ok = libraryStore\.save\(config\.library,[\s\S]{0,500}if \(ok\) \{[\s\S]{0,300}keepInline: false/.test(main)
+  && /const ok = libraryStore\.save\(config\.library,[\s\S]{0,900}else \{[\s\S]{0,300}enterLibraryWriteDegradedMode\(\);/.test(main));
 
 ok('the count is in cards, not in internal bookkeeping rows',
   main.includes('const affected = records.filter((rec) => (')
@@ -270,15 +290,26 @@ ok('the assign menu removes through the same path as everything else',
 
 // Every mutating entry in the card menu must be closed in the removed view, or a
 // photo comes back into the pool while still marked as removed.
-ok('no mutating action is offered on a removed card',
-  renderer.includes('if (!removedView && actions.favorite) {')
-  && renderer.includes('if (!removedView && actions.assign) {')
-  && renderer.includes('if (!removedView && actions.tags) {')
-  && renderer.includes('if (!removedView && actions.remove) {')
-  && !renderer.includes('\n  if (actions.favorite) {')
-  && !renderer.includes('\n  if (actions.assign) {')
-  && !renderer.includes('\n  if (actions.tags) {')
-  && !renderer.includes('\n  if (actions.remove) {'));
+//
+// ONL-009 moved this rule from four inline conditions into the shared action registry,
+// so it is now checked by ASKING the registry rather than by matching source. That also
+// makes the check cover actions added later — including this task's own save/copy,
+// which the old string form would have silently ignored.
+const CardActions = require('../renderer/card-actions');
+{
+  const removed = CardActions.localSubject(
+    { path: 'C:/photos/a.jpg', type: 'image', id: 'p1', removedView: true },
+    { id: 'p1', type: 'image', path: 'C:/photos/a.jpg' },
+  );
+  const offered = CardActions.actionsFor(removed, { physicalDelete: true }).map((a) => a.id);
+  const mutating = ['favorite', 'assign', 'tags', 'remove', 'add', 'saveAs', 'copyFile'];
+  ok('no mutating action is offered on a removed card',
+    mutating.every((id) => !offered.includes(id)) && offered.includes('restore'));
+  // And the menu must be asking with the removed flag set at all — a registry that is
+  // right while nobody tells it the card is in the trash protects nothing.
+  ok('the card menu tells the registry when it is drawing a removed card',
+    renderer.includes('removedView: inRemovedView()'));
+}
 ok('bulk removal is guarded against repeated clicks and always releases its busy state',
   (renderer.match(/if \(librarySelectionBatchPending\(\)\) return;/g) || []).length >= 5
   && renderer.includes('libraryBatchRemovePending = true;')

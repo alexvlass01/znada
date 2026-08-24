@@ -252,6 +252,7 @@
     "error": "エラー: {e}",
     "add": "ライブラリに追加",
     "added": "ライブラリに追加しました",
+    "remove": "ライブラリから削除",
     "nsfwNeedsKey": "成人向けコンテンツの検索には設定で API キーの入力が必要です",
     "sourceLumina": "Znada",
     "sourceInternet": "インターネット",
@@ -331,7 +332,9 @@
     "themeSchedule": "スケジュールテーマ切り替え",
     "thumbs": "サムネイルサービス",
     "liveFolder": "ライブフォルダー「{name}」",
-    "libraryStore": "ライブラリファイル"
+    "libraryStore": "ライブラリファイル",
+    "wallpaperSource": "設定された壁紙ソース",
+    "poolConsistency": "保存の中断後に壁紙の割り当てを修復しました"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada が壁紙を変更できませんでした",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "破損したファイルのコピーが同じ場所に保存されました。ライブラリは引き続き動作し、変更は別の場所に保存されますが、このファイルへの上書きは行われません。クリックして Znada を開きます。",
     "libraryStoreLockedBody": "ライブラリファイルを開けませんでした — 他のプログラムによってロックされている可能性があります。上書きは行われていません。クリックして Znada を開きます。",
     "testTitle": "Znada の通知テスト",
-    "testBody": "Znada の Windows 通知は正常に動作しています。"
+    "testBody": "Znada の Windows 通知は正常に動作しています。",
+    "wallpaperSourceMissingTitle": "Znada は壁紙を見つけられませんでした",
+    "wallpaperSourceMissingBody": "設定されていた画像が元の場所に見つかりません。ドライブまたはフォルダーが移動した場合は元の場所に戻してください。次回の切り替え時に壁紙が再適用されます。",
+    "poolConsistencyTitle": "Znada が壁紙の設定を修復しました",
+    "poolConsistencyBody": "停電や強制終了などにより保存処理が途中で中断され、モニターが未完了の画像を参照していました。この設定をリセットしました。画像ファイルへの影響はありません。"
   },
   "toast": {
     "applied": "壁紙を適用しました",
@@ -426,5 +433,21 @@
     "aurora": "オーロラ",
     "color": "画像から抽出したカラー",
     "soon": "近日公開のスタイル"
+  },
+  "card": {
+    "saveAs": "名前を付けて保存…",
+    "copyFile": "画像をコピー",
+    "copyLink": "リンクをコピー",
+    "copyingFile": "画像をコピー中…",
+    "copiedFile": "画像をコピーしました",
+    "copiedLink": "リンクをコピーしました",
+    "saving": "画像を準備中…",
+    "saved": "保存しました",
+    "addToLibrary": "ライブラリに追加",
+    "copyFailed": "画像をコピーできませんでした",
+    "linkFailed": "リンクをコピーできませんでした",
+    "saveFailed": "画像を保存できませんでした",
+    "noSource": "この画像にはソースページがありません",
+    "downloading": "画像をダウンロード中…"
   }
 }

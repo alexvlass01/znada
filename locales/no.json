@@ -252,6 +252,7 @@
     "error": "Feil: {e}",
     "add": "Legg til i bibliotek",
     "added": "Lagt til i bibliotek",
+    "remove": "Fjern fra bibliotek",
     "nsfwNeedsKey": "NSFW trenger en API-nøkkel (Innstillinger)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internett",
@@ -331,7 +332,9 @@
     "themeSchedule": "Planlagt bytte av Windows-tema",
     "thumbs": "Tjeneste for miniatyrbilder",
     "liveFolder": "Live-mappe \"{name}\"",
-    "libraryStore": "Biblioteksfil"
+    "libraryStore": "Biblioteksfil",
+    "wallpaperSource": "Kilde for konfigurert bakgrunn",
+    "poolConsistency": "Bakgrunnstilordning reparert etter avbrutt lagring"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada kunne ikke endre bakgrunnen",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "En kopi av den skadede filen ble lagret ved siden av den. Biblioteket fortsetter å fungere, og endringer lagres et annet sted uten å overskrive filen. Klikk for å åpne Znada.",
     "libraryStoreLockedBody": "Biblioteksfilen kunne ikke åpnes — den kan være låst av et annet program. Ingenting ble overskrevet. Klikk for å åpne Znada.",
     "testTitle": "Test av Znada-varsel",
-    "testBody": "Windows-varsler fra Znada fungerer."
+    "testBody": "Windows-varsler fra Znada fungerer.",
+    "wallpaperSourceMissingTitle": "Znada fant ikke bakgrunnen din",
+    "wallpaperSourceMissingBody": "Det valgte bildet er ikke lenger tilgjengelig. Hvis stasjonen eller mappen ble flyttet, legg den tilbake og bakgrunnen gjenopprettes ved neste endring.",
+    "poolConsistencyTitle": "Znada reparerte en bakgrunnsinnstilling",
+    "poolConsistencyBody": "En lagring ble avbrutt (sannsynligvis på grunn av strømbrudd eller tvungen avslutning), og en skjerm ble koblet til et bilde som ikke ble ferdig lagret. Innstillingen er tilbakestilt. Bildene dine ble ikke påvirket."
   },
   "toast": {
     "applied": "Bakgrunn brukt",
@@ -426,5 +433,21 @@
     "aurora": "Nordlys",
     "color": "Farge fra bilde",
     "soon": "Mer kommer snart"
+  },
+  "card": {
+    "saveAs": "Lagre som…",
+    "copyFile": "Kopier bilde",
+    "copyLink": "Kopier lenke",
+    "copyingFile": "Kopierer bilde…",
+    "copiedFile": "Bilde kopiert",
+    "copiedLink": "Lenke kopiert",
+    "saving": "Klargjør bilde…",
+    "saved": "Lagret",
+    "addToLibrary": "Legg til i bibliotek",
+    "copyFailed": "Kunne ikke kopiere bildet",
+    "linkFailed": "Kunne ikke kopiere lenken",
+    "saveFailed": "Kunne ikke lagre bildet",
+    "noSource": "Dette bildet har ingen kildeside",
+    "downloading": "Laster ned bilde…"
   }
 }

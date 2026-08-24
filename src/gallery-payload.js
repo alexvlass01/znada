@@ -24,6 +24,16 @@ function windowItemsAroundIndex(items, index, maxItems = DEFAULT_MAX_GALLERY_ITE
   };
 }
 
+function sanitizePooled(pooled) {
+  if (!pooled || typeof pooled !== 'object') return null;
+  const id = typeof pooled.id === 'string' ? pooled.id.slice(0, 200) : '';
+  const path = typeof pooled.path === 'string' ? pooled.path.slice(0, 4096) : '';
+  // Nothing to name the record by means nothing to remove — say so plainly rather than
+  // handing back a record that would match by accident.
+  if (!id && !path) return null;
+  return { id, path, type: pooled.type === 'folder' ? 'folder' : 'image' };
+}
+
 function sanitizeGalleryPayload(payload, options = {}) {
   const raw = payload && typeof payload === 'object' ? payload : {};
   const rawItems = Array.isArray(raw.items) ? raw.items : [];
@@ -40,6 +50,10 @@ function sanitizeGalleryPayload(payload, options = {}) {
       previewUrl: typeof item.previewUrl === 'string' ? item.previewUrl : '',
       query: typeof item.query === 'string' ? item.query.slice(0, 500) : '',
       added: !!item.added,
+      // ONL-008. Exactly the record shape `library-remove-many` takes, so the viewer can
+      // hand it straight back when the user undoes an add. Sanitized like everything
+      // else here: the viewer never sees a whole pool record, only what names this one.
+      pooled: sanitizePooled(item.pooled),
       raw: rawItem,
     };
   }).filter(Boolean);
@@ -54,5 +68,6 @@ module.exports = {
   DEFAULT_MAX_GALLERY_ITEMS,
   clampIndex,
   windowItemsAroundIndex,
+  sanitizePooled,
   sanitizeGalleryPayload,
 };

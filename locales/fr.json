@@ -252,6 +252,7 @@
     "error": "Erreur : {e}",
     "add": "Ajouter à la bibliothèque",
     "added": "Ajouté à la bibliothèque",
+    "remove": "Retirer de la bibliothèque",
     "nsfwNeedsKey": "Le contenu NSFW nécessite une clé API (Paramètres)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Changement de thème Windows par horaire",
     "thumbs": "Service de vignettes",
     "liveFolder": "Dossier dynamique « {name} »",
-    "libraryStore": "Fichier de bibliothèque"
+    "libraryStore": "Fichier de bibliothèque",
+    "wallpaperSource": "Source du fond d'écran configuré",
+    "poolConsistency": "Attribution du fond d'écran réparée après une interruption de l'enregistrement"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada n'a pas pu changer le fond d'écran",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Une copie du fichier endommagé a été enregistrée à côté. La bibliothèque continue de fonctionner et les modifications sont enregistrées ailleurs, sans écraser ce fichier. Cliquez pour ouvrir Znada.",
     "libraryStoreLockedBody": "Impossible d'ouvrir le fichier de bibliothèque — il est peut-être verrouillé par un autre programme. Il ne sera pas écrasé. Cliquez pour ouvrir Znada.",
     "testTitle": "Test de notification Znada",
-    "testBody": "Les notifications Windows de Znada fonctionnent."
+    "testBody": "Les notifications Windows de Znada fonctionnent.",
+    "wallpaperSourceMissingTitle": "Znada n'a pas trouvé votre fond d'écran",
+    "wallpaperSourceMissingBody": "L'image définie n'est plus disponible. Si le lecteur ou le dossier a été déplacé, remettez-le en place et le fond d'écran réapparaîtra au prochain changement.",
+    "poolConsistencyTitle": "Znada a réparé un paramètre de fond d'écran",
+    "poolConsistencyBody": "Un enregistrement a été interrompu (probablement une coupure de courant ou un arrêt forcé), laissant un moniteur associé à une image incomplètement enregistrée. Le paramètre a été réinitialisé. Vos photos n'ont pas été touchées."
   },
   "toast": {
     "applied": "Fond d'écran appliqué",
@@ -426,5 +433,21 @@
     "aurora": "Aurore",
     "color": "Couleur de la photo",
     "soon": "Plus d'options bientôt"
+  },
+  "card": {
+    "saveAs": "Enregistrer sous…",
+    "copyFile": "Copier l'image",
+    "copyLink": "Copier le lien",
+    "copyingFile": "Copie de l'image en cours…",
+    "copiedFile": "Image copiée",
+    "copiedLink": "Lien copié",
+    "saving": "Préparation de l'image…",
+    "saved": "Enregistré",
+    "addToLibrary": "Ajouter à la bibliothèque",
+    "copyFailed": "Impossible de copier l'image",
+    "linkFailed": "Impossible de copier le lien",
+    "saveFailed": "Impossible d'enregistrer l'image",
+    "noSource": "Cette image n'a pas de page source",
+    "downloading": "Téléchargement de l'image…"
   }
 }

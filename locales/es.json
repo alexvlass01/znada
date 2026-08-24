@@ -252,6 +252,7 @@
     "error": "Error: {e}",
     "add": "Añadir a la biblioteca",
     "added": "Añadido a la biblioteca",
+    "remove": "Quitar de la biblioteca",
     "nsfwNeedsKey": "El contenido NSFW requiere una clave de API (Ajustes)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Cambio del tema de Windows por horario",
     "thumbs": "Servicio de miniaturas",
     "liveFolder": "Carpeta dinámica «{name}»",
-    "libraryStore": "Archivo de biblioteca"
+    "libraryStore": "Archivo de biblioteca",
+    "wallpaperSource": "Origen del fondo configurado",
+    "poolConsistency": "Asignación de fondo reparada tras un guardado interrumpido"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada no pudo cambiar el fondo de pantalla",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Se guardó una copia del archivo dañado junto a él. La biblioteca sigue funcionando y los cambios se guardan en otro lugar, pero no se sobrescribe ese archivo. Haz clic para abrir Znada.",
     "libraryStoreLockedBody": "No se pudo abrir el archivo de la biblioteca: puede que esté bloqueado por otro programa. No se sobrescribirá. Haz clic para abrir Znada.",
     "testTitle": "Prueba de notificación de Znada",
-    "testBody": "Las notificaciones de Windows de Znada funcionan."
+    "testBody": "Las notificaciones de Windows de Znada funcionan.",
+    "wallpaperSourceMissingTitle": "Znada no pudo encontrar tu fondo de pantalla",
+    "wallpaperSourceMissingBody": "La imagen seleccionada ya no está en su ubicación. Si se movió el disco o la carpeta, restaúrala y el fondo se aplicará en el próximo cambio.",
+    "poolConsistencyTitle": "Znada reparó un ajuste de fondo de pantalla",
+    "poolConsistencyBody": "Se interrumpió un guardado (probablemente por un corte de energía o apagado forzado) y un monitor quedó vinculado a una imagen que no se terminó de guardar. Se ha restablecido el ajuste. Tus fotos no se han modificado."
   },
   "toast": {
     "applied": "Fondo de pantalla aplicado",
@@ -426,5 +433,21 @@
     "aurora": "Aurora",
     "color": "Color de la foto",
     "soon": "Más opciones pronto"
+  },
+  "card": {
+    "saveAs": "Guardar como…",
+    "copyFile": "Copiar imagen",
+    "copyLink": "Copiar enlace",
+    "copyingFile": "Copiando imagen…",
+    "copiedFile": "Imagen copiada",
+    "copiedLink": "Enlace copiado",
+    "saving": "Preparando la imagen…",
+    "saved": "Guardado",
+    "addToLibrary": "Añadir a la biblioteca",
+    "copyFailed": "No se pudo copiar la imagen",
+    "linkFailed": "No se pudo copiar el enlace",
+    "saveFailed": "No se pudo guardar la imagen",
+    "noSource": "Esta imagen no tiene página de origen",
+    "downloading": "Descargando imagen…"
   }
 }

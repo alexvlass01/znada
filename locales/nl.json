@@ -252,6 +252,7 @@
     "error": "Fout: {e}",
     "add": "Aan bibliotheek toevoegen",
     "added": "Aan bibliotheek toegevoegd",
+    "remove": "Uit bibliotheek verwijderen",
     "nsfwNeedsKey": "Voor NSFW is een API-sleutel nodig (Instellingen)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -331,7 +332,9 @@
     "themeSchedule": "Geplande wissel van Windows-thema",
     "thumbs": "Miniatuurservice",
     "liveFolder": "Live map \"{name}\"",
-    "libraryStore": "Bibliotheekbestand"
+    "libraryStore": "Bibliotheekbestand",
+    "wallpaperSource": "Bron van ingestelde achtergrond",
+    "poolConsistency": "Achtergrondtoewijzing hersteld na een onderbroken opslagbewerking"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada kon de achtergrond niet wijzigen",
@@ -344,7 +347,11 @@
     "libraryStoreDamagedBody": "Er is een kopie van het beschadigde bestand ernaast opgeslagen. De bibliotheek blijft werken en wijzigingen worden elders opgeslagen zonder dat bestand te overschrijven. Klik om Znada te openen.",
     "libraryStoreLockedBody": "Het bibliotheekbestand kon niet worden geopend — het is mogelijk vergrendeld door een ander programma. Er is niets overschreven. Klik om Znada te openen.",
     "testTitle": "Znada-meldingstest",
-    "testBody": "Windows-meldingen van Znada werken."
+    "testBody": "Windows-meldingen van Znada werken.",
+    "wallpaperSourceMissingTitle": "Znada kon je achtergrond niet vinden",
+    "wallpaperSourceMissingBody": "De ingestelde afbeelding is niet meer aanwezig. Als het station of de map is verplaatst, zet deze dan terug en de achtergrond wordt bij de volgende wissel geladen.",
+    "poolConsistencyTitle": "Znada heeft een achtergrondinstelling hersteld",
+    "poolConsistencyBody": "Een opslagbewerking werd afgebroken (waarschijnlijk door stroomuitval of geforceerde afsluiting) en een monitor verwees naar een onvolledig opgeslagen afbeelding. De instelling is gewist. Je foto's zijn onaangetast gebleven."
   },
   "toast": {
     "applied": "Achtergrond toegepast",
@@ -426,5 +433,21 @@
     "aurora": "Noorderlicht",
     "color": "Kleur uit foto",
     "soon": "Binnenkort meer"
+  },
+  "card": {
+    "saveAs": "Opslaan als…",
+    "copyFile": "Afbeelding kopiëren",
+    "copyLink": "Link kopiëren",
+    "copyingFile": "Afbeelding kopiëren…",
+    "copiedFile": "Afbeelding gekopieerd",
+    "copiedLink": "Link gekopieerd",
+    "saving": "Afbeelding voorbereiden…",
+    "saved": "Opgeslagen",
+    "addToLibrary": "Aan bibliotheek toevoegen",
+    "copyFailed": "Kon de afbeelding niet kopiëren",
+    "linkFailed": "Kon de link niet kopiëren",
+    "saveFailed": "Kon de afbeelding niet opslaan",
+    "noSource": "Deze afbeelding heeft geen bronpagina",
+    "downloading": "Afbeelding downloaden…"
   }
 }

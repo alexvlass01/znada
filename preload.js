@@ -40,7 +40,16 @@ contextBridge.exposeInMainWorld('api', {
   libraryAddPaths: (paths) => ipcRenderer.invoke('library-add-paths', paths),
   // Records are { path, id? }: every card knows its path, only some have a pool id.
   libraryRemoveMany: (records) => ipcRenderer.invoke('library-remove-many', records),
-  libraryUndoRemove: () => ipcRenderer.invoke('library-undo-remove'),
+  // The token binds this UI action to the exact removal that created its toast.
+  // Without it, an old toast in the main window could undo a newer removal made in
+  // the fullscreen viewer (main intentionally keeps only one removal snapshot).
+  libraryUndoRemove: (token) => ipcRenderer.invoke('library-undo-remove', token),
+  // ONL-009 card actions. Descriptors, never URLs: main looks up or validates every
+  // address itself, so a compromised renderer cannot aim these at somewhere else.
+  cardOpenSource: (card) => ipcRenderer.invoke('card-open-source', card),
+  cardCopyLink: (card) => ipcRenderer.invoke('card-copy-link', card),
+  cardCopyFile: (card) => ipcRenderer.invoke('card-copy-file', card),
+  cardSaveAs: (card) => ipcRenderer.invoke('card-save-as', card),
   libraryHiddenList: () => ipcRenderer.invoke('library-hidden-list'),
   libraryRestore: (paths) => ipcRenderer.invoke('library-restore', paths),
   libraryDeleteForever: (paths) => ipcRenderer.invoke('library-delete-forever', paths),

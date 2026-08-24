@@ -252,6 +252,7 @@
     "error": "Error: {e}",
     "add": "Add to library",
     "added": "Added to library",
+    "remove": "Remove from library",
     "nsfwNeedsKey": "NSFW needs an API key (Settings)",
     "sourceLumina": "Znada",
     "sourceInternet": "Internet",
@@ -332,7 +333,8 @@
     "thumbs": "Thumbnail service",
     "liveFolder": "Live folder \"{name}\"",
     "libraryStore": "Library file",
-    "wallpaperSource": "Configured wallpaper source"
+    "wallpaperSource": "Configured wallpaper source",
+    "poolConsistency": "Wallpaper assignment repaired after an interrupted save"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada couldn't change the wallpaper",
@@ -347,7 +349,9 @@
     "testTitle": "Znada notification test",
     "testBody": "Windows notifications from Znada are working.",
     "wallpaperSourceMissingTitle": "Znada could not find your wallpaper",
-    "wallpaperSourceMissingBody": "The picture it was set to is not there any more. If it is on a drive or folder that moved, put it back and the wallpaper returns on the next change."
+    "wallpaperSourceMissingBody": "The picture it was set to is not there any more. If it is on a drive or folder that moved, put it back and the wallpaper returns on the next change.",
+    "poolConsistencyTitle": "Znada repaired a wallpaper setting",
+    "poolConsistencyBody": "A save was cut short — probably a power loss or a forced shutdown — and left a monitor pointing at a picture that never finished saving. The setting has been cleared. Your pictures were not touched."
   },
   "toast": {
     "applied": "Wallpaper applied",
@@ -429,5 +433,21 @@
     "aurora": "Aurora",
     "color": "Color from photo",
     "soon": "More coming soon"
+  },
+  "card": {
+    "saveAs": "Save as…",
+    "copyFile": "Copy picture",
+    "copyLink": "Copy link",
+    "copyingFile": "Copying the picture…",
+    "copiedFile": "Picture copied",
+    "copiedLink": "Link copied",
+    "saving": "Preparing the picture…",
+    "saved": "Saved",
+    "addToLibrary": "Add to library",
+    "copyFailed": "Could not copy the picture",
+    "linkFailed": "Could not copy the link",
+    "saveFailed": "Could not save the picture",
+    "noSource": "This picture has no source page",
+    "downloading": "Downloading the picture…"
   }
 }
