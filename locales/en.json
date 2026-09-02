@@ -219,7 +219,13 @@
     "unitB": "B",
     "unitKb": "KB",
     "unitMb": "MB",
-    "unitGb": "GB"
+    "unitGb": "GB",
+    "lookupMeta": "Find tags and source",
+    "rating": "Content rating",
+    "ratingGeneral": "General",
+    "ratingSensitive": "Sensitive",
+    "ratingQuestionable": "Questionable",
+    "ratingExplicit": "Explicit"
   },
   "viewer": {
     "title": "Preview",
@@ -261,9 +267,13 @@
     "ratingSuggestive": "Suggestive",
     "ratingExplicit": "Explicit",
     "offline": "No internet connection",
+    "timeout": "The server did not answer",
+    "sessionChanged": "The account changed while this was loading",
+    "storageFailed": "Could not write to disk",
     "signIn": "Sign in with Google",
     "signOut": "Sign out",
     "signingIn": "Opening your browser…",
+    "signinCancel": "Cancel",
     "signedIn": "Signed in",
     "signedOut": "Signed out",
     "signinFailed": "Sign-in failed",
@@ -333,6 +343,7 @@
     "thumbs": "Thumbnail service",
     "liveFolder": "Live folder \"{name}\"",
     "libraryStore": "Library file",
+    "configStore": "Settings file",
     "wallpaperSource": "Configured wallpaper source",
     "poolConsistency": "Wallpaper assignment repaired after an interrupted save"
   },
@@ -346,6 +357,9 @@
     "libraryStoreFailedTitle": "Znada could not read your library file",
     "libraryStoreDamagedBody": "A copy of the damaged file was saved next to it. Your library keeps working and changes are saved elsewhere, but nothing is written over that file. Click to open Znada.",
     "libraryStoreLockedBody": "The library file could not be opened — it may be locked by another program. Nothing is written over it. Click to open Znada.",
+    "configStoreFailedTitle": "Znada could not read your settings file",
+    "configStoreLockedBody": "Your settings file could not be opened — it may be locked by another program. Znada is running on its default settings for now and will not write over that file, so nothing is lost. Restart once the file is available. Click to open Znada.",
+    "configStoreDamagedBody": "Your settings file is damaged and a backup copy of it could not be made. Znada is running on its default settings and will not write over the damaged file, so it can still be recovered by hand. Click to open Znada.",
     "testTitle": "Znada notification test",
     "testBody": "Windows notifications from Znada are working.",
     "wallpaperSourceMissingTitle": "Znada could not find your wallpaper",
@@ -448,6 +462,13 @@
     "linkFailed": "Could not copy the link",
     "saveFailed": "Could not save the picture",
     "noSource": "This picture has no source page",
-    "downloading": "Downloading the picture…"
+    "downloading": "Downloading the picture…",
+    "lookupMeta": "Find tags and source",
+    "lookupRunning": "Looking for this picture online…",
+    "lookupAdded": "Found it — added {n} tags",
+    "lookupNoNew": "Found it, but there was nothing new to add",
+    "lookupNothing": "No catalogue has this exact file",
+    "lookupBusy": "Too many requests just now — try again in {n} s",
+    "lookupFailed": "Could not check right now"
   }
 }

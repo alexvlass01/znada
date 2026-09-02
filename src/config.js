@@ -66,7 +66,16 @@ const DEFAULT_CONFIG = {
   // Persisted Online search params (restored on restart). sort = whSort value;
   // purity = the SFW/Sketchy/NSFW content filter.
   onlineSort: 'date_added',
-  onlinePurity: { sfw: true, sketchy: true, nsfw: false },
+  // BUG-020. Measured on the live feed 2026-08-25: with `sketchy` on, 40-42% of a page
+  // from either provider sits above "safe" — and on a booru our `sketchy` expands into
+  // TWO ratings, `sensitive` and `questionable`. The default has to be the setting that
+  // never embarrasses anyone; widening it is one click.
+  onlinePurity: { sfw: true, sketchy: false, nsfw: false },
+  // One-shot marker for that change. Deliberately `false` here: an existing config file
+  // has no such field, so it inherits this default and the migration below runs once.
+  // A profile that has already been migrated carries `true` and is never touched again,
+  // so a user who deliberately turns `sketchy` back on keeps it.
+  onlineDefaultsV2: false,
   // ONL-009. Folder the "Save as…" dialog opens in, remembered between runs at the
   // owner's request. Never used as storage the app relies on: an export leaves no
   // library record, so a folder that disappears (a removed drive) costs nothing —
@@ -195,12 +204,24 @@ function normalize(cfg) {
 
   if (!['date_added', 'toplist', 'random', 'views'].includes(cfg.onlineSort)) cfg.onlineSort = 'date_added';
   cfg.onlinePurity = {
-    sfw: true, sketchy: true, nsfw: false,
+    sfw: true, sketchy: false, nsfw: false,
     ...(cfg.onlinePurity && typeof cfg.onlinePurity === 'object' ? cfg.onlinePurity : {}),
   };
   cfg.onlinePurity.sfw = !!cfg.onlinePurity.sfw;
   cfg.onlinePurity.sketchy = !!cfg.onlinePurity.sketchy;
   cfg.onlinePurity.nsfw = !!cfg.onlinePurity.nsfw;
+  // BUG-020, one-time only. Everyone who never opened the (hidden) content row is
+  // carrying a `sketchy` nobody chose, so it is turned off once for existing profiles.
+  // The marker is what makes it ONCE: after this the field is the user's own, and a
+  // later update must not quietly reach in and change it again.
+  //
+  // Deliberately BEFORE the "at least one rating" guard below, not after. A profile with
+  // only the middle rating on would otherwise come out of this with nothing selected at
+  // all, and an empty selection means the Online tab returns no pictures whatsoever.
+  if (cfg.onlineDefaultsV2 !== true) {
+    cfg.onlinePurity.sketchy = false;
+    cfg.onlineDefaultsV2 = true;
+  }
   // Keep at least one purity on (the UI enforces the same).
   if (!cfg.onlinePurity.sfw && !cfg.onlinePurity.sketchy && !cfg.onlinePurity.nsfw) cfg.onlinePurity.sfw = true;
 
@@ -226,15 +247,33 @@ function normalize(cfg) {
 // library.migrateConfig() sees the real items and stays idempotent. A config that
 // predates the split still carries its pool inline; that copy is picked up here and
 // moves to the store on the next save.
+// BUG-023. "The file is not there" and "the file could not be read" are different
+// answers, and only the first one means a new profile. Every read exception used to
+// collapse into the second branch below, so a locked file, a permission error or a
+// failing disk produced defaults — which the caller then wrote over the real settings.
+//
+// Mirrors what the pool file has done since DATA-004 (see library-store.load): read
+// what can be read, say honestly how it got here, and let the caller block writes.
+function readConfigFile(configPath) {
+  try {
+    return { state: 'ok', raw: fs.readFileSync(configPath, 'utf8') };
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return { state: 'missing', raw: null };
+    console.error('config.json недоступен для чтения; настройки НЕ будут перезаписаны:', err);
+    return { state: 'unreadable', raw: null };
+  }
+}
+
 function load(configPath) {
-  let raw = null;
-  try { raw = fs.readFileSync(configPath, 'utf8'); } catch { raw = null; }
+  const read = readConfigFile(configPath);
+  const raw = read.raw;
+  let sourceState = read.state;
   let cfg;
   let inlineLibrary = null;
   let inlineTrash = null;
   if (raw != null) {
     try {
-      const parsed = JSON.parse(raw.replace(/^﻿/, '')); // strip BOM if present
+      const parsed = JSON.parse(raw.replace(/^\uFEFF/, '')); // strip BOM if present
       cfg = { ...freshDefaults(), ...parsed };
       inlineLibrary = parsed.library && typeof parsed.library === 'object' ? parsed.library : null;
       // The recovery path writes the trash inline next to the pool; reading only the
@@ -244,8 +283,25 @@ function load(configPath) {
       // existed so legacy autoSwitch:false can migrate to mode='off'.
       if (!Object.prototype.hasOwnProperty.call(parsed, 'wallpaperSchedule')) cfg.wallpaperSchedule = null;
     } catch (err) {
-      try { fs.copyFileSync(configPath, `${configPath}.corrupt-${Date.now()}.bak`); } catch {}
-      console.error('config.json повреждён, откат к дефолтам (бэкап сохранён):', err);
+      // The backup IS the recovery path, so whether it was made decides what may happen
+      // next. With one, falling back to defaults is the long-standing policy and the
+      // damaged bytes are still there to go back to. Without one, this file is the only
+      // copy of the user's settings in existence, and writing defaults over it destroys
+      // the last thing anyone could have recovered by hand.
+      let backedUp = false;
+      try {
+        fs.copyFileSync(configPath, `${configPath}.corrupt-${Date.now()}.bak`);
+        backedUp = true;
+      } catch (backupErr) {
+        console.error('Не удалось сохранить бэкап повреждённого config.json:', backupErr);
+      }
+      sourceState = backedUp ? 'corrupt' : 'corrupt-unbacked';
+      console.error(
+        backedUp
+          ? 'config.json повреждён, откат к дефолтам (бэкап сохранён):'
+          : 'config.json повреждён и бэкап НЕ создан — запись заблокирована:',
+        err,
+      );
       cfg = freshDefaults();
     }
   } else {
@@ -281,9 +337,24 @@ function load(configPath) {
       unreadable: !!stored.unreadable,
       broken: !!stored.broken,
       newerVersion: !!stored.newerVersion,
-      mergedInline: (!!inlineLibrary && Object.keys(inlineLibrary).length > 0)
-        || (!!inlineTrash && inlineTrash.length > 0),
+      // BUG-024. Whether the inline copy actually CONTRIBUTED, not merely whether it
+      // was present. This flag is what tells main the canonical file needs rewriting,
+      // and counting rejected candidates made a damaged config.json trigger a rewrite
+      // of a perfectly healthy store.
+      mergedInline: !!mergedPool.inlineContributed,
       normalizeAdded: afterNormalize !== beforeNormalize,
+    },
+    enumerable: false, writable: true, configurable: true,
+  });
+  // BUG-023. How the SETTINGS got here, kept the same way and for the same reason as
+  // _poolSource above: non-enumerable, so it never reaches config.json or the renderer
+  // through a plain copy. `writable: false` is the whole point — the caller runs on
+  // defaults for this session and writes nothing over what it could not read.
+  Object.defineProperty(normalized, '_configSource', {
+    value: {
+      state: sourceState,
+      existed: sourceState !== 'missing',
+      writable: sourceState === 'ok' || sourceState === 'missing' || sourceState === 'corrupt',
     },
     enumerable: false, writable: true, configurable: true,
   });

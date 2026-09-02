@@ -55,7 +55,7 @@ const state = (main) => main.__test.nextChangeState();
 async function settle(main, predicate, what) {
   for (let i = 0; i < 400; i++) {
     if (predicate(state(main))) return state(main);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => { setTimeout(resolve, 5); });
   }
   throw new Error(`${what}: не дождались, состояние осталось ${JSON.stringify(state(main))}`);
 }
@@ -160,7 +160,7 @@ console.log('\nnext-change orchestration (real main.js)\n');
     const main = boot(dir, running);
     await main.invoke('set-slideshow', { intervalMin: 30 });
     const first = (await settleDue(main)).dueAt;
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await new Promise((resolve) => { setTimeout(resolve, 15); });
     await main.invoke('next-wallpaper', null);
     const second = (await settle(main, (s) => s.kind === 'due' && s.dueAt !== first, 'момент не сдвинулся')).dueAt;
     assert.ok(second > first, `отсчёт не перезапустился после ручной смены: ${first} → ${second}`);

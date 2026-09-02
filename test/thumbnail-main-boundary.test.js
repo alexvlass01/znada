@@ -25,12 +25,23 @@ assert.ok(block.includes('thumbPending.get(key)'), 'matching pending work stays 
 const guardCalls = new Set(
   Array.from(main.matchAll(/\b(isTrusted[A-Za-z]*Sender)\s*\(/g), (m) => m[1]),
 );
-assert.ok(guardCalls.size > 0, 'trusted-sender guards are still in use');
+// SEC-002 replaced the hand-written per-handler guards with the registrar in
+// src/ipc-authority.js, so there are none left to call - and asserting that at least one
+// still EXISTED was pinning the old mechanism rather than the rule behind it. The loop
+// below stays (it costs nothing and catches the same class if a guard ever returns);
+// what replaces the count is a check on what actually guards these three channels now.
 for (const name of guardCalls) {
   assert.ok(
     new RegExp(`function\\s+${name}\\s*\\(`).test(main),
     `${name}() is called but never defined in main.js`,
   );
+}
+assert.ok(block.includes('if (!isAuthorizedMediaPath(p))'),
+  'a thumbnail is only drawn for a path the app vouches for');
+const mainOnlyBlock = main.slice(main.indexOf('const IPC_MAIN_ONLY'), main.indexOf('const IPC_MAIN_AND_VIEWER'));
+for (const channel of ['thumb', 'thumb-info', 'thumb-aspects']) {
+  assert.ok(mainOnlyBlock.includes("'" + channel + "'"),
+    channel + ' must stay a main-window-only channel');
 }
 assert.ok(block.includes('runThumbnailTask(async () =>'), 'thumbnail work stays in the bounded task queue');
 assert.ok(block.includes('}, { priority }).finally'), 'current virtual window priority reaches the task queue');
@@ -57,7 +68,7 @@ assert.ok(saveLibrarySoonBody.includes('keepInline: true'),
 assert.ok(block.includes('const key = `${p}|${W}`;'), 'dedup key matches the helper scalar size');
 assert.ok(!main.includes('createThumbnailFromPath'), 'main no longer runs Windows thumbnail extraction');
 assert.ok(main.includes('void thumbnailHost.dispose();'), 'app shutdown disposes the helper');
-assert.ok(/flushPendingLiveFolderAspects\(\);\r?\n  flushLiveFolderState\(\);/.test(main),
+assert.ok(/flushPendingLiveFolderAspects\(\);\r?\n {2}flushLiveFolderState\(\);/.test(main),
   'shutdown flushes learned aspects before saving folder state');
 assert.ok(main.includes('aspect: (m && m.aspect) || 0'),
   'folder navigation exposes persisted aspect metadata to renderer');

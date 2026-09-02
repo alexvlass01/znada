@@ -92,7 +92,7 @@ function event(category, name = 'sample') {
   }).start();
   delayed.enqueue(event('delayed'));
   const delayedFlush = delayed.flush();
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await new Promise((resolve) => { setTimeout(resolve, 10); });
   ok('default writer stays active while a delayed append is still pending',
     delayed.getStats().active && !delayed.getStats().degraded);
   releaseDelayedWrite();
@@ -103,7 +103,7 @@ function event(category, name = 'sample') {
   const slowFs = {
     promises: {
       mkdir: async () => {},
-      appendFile: () => new Promise((resolve) => setTimeout(resolve, 50)),
+      appendFile: () => new Promise((resolve) => { setTimeout(resolve, 50); }),
     },
   };
   const slow = await new JsonlWriter({

@@ -228,7 +228,7 @@ node.dataset.i18n = 'prefs.title'; api.open('after.dataset.com');
     && C.manualEntry(manual, 'action.run').meaning === 'Runs the current action'
     && C.manualEntry(manual, '__proto__') === null);
   ok('artifact comparison can normalize a Windows CRLF checkout',
-    C.normalizeEol('{\r\n  \"a\": 1\r\n}\r\n') === '{\n  "a": 1\n}\n');
+    C.normalizeEol('{\r\n  "a": 1\r\n}\r\n') === '{\n  "a": 1\n}\n');
 }
 
 console.log(`\nAll ${passed} i18n-context tests passed.`);

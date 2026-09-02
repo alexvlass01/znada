@@ -1,10 +1,7 @@
 'use strict';
 
-const THUMBNAIL_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-
-function isGelbooruImageHost(hostname) {
-  return /^img\d*\.gelbooru\.com$/i.test(String(hostname || ''));
-}
+const registry = require('./provider-registry');
+const mediaFormats = require('./media-type');
 
 function canonicalUrl(value) {
   if (!value) return '';
@@ -25,41 +22,48 @@ function itemKeys(item) {
   if (source) keys.push(`source:${source}`);
   const full = canonicalUrl(item && item.full);
   if (full) keys.push(`full:${full}`);
+  // ONL-014c. The three above are all ADDRESSES, and a card from our own catalogue has
+  // none of them: no hash, no source page, no lasting file link. It was therefore
+  // identified by nothing at all, so the same picture arriving from two orderings of the
+  // front page counted twice — measured as four cards for two pictures.
+  //
+  // Its own id within its own site is what it always had. Order among the keys does not
+  // matter: a card is the same card if ANY of its keys has been seen, so a picture two
+  // different sites both hold is still one picture by its hash.
+  if (item && item.provider && item.id) keys.push(`at:${item.provider}:${String(item.id).toLowerCase()}`);
   return keys;
 }
 
-function allowedDownloadUrl(item) {
-  if (!item || !item.full || !item.provider) return false;
-  try {
-    const url = new URL(item.full);
-    if (url.protocol !== 'https:') return false;
-    if (item.provider === 'wallhaven') return url.hostname === 'w.wallhaven.cc';
-    if (item.provider === 'danbooru') return url.hostname === 'cdn.donmai.us';
-    if (item.provider === 'gelbooru') return isGelbooruImageHost(url.hostname);
-    return false;
-  } catch {
-    return false;
-  }
+// ONL-011. Every "may we touch this address?" question now reads the same declared
+// address lists (src/provider-registry.js) instead of repeating a per-provider ladder.
+//
+// The SHAPE of an address is now one rule too. The four checks below used to disagree
+// about it — one refused an address carrying a password while its sibling allowed the
+// very same address, and only one of the four refused an odd port. That disagreement was
+// an accident of the order they were written in, and ONL-011 pinned it with a test
+// rather than settling it. Settled here: no picture site's address legitimately carries
+// a password or a port, so every one of the four refuses both.
+function safeProviderUrl(target) {
+  if (!target) return null;
+  let url;
+  try { url = new URL(String(target)); } catch { return null; }
+  if (url.protocol !== 'https:') return null;
+  if (url.username || url.password || url.port) return null;
+  return url;
 }
 
-// Is this URL one whose image bytes the main process may fetch (referer-gated)
-// for the viewer? Same host rules for the sample and full tiers. Like
-// allowedDownloadUrl but also accepts Gelbooru's apex hotlink.php endpoint.
+// Downloading INTO the library: the picture's own file, on the provider's own CDN.
+function allowedDownloadUrl(item) {
+  if (!item || !item.full || !item.provider || !safeProviderUrl(item.full)) return false;
+  return registry.matchesHost(item.provider, 'image', item.full);
+}
+
+// Bytes the MAIN process may fetch on the viewer's behalf (some hosts need a Referer
+// the window cannot send). Same CDN rules, plus whatever a provider marks as reachable
+// only this way — Gelbooru's apex hotlink endpoint.
 function isAllowedProviderImageUrl(provider, target) {
-  if (!provider || !target) return false;
-  try {
-    const url = new URL(target);
-    if (url.protocol !== 'https:' || url.username || url.password) return false;
-    if (provider === 'wallhaven') return url.hostname === 'w.wallhaven.cc';
-    if (provider === 'danbooru') return url.hostname === 'cdn.donmai.us';
-    if (provider === 'gelbooru') {
-      return isGelbooruImageHost(url.hostname)
-        || ((url.hostname === 'gelbooru.com' || url.hostname === 'www.gelbooru.com') && url.pathname === '/hotlink.php');
-    }
-    return false;
-  } catch {
-    return false;
-  }
+  if (!provider || !safeProviderUrl(target)) return false;
+  return registry.matchesHost(provider, ['image', 'imageProxyOnly'], target);
 }
 
 function allowedFullFetchUrl(item) {
@@ -70,22 +74,15 @@ function allowedSampleFetchUrl(item) {
   return !!item && isAllowedProviderImageUrl(item.provider, item.sample);
 }
 
+// Previews main is allowed to fetch. A provider whose previews load straight from the
+// window declares NO thumbnail hosts, and an empty list means "none", never "any".
 function allowedThumbnailUrl(item) {
-  if (!item || !item.thumb) return false;
-  try {
-    const url = new URL(item.thumb);
-    if (url.protocol !== 'https:' || url.port || url.username || url.password) return false;
-    if (item.provider === 'danbooru') return url.hostname === 'cdn.donmai.us';
-    if (item.provider === 'gelbooru') return isGelbooruImageHost(url.hostname);
-    return false;
-  } catch {
-    return false;
-  }
+  if (!item || !item.thumb || !safeProviderUrl(item.thumb)) return false;
+  return registry.matchesHost(item.provider, 'thumb', item.thumb);
 }
 
 function thumbnailMime(value) {
-  const mime = String(value || '').split(';', 1)[0].trim().toLowerCase();
-  return THUMBNAIL_MIME_TYPES.has(mime) ? mime : '';
+  return mediaFormats.wallpaperMime(value);
 }
 
 function thumbnailDataUrl(bytes, mime) {
@@ -95,18 +92,11 @@ function thumbnailDataUrl(bytes, mime) {
   return buffer.length ? `data:${safeMime};base64,${buffer.toString('base64')}` : '';
 }
 
+// The post page we may open in the user's browser. Retired providers still match here:
+// a picture saved long ago keeps its source address, and it must keep opening.
 function allowedPageUrl(item) {
-  if (!item || !item.page || !item.provider) return false;
-  try {
-    const url = new URL(item.page);
-    if (url.protocol !== 'https:') return false;
-    if (item.provider === 'wallhaven') return url.hostname === 'wallhaven.cc';
-    if (item.provider === 'danbooru') return url.hostname === 'danbooru.donmai.us';
-    if (item.provider === 'gelbooru') return url.hostname === 'gelbooru.com' || url.hostname === 'www.gelbooru.com';
-    return false;
-  } catch {
-    return false;
-  }
+  if (!item || !item.page || !item.provider || !safeProviderUrl(item.page)) return false;
+  return registry.matchesHost(item.provider, 'page', item.page);
 }
 
 function interleave(lists) {
@@ -182,10 +172,31 @@ function resolveFallback(primary, fallback) {
   };
 }
 
+// BUG-020. The browse feed asks each site for TWO orderings at once (what is new and
+// what is well rated) and hands the user one feed rather than two blocks. Interleaving
+// them would produce a visible rhythm — new, top, new, top — and, worse, would put one
+// ordering's first card at the very top every single time. A shuffle removes both.
+//
+// The randomness is injected so the tests are not a coin toss, and each page is shuffled
+// ONCE as it arrives: re-shuffling on every render would reorder cards under the user's
+// cursor, and pressing "more" must never disturb what is already on screen.
+function shuffle(list, rng) {
+  const out = Array.isArray(list) ? list.slice() : [];
+  const random = typeof rng === 'function' ? rng : Math.random;
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    const swap = out[i];
+    out[i] = out[j];
+    out[j] = swap;
+  }
+  return out;
+}
+
 module.exports = {
   canonicalUrl,
+  shuffle,
   itemKeys,
-  isGelbooruImageHost,
+  safeProviderUrl,
   allowedDownloadUrl,
   isAllowedProviderImageUrl,
   allowedFullFetchUrl,

@@ -11,7 +11,10 @@ const path = require('path');
 // it does in the pool, the trash and the removed-markers (src/path-key.js).
 const { pathKey } = require('./path-key');
 
-const IMG_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
+// ONL-015. Which picture files a folder may yield is THE SAME question as which a site
+// may send, so there is one answer and it lives in src/media-type.js. It used to be
+// written out here and, separately and differently, inside each site adapter.
+const IMG_EXTS = new Set(require('./media-type').fileExtensions());
 
 // Normalize a slot to { items: Item[] }. Legacy format was a plain string path
 // (or empty). Item = { type: 'image' | 'folder', path }.
@@ -191,6 +194,9 @@ function usesInterval(slideshow) {
 }
 
 module.exports = {
-  IMG_EXTS, normalizeSlot, scanFolder, scanFolderEntries, scanFolderImagesDeep,
+  // A fresh facade prevents a caller from widening every scanner for the rest of the
+  // process with `playlist.IMG_EXTS.add(...)`.
+  get IMG_EXTS() { return new Set(IMG_EXTS); },
+  normalizeSlot, scanFolder, scanFolderEntries, scanFolderImagesDeep,
   resolveSlot, resolvedIndexOf, pickCurrent, nextIndex, reconcilePosition, usesInterval,
 };

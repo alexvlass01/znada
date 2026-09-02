@@ -48,6 +48,7 @@
       inLibrary: !!pooled,
       page: str(pooled && pooled.source),
       stableFileUrl: false,
+      freshFileUrl: false,
       removedView: !!source.removedView,
       raw: pooled || source,
     };
@@ -65,6 +66,7 @@
       inLibrary: !!pooled,
       page: str(source.page),
       stableFileUrl: !!str(source.full),
+      freshFileUrl: false,
       removedView: false,
       raw: source,
     };
@@ -83,6 +85,10 @@
       inLibrary: !!pooled,
       page: '',
       stableFileUrl: false,
+      // ONL-014. The catalogue mints a fresh signed link at click time, so there IS a
+      // file to be had even though no lasting URL exists. Declared, because “can a file
+      // be produced” is a property of the card, not of which catalogue it came from.
+      freshFileUrl: true,
       removedView: false,
       raw: source,
     };
@@ -96,10 +102,11 @@
   // is already on disk, or the provider can give it to us. Folders never can.
   function canProduceFile(subject) {
     if (!isSubject(subject) || subject.type !== IMAGE) return false;
-    if (subject.path) return true;                 // already on disk
-    if (subject.kind === 'internet') return subject.stableFileUrl;
-    if (subject.kind === 'cloud') return true;     // main fetches a fresh signed URL
-    return false;
+    if (subject.path) return true;                        // already on disk
+    // Asked of the CARD, not of which catalogue it came from: either the picture has a
+    // lasting URL, or its catalogue can mint a fresh one on demand. A new source that
+    // works either way needs nothing added here.
+    return !!subject.stableFileUrl || !!subject.freshFileUrl;
   }
 
   // --- the registry ---------------------------------------------------------
@@ -163,6 +170,24 @@
       multi: false,
       needsFile: false,
       applies: (s) => s.kind === 'local' && !s.removedView,
+    },
+    {
+      // META-001. Asks an online catalogue what it knows about this exact file, and
+      // writes the answer onto the record.
+      //
+      // Deliberately NOT limited to photos that already have a pool record. The first
+      // cut required one, and in the app that meant the action vanished for most of the
+      // library: everything inside a watched folder is a file without a record until it
+      // is used. "Change tags" sits right next to it, applies to exactly those photos,
+      // and makes the record when the user commits — so this does the same. Tags need a
+      // record to live on either way; what matters is that the record appears because
+      // the user acted, not because he opened a menu.
+      id: 'lookupMeta',
+      labelKey: 'card.lookupMeta',
+      group: 'primary',
+      multi: true,
+      needsFile: true,
+      applies: (s) => s.kind === 'local' && !s.removedView && s.type === IMAGE && !!s.path,
     },
     {
       id: 'details',

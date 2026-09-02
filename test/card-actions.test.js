@@ -37,6 +37,15 @@ const cloudCard = (over = {}) => ({ id: 42, title: 'Sample', width: 1920, height
   ok('but it can still be saved, copied, assigned and added, because main can fetch a fresh link',
     list.includes('saveAs') && list.includes('copyFile') && list.includes('assign') && list.includes('add'));
 
+  // ONL-014. Those three answers come from what the CARD declares, not from which
+  // catalogue it came from. Proven by taking the declaration away: nothing else about
+  // the card changes, and every action that needs a file disappears.
+  const noLink = ids({ ...subject, freshFileUrl: false });
+  ok('a card that can neither hold a lasting link nor mint a fresh one is offered no file actions',
+    !noLink.includes('saveAs') && !noLink.includes('copyFile') && !noLink.includes('add'));
+  ok('and one that declares a lasting link is offered them without naming any catalogue',
+    ids({ ...subject, freshFileUrl: false, stableFileUrl: true }).includes('saveAs'));
+
   // The trap: treating "online" as one thing. A Wallhaven card is online too and DOES
   // have both, so a rule written as "if online then show the link actions" passes a
   // careless test and breaks exactly here.

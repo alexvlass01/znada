@@ -100,9 +100,13 @@ ok('bulk removal filters each slot once and never loops the single-item path',
 ok('bulk removal never truncates the batch it was given',
   !removeMany.includes('rawRecords.slice(') && !removeMany.includes('records.slice('));
 // The whole point of LIB-004 is that a photo can be removed without deleting it.
+// CODE-002 found this line holding a real backspace character where `\b` was meant, so
+// the pattern was "a backspace, then fs." - which matches nothing, ever. The assertion is
+// negated, so it passed no matter what the removal code did: a test that could not fail,
+// standing guard over the invariant that removing a photo must not delete the file.
 ok('bulk removal marks folder-backed photos as removed instead of touching files',
   removeMany.includes('folderState.setHidden(liveFolderState')
-  && !/fs\.(unlink|rm|rmSync|unlinkSync)/.test(removeMany));
+  && !/\bfs\.(unlink|rm|rmSync|unlinkSync)/.test(removeMany));
 ok('removal keeps enough state to be undone, including slot membership',
   removeMany.includes('undo.slots.push(')
   && removeMany.includes('lastLibraryRemoval = ')
@@ -355,9 +359,13 @@ ok('Online state is model-backed instead of counted from materialized DOM',
   online.includes('ONLINE.entries.length') && !online.includes('grid.children.length'));
 ok('Online rendering never appends cards directly to the grid',
   !online.includes('grid.appendChild(card)') && !online.includes("grid.innerHTML = ''"));
+// ONL-014c. The guard is written once, in `onlineSearchIsCurrent`, instead of being
+// repeated in each provider’s own loader — there is only one loader now.
 ok('Online reset and pagination are guarded by a generation token',
   online.includes('++ONLINE.generation')
-  && online.includes("generation !== ONLINE.generation || ONLINE.view !== 'search'"));
+  && online.includes('function onlineSearchIsCurrent(generation)')
+  && online.includes('generation === ONLINE.generation')
+  && online.includes("ONLINE.view === 'search'"));
 ok('Cloud favorite removal updates the shared model',
   online.includes('removeOnlineEntry(`cloud:${item.id}`)'));
 ok('both local and Online adapters call the same mount function',
@@ -372,14 +380,35 @@ ok('local folder cards use a refresh epoch while image versions stay structural'
   renderer.includes("entry.kind === 'subfolder' || entry.kind === 'pool-folder'")
   && renderer.includes('return `${entry.kind}:${folderCardEpoch}`')
   && renderer.includes('getVersion: (entry) => localGridVersion(entry)'));
-ok('Online providers publish independently while stale hidden-tab results are rejected',
-  online.includes('publishOnlineBatch(internetTask, generation)')
-  && online.includes('publishOnlineBatch(znadaTask, generation)')
+// ONL-014c. Every source is one request now, so there is nothing to publish separately;
+// what still has to hold is that an answer arriving after the user moved on is dropped.
+ok('Online results are published through one guarded path, and stale ones are rejected',
+  online.includes('publishOnlineBatch(loadInternetResults(generation), generation)')
+  && !online.includes('znadaTask')
   && online.includes("return LIB.filter === 'online'"));
 ok('fresh Online feeds cancel the previous feed resize lifecycle',
   online.includes('if (opts.fresh) resetLibObservers(grid)'));
 ok('session expiry replaces an invalid in-flight favorites feed',
   renderer.includes("if (wasFavorites && ONLINE.view !== 'favorites')")
   && renderer.includes('ONLINE.loaded = false;\n        doOnlineSearch(true);'));
+
+// Owner QA 2026-08-30: dragging a file onto an EMPTY library drew a hairline dashed
+// strip floating above the placeholder instead of highlighting it. The card is a SIBLING
+// of the grid, and an empty grid has no height for an outline to wrap. Both elements are
+// marked now and the stylesheet picks the one that can be seen.
+{
+  const css = readSrc('renderer', 'styles.css');
+  ok('the drop highlight is put on the empty-library card as well as the grid',
+    renderer.includes("grid.classList.toggle('drag-over', on)")
+    && renderer.includes("empty.classList.toggle('drag-over', on)")
+    && !renderer.includes("grid.classList.add('drag-over'); });"));
+  ok('an empty grid draws no collapsed outline',
+    css.includes('.lib-grid.drag-over:empty { outline: none; }'));
+  ok('and the placeholder is what lights up instead',
+    css.includes('.lib-empty.drag-over {')
+    && css.includes('border-color: var(--accent);'));
+  ok('a library WITH cards still gets the outline it always had',
+    css.includes('.lib-grid.drag-over { outline: 2px dashed var(--accent);'));
+}
 
 console.log('\nAll ' + passed + ' unified-grid integration tests passed.');

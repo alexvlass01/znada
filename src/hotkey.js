@@ -140,7 +140,7 @@
     const isMediaKey = [...MEDIA_KEYS].some((name) => name.toLowerCase() === foldedKey);
     const isNumpadDigit = /^num[0-9]$/i.test(key);
     const isOrdinaryKey = /^[a-z0-9]$/i.test(key)
-      || /^[~!@#$%^&*()_+{}|:"<>?`\-=\[\]\\;',./]$/.test(key)
+      || /^[~!@#$%^&*()_+{}|:"<>?`\-=[\]\\;',./]$/.test(key)
       || NAMED_KEYS.has(foldedKey)
       || isNumpadDigit;
     if (!isFunctionKey && !isMediaKey && !isOrdinaryKey) return { ok: false, error: 'invalid' };

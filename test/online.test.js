@@ -85,4 +85,32 @@ ok('fallback: both provider errors are retained', (() => {
   const result = O.resolveFallback({ provider: 'gelbooru', error: 'timeout' }, { provider: 'danbooru', error: '429' });
   return result.provider === 'gelbooru' && result.error.includes('timeout') && result.error.includes('429');
 })());
+// BUG-020. The browse feed asks each site for two orderings and hands back one feed.
+let seed = 7;
+const rng = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+const deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const mixed = O.shuffle(deck, rng);
+ok('shuffle: the input is left alone', deck.join(',') === '1,2,3,4,5,6,7,8,9,10');
+ok('shuffle: nothing is lost or invented', mixed.slice().sort((a, b) => a - b).join(',') === deck.join(','));
+ok('shuffle: the order really changes', mixed.join(',') !== deck.join(','));
+ok('shuffle: an injected generator makes it repeatable', (() => {
+  seed = 7; const first = O.shuffle(deck, rng);
+  seed = 7; const second = O.shuffle(deck, rng);
+  return first.join(',') === second.join(',');
+})());
+ok('shuffle: rubbish in is an empty list, not a throw',
+  O.shuffle(null).length === 0 && O.shuffle(undefined).length === 0 && O.shuffle('nope').length === 0);
+ok('shuffle: one card and none are handled', O.shuffle([9]).join() === '9' && O.shuffle([]).length === 0);
+// The two orderings overlap: a picture can be both new and well rated. It has to appear
+// once, and the deduplication has to happen BEFORE the shuffle, or the duplicate would
+// merely be moved somewhere less obvious.
+ok('shuffle is applied to an already deduplicated feed', (() => {
+  const shared = { provider: 'wallhaven', md5: 'a'.repeat(32), full: 'https://x/a.jpg' };
+  const merged = O.mergeSearchResults([
+    { provider: 'wallhaven', items: [shared, { provider: 'wallhaven', md5: 'b'.repeat(32) }], meta: {} },
+    { provider: 'wallhaven', items: [shared], meta: {} },
+  ], 1);
+  return merged.items.length === 2 && O.shuffle(merged.items, rng).length === 2;
+})());
+
 console.log('\nAll ' + passed + ' online provider tests passed.');

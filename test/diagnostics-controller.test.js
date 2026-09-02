@@ -100,7 +100,7 @@ function fakeIpcMain() {
   });
   await retentionController.startRecording({ reason: 'first' });
   await retentionController.stopRecording({ reason: 'first' });
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => { setTimeout(resolve, 5); });
   await retentionController.startRecording({ reason: 'second' });
   await retentionController.stopRecording({ reason: 'second' });
   const sessionDirs = fs.readdirSync(retentionRoot).filter((name) => name.startsWith('session-'));
@@ -152,7 +152,7 @@ function fakeIpcMain() {
   });
   await degradedMetaController.startRecording({ reason: 'degraded-meta-test' });
   forceWriterDegraded('write_error');
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await new Promise((resolve) => { setTimeout(resolve, 10); });
   const degradedMeta = JSON.parse(fs.readFileSync(degradedMetaController.status().metaPath, 'utf8'));
   ok('writer degradation is persisted immediately without waiting for manual Stop',
     degradedMeta.state === 'degraded' && degradedMeta.degradedReason === 'write_error'

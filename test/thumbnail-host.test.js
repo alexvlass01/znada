@@ -81,7 +81,7 @@ function success(id, extra = {}) {
 }
 
 function waitTurn() {
-  return new Promise((resolve) => setImmediate(resolve));
+  return new Promise((resolve) => { setImmediate(resolve); });
 }
 
 async function disposeHost(host, child) {

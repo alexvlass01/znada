@@ -44,6 +44,17 @@ assert.deepStrictEqual(missingMethods, [], `renderer window.api methods missing 
 assert.ok(invokedChannels.includes('set-hotkey'), 'atomic hotkey IPC is part of the public renderer bridge');
 assert.ok(handledChannels.includes('set-hotkey'), 'main handles the atomic hotkey IPC');
 
+// ONL-014c replaced the catalogue's separate fetch/cursor world with the common
+// `internet-search` path. Keeping the old bridge alive would leave two implementations
+// of the same contract ready to drift apart again.
+assert.ok(
+  !invokedChannels.includes('cloud-catalog')
+    && !handledChannels.includes('cloud-catalog')
+    && !exposedMethods.includes('cloudCatalog')
+    && !renderer.includes('cloudCatalog'),
+  'the retired standalone Cloud catalogue IPC must stay removed from all three layers',
+);
+
 // The fullscreen viewer is a SECOND window with a second bridge, and it was outside this
 // check entirely — a typo in a viewer channel failed silently at runtime. It holds the
 // same contract: nothing invoked that main does not handle, nothing called that the

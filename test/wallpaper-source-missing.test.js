@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const H = require('./helpers/main-harness');
 const applyOutcome = require('../src/apply-outcome');
+const library = require('../src/library');
 
 let passed = 0;
 const failures = [];
@@ -151,15 +152,16 @@ function sourceEntries(m) {
 
   await test('пропавшая живая папка попадает в журнал при скрытом окне', async (dir) => {
     const folder = path.join(dir, 'live');
+    const folderId = library.idFor(folder);
     fs.mkdirSync(folder, { recursive: true });
     writeProfile(dir, {
       autoSwitch: true, style: 'fill', monitors: {},
-      library: { f1: { id: 'f1', type: 'folder', path: folder, tags: [], addedAt: 1 } },
+      library: { [folderId]: { id: folderId, type: 'folder', path: folder, tags: [], addedAt: 1 } },
     });
 
     const m = H.loadMain(dir);
     m.__test.loadConfig();
-    const live = () => m.__test.eventLogEntries().filter((e) => e.channel === 'live-folder:f1');
+    const live = () => m.__test.eventLogEntries().filter((e) => e.channel === `live-folder:${folderId}`);
 
     m.__test.checkLiveFolderReachability();
     assert.strictEqual(live().length, 0, 'a folder that is present was reported as broken');
@@ -181,10 +183,11 @@ function sourceEntries(m) {
   // stayed silent.
   await test('плановый обход зовёт проверку, даже когда окно скрыто', async (dir) => {
     const folder = path.join(dir, 'live');
+    const folderId = library.idFor(folder);
     fs.mkdirSync(folder, { recursive: true });
     writeProfile(dir, {
       autoSwitch: true, style: 'fill', monitors: {},
-      library: { f2: { id: 'f2', type: 'folder', path: folder, tags: [], addedAt: 1 } },
+      library: { [folderId]: { id: folderId, type: 'folder', path: folder, tags: [], addedAt: 1 } },
     });
 
     const m = H.loadMain(dir);
@@ -194,9 +197,9 @@ function sourceEntries(m) {
 
     fs.rmSync(folder, { recursive: true, force: true });
     m.__test.runHourlyLiveFolderPass();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
 
-    const live = m.__test.eventLogEntries().filter((e) => e.channel === 'live-folder:f2');
+    const live = m.__test.eventLogEntries().filter((e) => e.channel === `live-folder:${folderId}`);
     assert.strictEqual(live.length, 1,
       'the hourly pass returned without looking, exactly as it did in the tray');
     assert.strictEqual(live[0].kind, 'failure');

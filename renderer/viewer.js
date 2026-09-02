@@ -340,9 +340,10 @@ async function fullSource(entry, fallback = '') {
   if (entry.kind === 'internet') {
     const item = entry.raw || {};
     const direct = String(item.full || '');
-    // Wallhaven loads directly; booru hosts (e.g. Gelbooru hotlink.php) need a Referer
-    // the renderer can't send, so fetch the full image through main as a data URL.
-    if (item.provider && item.provider !== 'wallhaven') {
+    // ONL-012: some image hosts refuse a request that does not say where it came from,
+    // and this window cannot send that header — so those are fetched through main as a
+    // data URL. The card carries the answer; this file names no site.
+    if (item.provider && !item.loadsDirectly) {
       try {
         const r = await window.viewerApi.internetFull(item);
         if (r && r.dataUrl) return r.dataUrl;
@@ -353,12 +354,12 @@ async function fullSource(entry, fallback = '') {
   return fallback || entry.previewUrl || '';
 }
 
-// Intermediate "sample" tier — only booru items carry a same-host downscale.
-// Fetched through main (referer-gated) as a data URL, like the full image.
+// Intermediate "sample" tier — carried only by sites that keep a same-host downscale,
+// which are the same ones whose images main has to fetch for us.
 async function sampleSource(entry) {
   if (!entry || entry.kind !== 'internet') return '';
   const item = entry.raw || {};
-  if (!item.sample || !item.provider || item.provider === 'wallhaven') return '';
+  if (!item.sample || !item.provider || item.loadsDirectly) return '';
   try {
     const r = await window.viewerApi.internetSample(item);
     if (r && r.dataUrl) return r.dataUrl;
@@ -595,7 +596,7 @@ function showRemovalUndo(entry, pooled, token) {
 // What it CANNOT do is a separate question from what the picture can: there is no tag
 // editor, favourites list or details sheet in this window, so those are left out by
 // naming what this surface implements. Everything named here is genuinely wired.
-const VIEWER_ACTIONS = ['add', 'assign', 'saveAs', 'copyFile', 'copyLink', 'openSource', 'remove'];
+const VIEWER_ACTIONS = ['add', 'assign', 'lookupMeta', 'saveAs', 'copyFile', 'copyLink', 'openSource', 'remove'];
 
 function viewerSubjectFor(entry) {
   if (!entry) return null;
@@ -637,6 +638,13 @@ async function openViewerAssign(entry, descriptor, point) {
       // complaint this behaviour drew in the main window.
       closeViewerPopup();
       let id = entry.added && entry.pooled ? entry.pooled.id : '';
+      if (!id && (entry.kind === 'library' || entry.kind === 'path')) {
+        // A local photo needs a record, not a download. Sending it down the online add
+        // path asked main to fetch a file already on the disk, and main answered
+        // 'badItem' over a picture the user was looking at full-screen.
+        id = await ensureViewerPoolId(entry);
+        if (!id) { showViewerMessage(t('library.assignMissingToast')); return; }
+      }
       if (!id) {
         showViewerMessage(t('card.downloading'), 20000);
         id = await addViewerCardToLibrary(entry, descriptor);
@@ -682,7 +690,7 @@ async function addViewerCardToLibrary(entry, descriptor) {
       : await window.viewerApi.internetAdd(entry.raw, entry.query || '');
   } catch { res = { error: 'download' }; }
   if (!res || res.error) {
-    showViewerMessage(t('online.error', { e: (res && res.error) || '?' }));
+    showViewerMessage(CardTransfer.errorMessage(t, res && res.error));
     return '';
   }
   entry.added = true;
@@ -718,6 +726,7 @@ function openViewerCardMenu(entry, point) {
     copyFile: () => transfer('copyFile'),
     copyLink: () => transfer('copyLink'),
     openSource: () => transfer('openSource'),
+    lookupMeta: () => lookupViewerCardMetadata(entry),
   };
 
   CardMenu.openMenu({
@@ -730,20 +739,70 @@ function openViewerCardMenu(entry, point) {
   });
 }
 
+// The viewer's equivalent of ensurePoolItemForRecord in the main window: the pool record
+// if there is one, and otherwise one made NOW, because the user has actually asked. The
+// registry offers lookup and remove for a local photo whether or not it has a record
+// (card-actions.js, and the comment above `lookupMeta` says why); this is what makes that
+// true here instead of only in the grid.
+async function ensureViewerPoolId(entry) {
+  if (!entry) return '';
+  if (entry.pooled && entry.pooled.id) return entry.pooled.id;
+  if (entry.kind !== 'library' && entry.kind !== 'path') return '';
+  if (!entry.path) return '';
+  let res;
+  try { res = await window.viewerApi.cardEnsureRecord(entry.path, 'image'); }
+  catch { return ''; }
+  const id = (res && res.id) || '';
+  // The same bookkeeping addViewerCardToLibrary does after an add, so the menu and the
+  // action button cannot disagree about what this entry now is.
+  if (id) { entry.added = true; entry.pooled = { id, path: entry.path, type: 'image' }; }
+  return id;
+}
+
+// META-001 from the fullscreen view. The same shared operation the main window runs —
+// the picture on screen is the same picture, so looking it up must be the same act and
+// not a second implementation that drifts.
+//
+// Nothing on this screen displays tags, so there is nothing to redraw afterwards; the
+// updated record reaches the library grid through the ordinary config broadcast.
+async function lookupViewerCardMetadata(entry) {
+  const id = await ensureViewerPoolId(entry);
+  // Never a bare return. card-metadata.js exists because a lookup that answers with
+  // silence is one the user concludes is broken, and this was the one path in the app
+  // that bypassed it entirely: the menu offered the action and the click did nothing.
+  if (!id) { showViewerMessage(t('card.lookupFailed')); return null; }
+  return CardMetadata.run({
+    bridge: window.viewerApi,
+    id,
+    t,
+    notify: (message) => { if (message) showViewerMessage(message); },
+  });
+}
+
 // Taking the picture back out. Shared by the action button and the menu, so the two
 // cannot drift into removing it in different ways.
 async function removeViewerCard(entry) {
-  if (!entry || !entry.added || !entry.pooled) return false;
-  const removedPoolRecord = { ...entry.pooled };
+  if (!entry) return false;
+  // Every card knows its path; only some have a pool id. `library-remove-many` takes
+  // exactly that pair — which is why a photo inside a watched folder is removable from
+  // the grid, and why requiring a record here left the menu item dead and silent.
+  const pooled = entry.pooled || null;
+  const payload = {
+    id: (pooled && pooled.id) || '',
+    path: (pooled && pooled.path) || entry.path || '',
+    type: 'image',
+  };
+  if (!payload.id && !payload.path) { setState(t('library.massDeleteFailed')); return false; }
+  const removedPoolRecord = { ...payload };
   let res;
-  try { res = await window.viewerApi.libraryRemoveMany([entry.pooled]); }
+  try { res = await window.viewerApi.libraryRemoveMany([payload]); }
   catch { res = { error: 'remove' }; }
   if (!res || res.error || !res.affected) {
     // A removal that came back having changed nothing has no error code to report, and
     // "Error: ?" says nothing. Use the same wording the Library tab uses for it.
     setState(res && !res.error
       ? t('library.massDeleteFailed')
-      : t('online.error', { e: (res && res.error) || '?' }));
+      : CardTransfer.errorMessage(t, res && res.error));
     return false;
   }
   entry.added = false;

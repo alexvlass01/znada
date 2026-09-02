@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pathKey } = require('./path-key');
+const { fileExtensions } = require('./media-type');
 
 // `hiddenDirs` was added to v4 rather than becoming v5 ON PURPOSE. validateStoredState
 // accepts only versions it knows, so a build that predates a bump treats the newer
@@ -25,7 +26,7 @@ const { pathKey } = require('./path-key');
 // is never touched.
 const VERSION = 4;
 const VALID_SCAN_STATUSES = new Set(['complete', 'partial', 'unavailable']);
-const DEFAULT_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
+const DEFAULT_IMAGE_EXTS = new Set(fileExtensions());
 
 function emptyState() {
   return { version: VERSION, folders: {} };
@@ -406,7 +407,7 @@ async function scanFolderTree(rootPath, options = {}) {
   const onBatch = typeof options.onBatch === 'function' ? options.onBatch : null;
   const yieldFn = typeof options.yieldFn === 'function'
     ? options.yieldFn
-    : () => new Promise((resolve) => setImmediate(resolve));
+    : () => new Promise((resolve) => { setImmediate(resolve); });
   const knownPaths = options.knownPaths instanceof Set
     ? new Set(Array.from(options.knownPaths, (p) => pathKey(path.resolve(String(p)))))
     : new Set();

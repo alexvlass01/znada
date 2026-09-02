@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const S = require('../src/library-store');
 const C = require('../src/config');
+const L = require('../src/library');
 
 let passed = 0;
 const ok = (n, c) => { assert.ok(c, n); console.log('  ✓ ' + n); passed++; };
@@ -21,7 +22,13 @@ const freshDir = () => {
   fs.mkdirSync(d, { recursive: true });
   return d;
 };
-const item = (id, extra = {}) => ({ id, type: 'image', path: `C:/pics/${id}.png`, addedAt: 1, favorite: false, tags: [], author: '', ...extra });
+const fixturePath = (name) => `C:/pics/${name}.png`;
+const fixtureId = (name) => L.idFor(fixturePath(name));
+const item = (name, extra = {}) => {
+  const itemPath = extra.path || fixturePath(name);
+  return { id: L.idFor(itemPath), type: 'image', path: itemPath, addedAt: 1, favorite: false, tags: [], author: '', ...extra };
+};
+const keyedLibrary = (...items) => Object.fromEntries(items.map((entry) => [entry.id, entry]));
 
 // --- where the file lands ---------------------------------------------------
 
@@ -39,11 +46,12 @@ ok('a path without .json still yields a store',
 {
   const dir = freshDir();
   const cfgPath = path.join(dir, 'config.json');
-  const lib = { a: item('a', { tags: ['x', 'y'], favorite: true }), b: item('b') };
+  const lib = keyedLibrary(item('a', { tags: ['x', 'y'], favorite: true }), item('b'));
   ok('save reports success', S.save(lib, cfgPath) === true);
   const back = S.load(cfgPath);
   ok('load round-trips the pool', back.existed && Object.keys(back.library).length === 2
-    && back.library.a.tags.join(',') === 'x,y' && back.library.a.favorite === true);
+    && back.library[fixtureId('a')].tags.join(',') === 'x,y'
+    && back.library[fixtureId('a')].favorite === true);
 }
 
 {
@@ -69,13 +77,13 @@ ok('a path without .json still yields a store',
 
 {
   const norm = S.normalizeStore({ version: 1, library: {
-    good: item('good'),
-    noPath: { id: 'noPath', type: 'image' },
+    [fixtureId('good')]: item('good'),
+    [fixtureId('noPath')]: { id: fixtureId('noPath'), type: 'image' },
     notObject: 'nope',
     nullish: null,
   } });
   ok('normalize keeps usable entries and drops malformed ones',
-    Object.keys(norm.library).length === 1 && !!norm.library.good);
+    Object.keys(norm.library).length === 1 && !!norm.library[fixtureId('good')]);
 }
 
 ok('normalize survives garbage input', Object.keys(S.normalizeStore(null).library).length === 0
@@ -85,12 +93,13 @@ ok('normalize survives garbage input', Object.keys(S.normalizeStore(null).librar
 
 {
   const merged = S.mergeLibraries(
-    { shared: item('shared', { tags: ['from-store'] }), onlyStore: item('onlyStore') },
-    { shared: item('shared', { tags: ['from-config'] }), onlyConfig: item('onlyConfig') },
+    keyedLibrary(item('shared', { tags: ['from-store'] }), item('onlyStore')),
+    keyedLibrary(item('shared', { tags: ['from-config'] }), item('onlyConfig')),
   );
-  ok('store wins for ids present in both', merged.shared.tags[0] === 'from-store');
+  ok('store wins for ids present in both', merged[fixtureId('shared')].tags[0] === 'from-store');
   ok('ids present only in the inline copy are kept, not lost',
-    !!merged.onlyConfig && !!merged.onlyStore && Object.keys(merged).length === 3);
+    !!merged[fixtureId('onlyConfig')] && !!merged[fixtureId('onlyStore')]
+    && Object.keys(merged).length === 3);
 }
 
 // --- migration from a pre-split config --------------------------------------
@@ -100,12 +109,13 @@ ok('normalize survives garbage input', Object.keys(S.normalizeStore(null).librar
   const cfgPath = path.join(dir, 'config.json');
   fs.writeFileSync(cfgPath, JSON.stringify({
     style: 'fit',
-    library: { id1: item('id1', { tags: ['keepme'], favorite: true }) },
-    monitors: { MON: { light: { itemIds: ['id1'] }, dark: { itemIds: [] } } },
+    library: keyedLibrary(item('id1', { tags: ['keepme'], favorite: true })),
+    monitors: { MON: { light: { itemIds: [fixtureId('id1')] }, dark: { itemIds: [] } } },
   }));
   const loaded = C.load(cfgPath);
   ok('a config written before the split still yields its pool',
-    Object.keys(loaded.library).length === 1 && loaded.library.id1.tags[0] === 'keepme');
+    Object.keys(loaded.library).length === 1
+    && loaded.library[fixtureId('id1')].tags[0] === 'keepme');
 
   C.save(loaded, cfgPath);
   const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
@@ -116,8 +126,9 @@ ok('normalize survives garbage input', Object.keys(S.normalizeStore(null).librar
 
   const reloaded = C.load(cfgPath);
   ok('reload rebuilds the same pool with its metadata intact',
-    reloaded.library.id1.favorite === true && reloaded.library.id1.tags[0] === 'keepme'
-    && reloaded.monitors.MON.light.itemIds[0] === 'id1');
+    reloaded.library[fixtureId('id1')].favorite === true
+    && reloaded.library[fixtureId('id1')].tags[0] === 'keepme'
+    && reloaded.monitors.MON.light.itemIds[0] === fixtureId('id1'));
 }
 
 // --- skipLibrary leaves the pool file alone ---------------------------------
@@ -126,9 +137,9 @@ ok('normalize survives garbage input', Object.keys(S.normalizeStore(null).librar
   const dir = freshDir();
   const cfgPath = path.join(dir, 'config.json');
   const cfg = C.freshDefaults();
-  cfg.library = { a: item('a') };
+  cfg.library = keyedLibrary(item('a'));
   C.save(cfg, cfgPath);
-  cfg.library.b = item('b');
+  cfg.library[fixtureId('b')] = item('b');
   C.save(cfg, cfgPath, { skipLibrary: true });
   ok('skipLibrary writes settings without touching the pool file',
     Object.keys(S.load(cfgPath).library).length === 1);
@@ -186,7 +197,6 @@ ok('normalize survives garbage input', Object.keys(S.normalizeStore(null).librar
 // A photo Lumina copied for itself has no original anywhere else, so removing it
 // has to be as reversible as removing one that lives in a watched folder.
 
-const L = require('../src/library');
 const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000 + Number(id.replace(/\D/g, '') || 0), file: '' });
 
 {
@@ -211,12 +221,12 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
 
   const reloaded = S.load(cfgPath);
   const merged = S.mergePool(reloaded, {
-    library: { deleted: stale },
+    library: keyedLibrary(stale),
     trash: [],
   });
   ok('push -> save/load -> merge cannot resurrect a stale record',
     reloaded.trash[0].rev === 6
-    && !merged.library.deleted
+    && !merged.library[stale.id]
     && merged.trash.length === 1
     && merged.trash[0].rev === 6);
 
@@ -230,7 +240,7 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
   const dir = freshDir();
   const cfgPath = path.join(dir, 'config.json');
   const cfg = C.freshDefaults();
-  cfg.library = { keep: item('keep') };
+  cfg.library = keyedLibrary(item('keep'));
   cfg.libraryTrash = [trashEntry('gone1', { tags: ['keepme'], favorite: true })];
   C.save(cfg, cfgPath);
 
@@ -238,7 +248,8 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
   ok('a removed photo survives a restart with its tags and favourite',
     back.libraryTrash.length === 1 && back.libraryTrash[0].item.tags[0] === 'keepme'
     && back.libraryTrash[0].item.favorite === true);
-  ok('...and is not mixed back into the pool', Object.keys(back.library).join() === 'keep');
+  ok('...and is not mixed back into the pool',
+    Object.keys(back.library).join() === fixtureId('keep'));
 
   const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
   ok('the settings file carries neither the pool nor the trash',
@@ -249,7 +260,7 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
   // Whatever sits in the trash must not be swept away by the wallpaper GC, or the
   // "put back" button would point at a file that is no longer there.
   const keep = L.referencedFiles({
-    library: { a: item('a') },
+    library: keyedLibrary(item('a')),
     libraryTrash: [trashEntry('b')],
     lightWallpaper: '', darkWallpaper: '',
   });
@@ -279,7 +290,8 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
 
   const overflow = S.pushEntry(list, trashEntry('newest', { }));
   ok('one more stays at the cap', overflow.trash.length === S.TRASH_LIMIT);
-  ok('...keeps the newest removal', overflow.trash.some((e) => e.item.id === 'newest'));
+  ok('...keeps the newest removal',
+    overflow.trash.some((e) => e.item.id === fixtureId('newest')));
   ok('...and reports exactly what it pushed out', overflow.evicted.length === 1);
 
   const keepAfterRestart = L.referencedFiles({ library: {}, libraryTrash: S.normalizeStore({ version: 1, library: {}, trash: overflow.trash }).trash });
@@ -328,10 +340,11 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
 
 {
   const norm = S.normalizeStore({ version: 1, library: {}, trash: [
-    null, 'nope', { item: { id: 'noPath' } }, { item: { path: 'C:/x.png' } }, trashEntry('ok1'),
+    null, 'nope', { item: { id: fixtureId('noPath') } },
+    { item: { path: 'C:/x.png' } }, trashEntry('ok1'),
   ] });
   ok('malformed trash entries are dropped without losing the good one',
-    norm.trash.length === 1 && norm.trash[0].item.id === 'ok1');
+    norm.trash.length === 1 && norm.trash[0].item.id === fixtureId('ok1'));
 }
 
 {
@@ -369,8 +382,8 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
   const cfgPath = path.join(dir, 'config.json');
   fs.writeFileSync(cfgPath, JSON.stringify({
     style: 'fit',
-    library: { id1: item('id1', { tags: ['precious'], favorite: true }) },
-    monitors: { MON: { light: { itemIds: ['id1'] }, dark: { itemIds: [] } } },
+    library: keyedLibrary(item('id1', { tags: ['precious'], favorite: true })),
+    monitors: { MON: { light: { itemIds: [fixtureId('id1')] }, dark: { itemIds: [] } } },
   }));
   const loaded = C.load(cfgPath);
 
@@ -381,7 +394,8 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
 
   const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
   ok('...and config.json KEEPS the inline pool, so nothing is lost',
-    !!onDisk.library && !!onDisk.library.id1 && onDisk.library.id1.tags[0] === 'precious');
+    !!onDisk.library && !!onDisk.library[fixtureId('id1')]
+    && onDisk.library[fixtureId('id1')].tags[0] === 'precious');
   ok('...settings are still saved', onDisk.style === 'fit');
 
   // Clear the obstruction: the next save completes the migration.
@@ -390,7 +404,7 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
   const after = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
   ok('...and only then does config.json let the pool go', after.library === undefined);
   ok('...with the record intact in its own file',
-    S.load(cfgPath).library.id1.tags[0] === 'precious');
+    S.load(cfgPath).library[fixtureId('id1')].tags[0] === 'precious');
 }
 
 {
@@ -459,6 +473,53 @@ const trashEntry = (id, extra = {}) => ({ item: item(id, extra), removedAt: 1000
   ok('retries stop rather than spinning forever', fire === null);
   ok('...after a bounded number of attempts', w.writeCount() <= 5);
   ok('...and the data is still pending for the quit-time flush', w.isPending());
+}
+
+// A record filed under the wrong key is filed WRONG, not broken.
+//
+// The identity check that arrived with the 1.7.3 remediation refused such a record
+// outright, and refusing means the next save rewrites the file without it — the user's
+// tags, star, author and source gone, with nothing said. The danger it was guarding
+// against is real (a record sitting under another path's id can win revision arbitration
+// and take the real owner's place in the GC keep-set), but re-filing removes that danger
+// too, because under its own derived id it cannot stand in for anything.
+{
+  const photo = 'C:/photos/kept.png';
+  const owned = L.idFor(photo);
+  const misfiled = {
+    'some-old-key': {
+      id: 'some-old-key', type: 'image', path: photo,
+      tags: ['keep', 'me'], favorite: true, author: 'someone', rev: 3,
+    },
+  };
+
+  const merged = S.mergePool({ version: 1, library: misfiled, trash: [] }, {});
+  const kept = merged.library[owned];
+  ok('a record filed under the wrong key is kept, not thrown away', !!kept);
+  ok('...under the id its own path derives', Object.keys(merged.library).join() === owned);
+  ok('...with everything the user put on it', !!kept
+    && kept.tags.join() === 'keep,me' && kept.favorite === true && kept.author === 'someone');
+  ok('...and its id corrected, so it can no longer stand in for another path',
+    !!kept && kept.id === owned);
+
+  // The same record ALSO present correctly: the newer revision must win, and there must
+  // be one record afterwards rather than two of the same photo.
+  const both = S.mergePool(
+    { version: 1, library: misfiled, trash: [] },
+    { library: { [owned]: { id: owned, type: 'image', path: photo, tags: [], rev: 9 } } },
+  );
+  ok('a corrected duplicate does not become a second copy of the same photo',
+    Object.keys(both.library).length === 1);
+  ok('...and the newer revision is the one kept', both.library[owned].rev === 9);
+
+  // A record with nothing to re-file BY is still refused: there is no path to derive an
+  // id from, so there is no honest place to put it.
+  const junk = S.mergePool({
+    version: 1,
+    library: { x: { id: 'x', type: 'image', path: '', tags: [] } },
+    trash: [],
+  }, {});
+  ok('a record with no path is still refused', Object.keys(junk.library).length === 0);
 }
 
 fs.rmSync(root, { recursive: true, force: true });

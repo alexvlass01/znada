@@ -30,6 +30,7 @@ const PRIVATE_SENTINELS = Object.freeze([
   'STATUS.md',
   'Znada-DEV.bat',
   'Znada-DIAG.bat',
+  'Znada-Review.bat',
   path.join('scripts', 'migrate-profile.js'),
 ]);
 
@@ -63,6 +64,10 @@ const ALWAYS_IGNORED = Object.freeze([
   '^/AGENTS\\.md$',
   '^/Znada-DEV\\.bat$',
   '^/Znada-DIAG\\.bat$',
+  '^/Znada-Review\\.bat$',
+  // CODE-002 dev tooling: public, but no part of what a user installs.
+  '^/eslint\\.config\\.js$',
+  '^/tsconfig\\.json$',
 ]);
 const KEYLESS_IGNORED = Object.freeze([
   '^/wallhaven-key\\.json$',

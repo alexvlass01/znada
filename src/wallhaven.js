@@ -13,6 +13,8 @@
 //   sorting    = date_added | relevance | random | views | favorites | toplist
 //   thumbs.small/large = preview URLs; path = full-resolution image URL
 
+const media = require('./media-type');
+
 const API_BASE = 'https://wallhaven.cc/api/v1/search';
 
 // Build a 3-bit mask string from three booleans.
@@ -56,6 +58,9 @@ function mapItem(w) {
     width,
     height,
     fileType: w.file_type || '',
+    // Measured 2026-08-25 over 96 cards: this site serves only jpeg and png. Reported
+    // anyway, so the handler — not this file — decides what Znada can use.
+    format: media.normalizeFormat(w.file_type),
     purity: w.purity || '',
     category: w.category || '',
     source: w.source || '',                  // original source if provided
@@ -108,7 +113,109 @@ function parseSearch(json) {
   return { items, meta };
 }
 
+// ONL-011. What this site IS, as data — read by the registry without running any of
+// the code below. The address lists are the security boundary: they are the only thing
+// that stops the app being talked into fetching from somewhere else, so they live here,
+// once, instead of in six copies spread through src/online.js.
+const PROVIDER = Object.freeze({
+  id: 'wallhaven',
+  name: 'Wallhaven',
+  status: 'active',
+  hosts: Object.freeze({
+    page: Object.freeze(['wallhaven.cc']),
+    image: Object.freeze(['w.wallhaven.cc']),
+    // Nothing extra is reachable only through the main process for this site.
+    imageProxyOnly: Object.freeze([]),
+    // Deliberately empty: Wallhaven's previews load straight from the window, so main
+    // never fetches one and must not be allowed to.
+    thumb: Object.freeze([]),
+  }),
+  // ONL-012. Sites in one group are ALTERNATIVES: asked in registry order until one
+  // answers. Different groups are asked together. This is what replaces the hardwired
+  // "Gelbooru, and Danbooru if that failed" pair.
+  group: 'wallpapers',
+  credentials: Object.freeze({ kind: 'bundled', required: false }),
+  // Everything in a declaration is READ BY THE SHARED HANDLER. A fact only this file
+  // uses is an ordinary constant below, not a field here — a declared field nobody reads
+  // is the beginning of a form that describes nothing and drifts out of date unnoticed.
+  capabilities: Object.freeze({
+    browse: true,
+    textSearch: true,
+    // Wallhaven serves adult content only to a request carrying a key.
+    explicit: 'withCredentials',
+    // "Top" here is scoped to a time window by the site itself, so it renews on its own.
+    topIsAllTime: false,
+    // ONL-013. Declared empty rather than omitted: this site indexes no file hash at
+    // all, so it can never answer "which post IS this exact file". An omission would
+    // read as "nobody has looked into it".
+    fingerprints: Object.freeze([]),
+    // ONL-015. Every card from here states its own format, so the handler can judge it
+    // against the one list. A site that cannot say must vouch for its content instead.
+    cardFormat: true,
+  }),
+  requestHeaders: Object.freeze({}),
+  // The window may load these images itself: no Referer is required, so nothing has to
+  // be proxied through main.
+  loadsDirectly: true,
+});
+
+// ONL-012. The two things the shared handler may ask this site to DO. Everything
+// awkward about the site lives here; the handler only orchestrates.
+//
+// `ctx.fetchJson` is injected rather than fetched here, so this file still needs no
+// network to be tested, and so timeouts, error wording and — later — the request budget
+// stay the handler's business rather than being reinvented per site.
+//
+// `params.limit` is ignored on purpose: this API has no page-size parameter at all, and
+// a page is whatever the site decides to send.
+async function search(params, ctx) {
+  const o = params || {};
+  const key = (ctx && ctx.credentials && ctx.credentials.key) || '';
+  const p = o.purity || { sfw: true, sketchy: true, nsfw: false };
+  // Adult content needs a key; without one the request must not even ask for it.
+  const wantNsfw = !!p.nsfw && !!key;
+  if (!p.sfw && !p.sketchy && !wantNsfw) {
+    return { items: [], meta: { currentPage: o.page || 1, lastPage: o.page || 1 } };
+  }
+  const url = buildSearchUrl({
+    q: o.q || '',
+    purity: purityMask({ sfw: !!p.sfw, sketchy: !!p.sketchy, nsfw: wantNsfw }),
+    categories: o.categories || '111',
+    sorting: o.sort || o.sorting || 'date_added',
+    page: o.page || 1,
+    apikey: wantNsfw ? key : '',
+  });
+  const res = await ctx.fetchJson(url, { timeoutMs: 15000 });
+  if (res.error) return { error: res.error };
+  return parseSearch(res.json);
+}
+
+// The search response carries no tags at all, so they cost one more request — made only
+// when the user actually downloads the picture, never for a card in the feed.
+async function enrich(item, ctx) {
+  const key = (ctx && ctx.credentials && ctx.credentials.key) || '';
+  const url = buildWallpaperUrl(item && item.id, { apikey: key });
+  if (!url) return {};
+  const res = await ctx.fetchJson(url, { timeoutMs: 10000 });
+  if (res.error) return {};
+  return { tags: tagsFromWallpaper(res.json) };
+}
+
+// The bundled key, if this build carries one. Absent in a keyless build, and absence
+// is normal rather than an error — this site simply answers without adult content.
+function loadCredentials() {
+  try {
+    const k = require('../wallhaven-key.json');
+    const key = String((k && (k.key || k.apikey)) || '').trim();
+    return key ? { key } : null;
+  } catch { return null; }
+}
+
 module.exports = {
+  PROVIDER,
+  loadCredentials,
+  search,
+  enrich,
   API_BASE,
   WALLPAPER_BASE,
   mask,

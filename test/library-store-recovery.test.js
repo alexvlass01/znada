@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const H = require('./helpers/main-harness');
 const libraryStore = require('../src/library-store');
+const library = require('../src/library');
 
 let passed = 0;
 const failures = [];
@@ -52,9 +53,13 @@ async function test(name, fn) {
 const cfgFile = (dir) => path.join(dir, 'config.json');
 const storeFile = (dir) => path.join(dir, 'config.library.json');
 
-function item(id, file) {
-  return { id, type: 'image', path: file, addedAt: 1, favorite: false, tags: [] };
+const idFor = (file) => library.idFor(file);
+
+function item(_name, file) {
+  return { id: idFor(file), type: 'image', path: file, addedAt: 1, favorite: false, tags: [] };
 }
+
+const keyedLibrary = (...items) => Object.fromEntries(items.map((entry) => [entry.id, entry]));
 
 function writeProfile(dir, { config, store }) {
   fs.writeFileSync(cfgFile(dir), JSON.stringify(config, null, 2), 'utf8');
@@ -78,7 +83,7 @@ function backupsIn(dir) {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { old1: item('old1', path.join(dir, 'old1.png')) },
+        library: keyedLibrary(item('old1', path.join(dir, 'old1.png'))),
       },
       store: CORRUPT,
     });
@@ -100,7 +105,7 @@ function backupsIn(dir) {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { old1: item('old1', path.join(dir, 'old1.png')) },
+        library: keyedLibrary(item('old1', path.join(dir, 'old1.png'))),
       },
       store: CORRUPT,
     });
@@ -110,7 +115,10 @@ function backupsIn(dir) {
 
     // Showing nothing would read as "everything is gone" — the pool is unusable, not
     // empty, and whatever is still readable belongs on screen.
-    assert.deepStrictEqual(Object.keys(m.__test.getConfig().library), ['old1']);
+    assert.deepStrictEqual(
+      Object.keys(m.__test.getConfig().library),
+      [idFor(path.join(dir, 'old1.png'))],
+    );
   });
 
   await test('config.json keeps carrying the pool while the store is unusable', async (dir) => {
@@ -119,7 +127,7 @@ function backupsIn(dir) {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { old1: item('old1', path.join(dir, 'old1.png')) },
+        library: keyedLibrary(item('old1', path.join(dir, 'old1.png'))),
       },
       store: CORRUPT,
     });
@@ -132,7 +140,8 @@ function backupsIn(dir) {
 
     const onDisk = JSON.parse(fs.readFileSync(cfgFile(dir), 'utf8'));
     assert.strictEqual(onDisk.style, 'fit', 'precondition: the settings write happened');
-    assert.ok(onDisk.library && onDisk.library.old1, 'the inline pool was dropped from config.json');
+    assert.ok(onDisk.library && onDisk.library[idFor(path.join(dir, 'old1.png'))],
+      'the inline pool was dropped from config.json');
     assert.strictEqual(
       fs.readFileSync(storeFile(dir), 'utf8'), CORRUPT,
       'a later settings write reached the damaged pool file',
@@ -158,7 +167,7 @@ function backupsIn(dir) {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { old1: item('old1', path.join(dir, 'old1.png')) },
+        library: keyedLibrary(item('old1', path.join(dir, 'old1.png'))),
       },
       store: CORRUPT,
     });
@@ -181,14 +190,15 @@ function backupsIn(dir) {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { old1: item('old1', photo) },
+        library: keyedLibrary(item('old1', photo)),
       },
       store: CORRUPT,
     });
 
     const first = H.loadMain(dir);
     first.__test.loadConfig();
-    await first.invoke('library-toggle-favorite', 'old1');
+    const photoId = idFor(photo);
+    await first.invoke('library-toggle-favorite', photoId);
     first.__test.disposeForTests();
     H.unloadMain();
 
@@ -199,7 +209,7 @@ function backupsIn(dir) {
     second.__test.loadConfig();
     assert.strictEqual(second.__test.isUnsafeToWrite(), true, 'the damaged file was accepted on the second start');
     assert.strictEqual(
-      second.__test.getConfig().library.old1.favorite, true,
+      second.__test.getConfig().library[photoId].favorite, true,
       'the favourite added while degraded was lost across the restart',
     );
     assert.strictEqual(fs.readFileSync(storeFile(dir), 'utf8'), CORRUPT);
@@ -221,15 +231,16 @@ function backupsIn(dir) {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { old1: item('old1', photo) },
+        library: keyedLibrary(item('old1', photo)),
       },
       store: CORRUPT,
     });
 
     const first = H.loadMain(dir);
     first.__test.loadConfig();
-    await first.invoke('library-add-tag', 'old1', 'sunset');
-    const bumped = first.__test.getConfig().library.old1.rev;
+    const photoId = idFor(photo);
+    await first.invoke('library-add-tag', photoId, 'sunset');
+    const bumped = first.__test.getConfig().library[photoId].rev;
     assert.ok(bumped > 0, 'the edit left the record looking untouched, so no merge could favour it');
     first.__test.disposeForTests();
     H.unloadMain();
@@ -238,7 +249,7 @@ function backupsIn(dir) {
     // no tag. It is a perfectly valid store — just behind.
     fs.writeFileSync(storeFile(dir), JSON.stringify({
       version: 1,
-      library: { old1: Object.assign(item('old1', photo), { rev: bumped - 1, tags: [] }) },
+      library: keyedLibrary(Object.assign(item('old1', photo), { rev: bumped - 1, tags: [] })),
       trash: [],
     }), 'utf8');
 
@@ -246,19 +257,21 @@ function backupsIn(dir) {
     second.__test.loadConfig();
     assert.strictEqual(second.__test.isUnsafeToWrite(), false, 'the repaired file was still refused');
     assert.deepStrictEqual(
-      second.__test.getConfig().library.old1.tags, ['sunset'],
+      second.__test.getConfig().library[photoId].tags, ['sunset'],
       'the tag added while the file was unreadable was thrown away when the file came back',
     );
   });
 
   await test('putting the file back ends the degraded mode and keeps records only config had', async (dir) => {
-    const good = { version: 1, library: { keep: item('keep', path.join(dir, 'keep.png')) }, trash: [] };
+    const keepPath = path.join(dir, 'keep.png');
+    const inlinePath = path.join(dir, 'inline.png');
+    const good = { version: 1, library: keyedLibrary(item('keep', keepPath)), trash: [] };
     writeProfile(dir, {
       config: {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { onlyInline: item('onlyInline', path.join(dir, 'inline.png')) },
+        library: keyedLibrary(item('onlyInline', inlinePath)),
       },
       store: JSON.stringify(good, null, 2),
     });
@@ -268,12 +281,14 @@ function backupsIn(dir) {
 
     assert.strictEqual(m.__test.isUnsafeToWrite(), false);
     const store = JSON.parse(fs.readFileSync(storeFile(dir), 'utf8'));
-    assert.ok(store.library.keep, 'the restored file lost its own records');
-    assert.ok(store.library.onlyInline, 'a record that existed only in config.json was dropped on recovery');
+    assert.ok(store.library[idFor(keepPath)], 'the restored file lost its own records');
+    assert.ok(store.library[idFor(inlinePath)],
+      'a record that existed only in config.json was dropped on recovery');
   });
 
   await test('a healthy store is loaded and stays writable', async (dir) => {
-    const good = { version: 1, library: { keep: item('keep', path.join(dir, 'keep.png')) }, trash: [] };
+    const keepPath = path.join(dir, 'keep.png');
+    const good = { version: 1, library: keyedLibrary(item('keep', keepPath)), trash: [] };
     writeProfile(dir, {
       config: { autoSwitch: true, style: 'fill', monitors: {} },
       store: JSON.stringify(good, null, 2),
@@ -283,7 +298,7 @@ function backupsIn(dir) {
     m.__test.loadConfig();
 
     assert.strictEqual(m.__test.isUnsafeToWrite(), false, 'a readable pool must not be treated as damaged');
-    assert.deepStrictEqual(Object.keys(m.__test.getConfig().library), ['keep']);
+    assert.deepStrictEqual(Object.keys(m.__test.getConfig().library), [idFor(keepPath)]);
     assert.strictEqual(backupsIn(dir).length, 0, 'a healthy pool file was backed up as corrupt');
     assert.strictEqual(
       m.__test.eventLogEntries().some((e) => e.channel === 'library-store'), false,
@@ -345,7 +360,7 @@ function backupsIn(dir) {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { old1: item('old1', path.join(dir, 'old1.png')) },
+        library: keyedLibrary(item('old1', path.join(dir, 'old1.png'))),
       },
       store: STRUCTURALLY_BROKEN,
     });
@@ -361,7 +376,7 @@ function backupsIn(dir) {
     assert.strictEqual(m.__test.isUnsafeToWrite(), true, 'writes to the pool file were not suppressed');
   });
 
-  await test('the containers are judged, one by one', async (dir) => {
+  await test('the containers are judged, one by one', async () => {
     const cases = [
       ['{"library":"not-an-object"}', 'library replaced by a string'],
       ['{"library":[]}', 'library replaced by an array'],
@@ -389,7 +404,7 @@ function backupsIn(dir) {
   // healthy file damaged would push a working profile into degraded mode for nothing.
   // Entry-level wear stays tolerated — one record missing its path has always been
   // filtered out quietly, and that is not corruption.
-  await test('ordinary wear is not mistaken for damage', async (dir) => {
+  await test('ordinary wear is not mistaken for damage', async () => {
     const healthy = [
       '{"version":1,"library":{},"trash":[]}',
       '{"library":{"a":{"id":"a","path":"C:/x.jpg"}}}',
@@ -433,7 +448,13 @@ function backupsIn(dir) {
   }
 
   await test('a store written by a newer build is read but never written back', async (dir) => {
-    const store = '{"version":999,"library":{"a":{"id":"a","path":"C:/a.png"}},"trash":[]}';
+    const newerPath = 'C:/a.png';
+    const newerId = idFor(newerPath);
+    const store = JSON.stringify({
+      version: 999,
+      library: keyedLibrary(item('a', newerPath)),
+      trash: [],
+    });
     writeProfile(dir, {
       config: { autoSwitch: true, style: 'fill', monitors: {}, library: {} },
       store,
@@ -444,7 +465,8 @@ function backupsIn(dir) {
     // Readable, so the rollback still sees its library — but writes stay blocked: save()
     // stamps the version back down and drops every field this build does not know.
     assert.strictEqual(m.__test.isUnsafeToWrite(), true, 'a newer file was left writable and would be downgraded');
-    assert.ok(m.__test.getConfig().library.a, 'the pool from the newer build was not loaded');
+    assert.ok(m.__test.getConfig().library[newerId],
+      'the pool from the newer build was not loaded');
   });
 
   // The container is intact, so the shape check sees nothing wrong — and every record
@@ -466,7 +488,13 @@ function backupsIn(dir) {
   // One bad record among good ones is ordinary wear and must stay silent, or every
   // profile with a single stale entry would land in degraded mode.
   await test('one unusable record among sound ones is still ordinary wear', async (dir) => {
-    const store = '{"version":1,"library":{"a":{"id":"a","path":"C:/a.png"},"b":null},"trash":[]}';
+    const soundPath = 'C:/a.png';
+    const sound = item('a', soundPath);
+    const store = JSON.stringify({
+      version: 1,
+      library: { [sound.id]: sound, b: null },
+      trash: [],
+    });
     writeProfile(dir, {
       config: { autoSwitch: true, style: 'fill', monitors: {}, library: {} },
       store,
@@ -475,7 +503,7 @@ function backupsIn(dir) {
     m.__test.loadConfig();
     assert.strictEqual(backupsIn(dir).length, 0, 'ordinary wear was treated as damage');
     assert.strictEqual(m.__test.isUnsafeToWrite(), false, 'writes were blocked over one stale record');
-    assert.ok(m.__test.getConfig().library.a, 'the sound record was lost');
+    assert.ok(m.__test.getConfig().library[sound.id], 'the sound record was lost');
   });
 
   // A damaged library must still surrender the trash: those photos exist nowhere else.
@@ -483,9 +511,11 @@ function backupsIn(dir) {
   // invariant while its unit test kept passing — that test exercises normalizeStore,
   // not the path the app takes.
   await test('a damaged library still hands back the trash beside it', async (dir) => {
+    const survivorPath = path.join(dir, 'survivor.png');
+    const survivorId = idFor(survivorPath);
     const entry = {
       removedAt: 1, removalId: 'r1', via: 'manual',
-      item: { id: 'survivor', type: 'image', path: path.join(dir, 'survivor.png'), tags: [] },
+      item: { id: survivorId, type: 'image', path: survivorPath, tags: [] },
     };
     const store = JSON.stringify({ version: 1, library: 'broken', trash: [entry] });
     fs.writeFileSync(storeFile(dir), store, 'utf8');
@@ -497,19 +527,20 @@ function backupsIn(dir) {
       loaded.trash.length, 1,
       'the trash went down with the library — those photos exist nowhere else',
     );
-    assert.strictEqual(loaded.trash[0].item.id, 'survivor');
+    assert.strictEqual(loaded.trash[0].item.id, survivorId);
   });
 
   // ...and the same the other way round.
   await test('a damaged trash still hands back the library beside it', async (dir) => {
-    const item = { id: 'keep', type: 'image', path: path.join(dir, 'keep.png'), tags: [] };
-    const store = JSON.stringify({ version: 1, library: { keep: item }, trash: 'broken' });
+    const keepPath = path.join(dir, 'keep.png');
+    const liveItem = { id: idFor(keepPath), type: 'image', path: keepPath, tags: [] };
+    const store = JSON.stringify({ version: 1, library: keyedLibrary(liveItem), trash: 'broken' });
     fs.writeFileSync(storeFile(dir), store, 'utf8');
     fs.writeFileSync(path.join(dir, 'config.json'), '{}', 'utf8');
 
     const loaded = libraryStore.load(path.join(dir, 'config.json'));
     assert.strictEqual(loaded.broken, true, 'a wrecked trash was not reported as damage');
-    assert.ok(loaded.library.keep, 'the library went down with the trash');
+    assert.ok(loaded.library[liveItem.id], 'the library went down with the trash');
   });
   await test('a profile with no store yet is created normally', async (dir) => {
     writeProfile(dir, {
@@ -517,7 +548,7 @@ function backupsIn(dir) {
         autoSwitch: true,
         style: 'fill',
         monitors: {},
-        library: { old1: item('old1', path.join(dir, 'old1.png')) },
+        library: keyedLibrary(item('old1', path.join(dir, 'old1.png'))),
       },
     });
 
@@ -526,7 +557,127 @@ function backupsIn(dir) {
 
     assert.strictEqual(m.__test.isUnsafeToWrite(), false);
     const store = JSON.parse(fs.readFileSync(storeFile(dir), 'utf8'));
-    assert.ok(store.library.old1, 'the inline pool was not migrated into its own file');
+    assert.ok(store.library[idFor(path.join(dir, 'old1.png'))],
+      'the inline pool was not migrated into its own file');
+  });
+
+  // ---- BUG-024: a damaged inline copy must not become the canonical file ----
+  //
+  // The merge read revisions off both sides before checking either was a record, so a
+  // config.json holding `{ id, rev: 999 }` beat the healthy store entry. main then saw
+  // "something inline contributed" and wrote that winner back as canonical. The photo's
+  // path, tags and star were gone after one start, and nothing had reported a failure.
+
+  await test('an invalid inline record never becomes the canonical one', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'keep.png'));
+    const photoId = idFor(photo);
+    const healthy = { id: photoId, type: 'image', path: photo, addedAt: 1, favorite: true, tags: ['keep'], rev: 3 };
+    writeProfile(dir, {
+      config: {
+        autoSwitch: true,
+        style: 'fill',
+        monitors: {},
+        // Has a plausible path but no supported type. It cannot safely replace an image:
+        // the GC keep-set deliberately ignores records it cannot classify.
+        library: { [photoId]: { id: photoId, path: path.join(dir, 'other.bin'), rev: 999 } },
+      },
+      store: JSON.stringify({ version: 1, library: { [photoId]: healthy }, trash: [] }, null, 2),
+    });
+
+    const first = H.loadMain(dir);
+    first.__test.loadConfig();
+    first.__test.flushLibraryWriter();
+    assert.strictEqual(
+      first.__test.getConfig().library[photoId].path, photo,
+      'the pathless record won on revision alone',
+    );
+
+    // Startup -> automatic persistence -> two cold reloads: the state that was chosen
+    // has to still be the state on disk, twice over.
+    for (let round = 0; round < 2; round++) {
+      H.unloadMain();
+      const again = H.loadMain(dir);
+      again.__test.loadConfig();
+      again.__test.flushLibraryWriter();
+      const record = again.__test.getConfig().library[photoId];
+      assert.ok(record, 'the photo disappeared after reload ' + (round + 1));
+      assert.strictEqual(record.path, photo, 'reload ' + (round + 1) + ' lost the path');
+      assert.strictEqual(record.favorite, true, 'reload ' + (round + 1) + ' lost the star');
+      assert.deepStrictEqual(record.tags, ['keep'], 'reload ' + (round + 1) + ' lost the tags');
+    }
+
+    const onDisk = JSON.parse(fs.readFileSync(storeFile(dir), 'utf8'));
+    assert.strictEqual(onDisk.library[photoId].path, photo,
+      'the damaged record was written to the store file');
+  });
+
+  await test('a malformed inline tombstone does not delete a live photo', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'alive.png'));
+    const photoId = idFor(photo);
+    writeProfile(dir, {
+      config: {
+        autoSwitch: true,
+        style: 'fill',
+        monitors: {},
+        // A path alone is not enough: the app never writes a deletion without the item
+        // kind, and GC cannot protect a typeless tombstone's file.
+        libraryTrash: [{ item: { id: photoId, path: photo }, removedAt: 9000, rev: 999 }],
+      },
+      store: JSON.stringify({
+        version: 1,
+        library: { [photoId]: { id: photoId, type: 'image', path: photo, addedAt: 1, favorite: false, tags: [], rev: 2 } },
+        trash: [],
+      }, null, 2),
+    });
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    m.__test.flushLibraryWriter();
+
+    assert.ok(m.__test.getConfig().library[photoId],
+      'a malformed tombstone deleted a live photo');
+    assert.strictEqual(
+      m.__test.getConfig().libraryTrash.length, 0,
+      'and it was not offered as something the user could restore either',
+    );
+    const onDisk = JSON.parse(fs.readFileSync(storeFile(dir), 'utf8'));
+    assert.ok(onDisk.library[photoId], 'the deletion reached the canonical file');
+  });
+
+  await test('an inline copy that contributed nothing does not trigger a rewrite', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'keep.png'));
+    const photoId = idFor(photo);
+    const storeText = JSON.stringify({
+      version: 1,
+      library: { [photoId]: { id: photoId, type: 'image', path: photo, addedAt: 1, favorite: true, tags: ['keep'], rev: 3 } },
+      trash: [],
+    }, null, 2);
+    writeProfile(dir, {
+      config: {
+        autoSwitch: true,
+        style: 'fill',
+        monitors: {},
+        // Present, but every candidate in it is refused. Presence is not a contribution:
+        // treating it as one makes damage alone rewrite a healthy canonical file and
+        // strip the damaged copy without leaving a backup of it.
+        library: { [photoId]: { id: photoId, type: 'video', path: photo, rev: 999 } },
+      },
+      store: storeText,
+    });
+    const configBefore = fs.readFileSync(cfgFile(dir), 'utf8');
+
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    m.__test.flushLibraryWriter();
+
+    assert.strictEqual(
+      fs.readFileSync(storeFile(dir), 'utf8'), storeText,
+      'a healthy canonical file was rewritten because a damaged inline copy existed',
+    );
+    assert.strictEqual(
+      fs.readFileSync(cfgFile(dir), 'utf8'), configBefore,
+      'the damaged inline copy was stripped without anything having been recovered from it',
+    );
   });
 
   console.log(`\n${failures.length ? `${failures.length} FAILED, ` : ''}${passed} pool-recovery tests passed.\n`);

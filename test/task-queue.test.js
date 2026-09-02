@@ -4,7 +4,7 @@ const assert = require('assert');
 const { createTaskQueue } = require('../src/task-queue');
 
 function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
 (async () => {

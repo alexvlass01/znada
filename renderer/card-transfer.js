@@ -87,5 +87,24 @@
     return res || { ok: false, error: 'failed' };
   }
 
-  return { run, outcomeMessage, pendingMessage, BRIDGE_METHOD };
+  // What an error code from main SAYS to a person, in whichever window showed it.
+  //
+  // The generic form prints the code itself — "Ошибка: session_changed" — which is
+  // English machinery in all thirty languages and tells nobody what to do. Codes that a
+  // user can actually act on get their own words; the rest keep the generic form, which
+  // is still better than silence for a code nobody expected.
+  //
+  // Lives here because both windows show these and there must be one answer, not two.
+  const CODE_KEYS = {
+    network: 'online.offline',
+    timeout: 'online.timeout',
+    session_changed: 'online.sessionChanged',
+    storage: 'online.storageFailed',
+  };
+  function errorMessage(t, code) {
+    const key = CODE_KEYS[String(code || '')];
+    return key ? t(key) : t('online.error', { e: code || '?' });
+  }
+
+  return { run, outcomeMessage, pendingMessage, errorMessage, BRIDGE_METHOD };
 }));

@@ -38,9 +38,34 @@ const RATINGS = C.ContentRating.options; // ['general','suggestive','explicit']
 function ok(data) { return { ok: true, data }; }
 function fail(error) { return { ok: false, error }; }
 function requestError(code, message) { return fail({ code, message, kind: 'request' }); }
+
+// BUG-030. "The server never answered" is not the same failure as "there is no network",
+// and it used to be reported as neither: this file had no deadline at all, so a stalled
+// backend held the caller for undici's own default — around five minutes. That is what
+// made the sign-in strip sit there with a Cancel that could not reach the exchange.
+//
+// The distinction is carried in `code` and not in `kind`, so every existing caller that
+// branches on kind === 'network' keeps working unchanged.
+function isAbortError(err) {
+  const name = err && err.name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
 function networkError(err) {
+  if (isAbortError(err)) {
+    return fail({ code: 'timeout', message: 'The server did not answer in time.', kind: 'network' });
+  }
   return fail({ code: 'network', message: (err && err.message) || 'Network request failed.', kind: 'network' });
 }
+
+// How long any one call may take. The picture sites already answer this question the same
+// way (src/wallhaven.js, src/gelbooru.js): a full page of results gets the longer budget,
+// a small lookup the shorter one. Kept to two values on purpose — a table per endpoint is
+// more to keep true than it is worth.
+const DEFAULT_TIMEOUT_MS = 15000;
+// The calls a person is actively waiting on with nothing else to look at: the token
+// exchange and the profile read that follow the browser handshake, and the small
+// favourite writes.
+const SHORT_TIMEOUT_MS = 10000;
 
 // ---------------------------------------------------------------------------
 // Pure URL / header builders
@@ -81,8 +106,13 @@ function anonHeaders(anonId) {
 }
 
 // Google sign-in start URL (opened in the system browser by C4, not fetched here).
-function buildGoogleStartUrl(baseUrl, { port, challenge } = {}) {
-  return buildUrl(baseUrl, C.API_PATHS.authGoogleStart, { port, challenge });
+// `state` is optional on the wire and the backend omits it from the redirect when it is
+// not sent, byte for byte as before - so an older client keeps working. The desktop always
+// sends one now; see parseLoopbackRequest for what it is for.
+function buildGoogleStartUrl(baseUrl, { port, challenge, state } = {}) {
+  const params = { port, challenge };
+  if (state) params.state = state;
+  return buildUrl(baseUrl, C.API_PATHS.authGoogleStart, params);
 }
 
 function enc(id) { return encodeURIComponent(String(id)); }
@@ -153,22 +183,34 @@ async function readBody(res) {
   if (!res) return null;
   if (typeof res.text === 'function') {
     let text;
-    try { text = await res.text(); } catch { return null; }
+    // A body that fails to arrive because the deadline expired is a TIMEOUT, not an empty
+    // body. Swallowing it here reported a stalled server as a 200 with nothing in it, and
+    // the schema check then called it a broken contract.
+    try { text = await res.text(); } catch (err) { if (isAbortError(err)) throw err; return null; }
     if (!text) return null;
     try { return JSON.parse(text); } catch { return { _raw: text }; }
   }
   if (typeof res.json === 'function') {
-    try { return await res.json(); } catch { return null; }
+    try { return await res.json(); } catch (err) { if (isAbortError(err)) throw err; return null; }
   }
   return null;
 }
 
-function createClient({ baseUrl, fetchImpl, anonId } = {}) {
+function createClient({ baseUrl, fetchImpl, anonId, timeoutMs, makeTimeoutSignal } = {}) {
   if (!baseUrl) throw new TypeError('createClient: baseUrl is required');
   const doFetch = fetchImpl || (typeof globalThis !== 'undefined' ? globalThis.fetch : undefined);
   if (typeof doFetch !== 'function') throw new TypeError('createClient: a fetch implementation is required');
+  const defaultTimeoutMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : DEFAULT_TIMEOUT_MS;
+  // Injected so a test can prove the deadline is applied without waiting for it, and so
+  // this module keeps working where AbortSignal.timeout is missing.
+  const timeoutSignal = typeof makeTimeoutSignal === 'function'
+    ? makeTimeoutSignal
+    : (ms) => (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(ms)
+      : undefined);
 
-  // Low-level request: build → fetch → parse, all errors normalized.
+  // Low-level request: build → fetch → parse, all errors normalized. Every call goes
+  // through here, which is the only reason one deadline covers all of them.
   async function request(method, path, opts = {}) {
     const { query, token, json, schema, requireToken } = opts;
     if (requireToken && !token) {
@@ -177,17 +219,23 @@ function createClient({ baseUrl, fetchImpl, anonId } = {}) {
     const url = buildUrl(baseUrl, path, query);
     const headers = { Accept: 'application/json', ...anonHeaders(anonId), ...authHeaders(token) };
     const init = { method, headers };
+    const ms = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : defaultTimeoutMs;
+    const signal = timeoutSignal(ms);
+    if (signal) init.signal = signal;
     if (json !== undefined) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(json);
     }
-    let res;
+    // The body read is inside the same try: the deadline covers the whole exchange, so a
+    // response whose headers arrived and whose body never did is a timeout like any other.
+    // Parsing stays outside it, so a contract failure is never reported as a network one.
+    let res; let body;
     try {
       res = await doFetch(url, init);
+      body = await readBody(res);
     } catch (err) {
       return networkError(err);
     }
-    const body = await readBody(res);
     return parseJsonResponse({ status: res.status, body }, schema);
   }
 
@@ -217,18 +265,18 @@ function createClient({ baseUrl, fetchImpl, anonId } = {}) {
     },
 
     // --- session (token required) ---
-    getMe: (token) => request('GET', C.API_PATHS.me, { token, requireToken: true, schema: C.MeResponse }),
-    logout: (token) => request('POST', C.API_PATHS.logout, { token, requireToken: true, schema: C.LogoutResponse }),
+    getMe: (token) => request('GET', C.API_PATHS.me, { token, requireToken: true, schema: C.MeResponse, timeoutMs: SHORT_TIMEOUT_MS }),
+    logout: (token) => request('POST', C.API_PATHS.logout, { token, requireToken: true, schema: C.LogoutResponse, timeoutMs: SHORT_TIMEOUT_MS }),
 
     // --- favorites (token required, add/remove idempotent) ---
     getFavorites: (token) => request('GET', C.API_PATHS.favorites, { token, requireToken: true, schema: C.FavoritesResponse }),
     addFavorite: (contentId, token) => {
       if (!contentId) return Promise.resolve(requestError('invalid_request', 'content id is required.'));
-      return request('PUT', `${C.API_PATHS.favorites}/${enc(contentId)}`, { token, requireToken: true });
+      return request('PUT', `${C.API_PATHS.favorites}/${enc(contentId)}`, { token, requireToken: true, timeoutMs: SHORT_TIMEOUT_MS });
     },
     removeFavorite: (contentId, token) => {
       if (!contentId) return Promise.resolve(requestError('invalid_request', 'content id is required.'));
-      return request('DELETE', `${C.API_PATHS.favorites}/${enc(contentId)}`, { token, requireToken: true });
+      return request('DELETE', `${C.API_PATHS.favorites}/${enc(contentId)}`, { token, requireToken: true, timeoutMs: SHORT_TIMEOUT_MS });
     },
 
     // --- auth code exchange (PKCE handshake step 5; see client-integration §2) ---
@@ -237,13 +285,15 @@ function createClient({ baseUrl, fetchImpl, anonId } = {}) {
       if (!code || !pkce_verifier) {
         return Promise.resolve(requestError('invalid_request', 'code and pkce_verifier are required.'));
       }
-      return request('POST', C.API_PATHS.authExchange, { json: payload, schema: C.AuthExchangeResponse });
+      return request('POST', C.API_PATHS.authExchange, { json: payload, schema: C.AuthExchangeResponse, timeoutMs: SHORT_TIMEOUT_MS });
     },
   };
 }
 
 module.exports = {
   STAGING_BASE,
+  DEFAULT_TIMEOUT_MS,
+  SHORT_TIMEOUT_MS,
   // pure helpers
   joinUrl,
   toQueryString,

@@ -70,15 +70,16 @@ contextBridge.exposeInMainWorld('api', {
   itemReveal: (p) => ipcRenderer.invoke('item-reveal', p),
   itemOpenSource: (id) => ipcRenderer.invoke('item-open-source', id),
   itemCopyPath: (p) => ipcRenderer.invoke('item-copy-path', p),
+  // META-001: ask an online catalogue what it knows about this exact file.
+  itemLookupMetadata: (id) => ipcRenderer.invoke('item-lookup-metadata', id),
 
   // Znada Cloud (C2): safe capability state only (environment/available/reason).
   getCloudCapability: () => ipcRenderer.invoke('get-cloud-capability'),
-  // Znada Cloud catalog (C3): renderer goes through main, never calls the API directly.
-  cloudCatalog: (opts) => ipcRenderer.invoke('cloud-catalog', opts),
   cloudAdd: (item) => ipcRenderer.invoke('cloud-add', item),
   // Znada Cloud account (C4): token stays in main; renderer only sees profile state.
   cloudSession: () => ipcRenderer.invoke('cloud-session'),
   cloudSignin: () => ipcRenderer.invoke('cloud-signin'),
+  cloudSigninCancel: () => ipcRenderer.invoke('cloud-signin-cancel'),
   cloudSignout: () => ipcRenderer.invoke('cloud-signout'),
   onCloudSession: (cb) => ipcRenderer.on('cloud-session-changed', (_e, s) => cb(s)),
   // Znada Cloud favorites (C5): account-synced; distinct from local Library favorites.

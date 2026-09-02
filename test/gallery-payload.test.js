@@ -108,4 +108,68 @@ function item(n) {
   assert.strictEqual(payload.items[1].pooled, null, 'an item that is not in the library carries no record identity');
 }
 
+// ---------------------------------------------------------------------------
+// Which library record the viewer is told a photo already has.
+//
+// Owner QA 2026-08-28: in the fullscreen viewer "Найти теги и источник" was offered and
+// did nothing at all. The handler needed a pool record, and this function answered "no
+// record" for EVERY local picture — including ones the user keeps in the library — so
+// the viewer treated a photo on the disk like an online card nobody had downloaded yet.
+// Remove and assign were dead the same way. That is why the fix belongs here and not in
+// the three handlers: one answer, not three patches.
+// ---------------------------------------------------------------------------
+{
+  const fs = require('fs');
+  const path = require('path');
+  const vm = require('vm');
+  const pathKeyMod = require('../src/path-key');
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8')
+    .split('\r\n').join('\n');
+  const rendererFn = (name) => {
+    const m = rendererSrc.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(m, `${name} must remain an explicit renderer boundary`);
+    return m[0];
+  };
+
+  const pool = {
+    p1: { id: 'p1', type: 'image', path: 'C:\\pics\\a.jpg' },
+    f1: { id: 'f1', type: 'folder', path: 'C:\\pics' },
+  };
+  const ctx = {
+    config: { library: pool },
+    window: { ZnadaPathKey: pathKeyMod },
+    OnlineAdd: { pooledItem: () => ({ id: 'online1', type: 'image', path: 'C:\\dl\\1.jpg' }) },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(rendererFn('normPathKey'), ctx);
+  vm.runInContext(rendererFn('poolItemForRecord'), ctx);
+  const galleryPoolRecord = vm.runInContext(`(${rendererFn('galleryPoolRecord')})`, ctx);
+
+  const kept = galleryPoolRecord({ kind: 'library', path: 'C:\\pics\\a.jpg', raw: pool.p1 });
+  assert.ok(kept && kept.id === 'p1',
+    'a photo the user keeps reached the viewer with no library record, so its menu could only refuse');
+
+  const byPath = galleryPoolRecord({ kind: 'path', path: 'C:\\PICS\\A.JPG', raw: { path: 'C:\\PICS\\A.JPG' } });
+  assert.ok(byPath && byPath.id === 'p1',
+    'a folder photo that HAS a record was not matched by path');
+
+  assert.strictEqual(
+    galleryPoolRecord({ kind: 'path', path: 'C:\\pics\\new.jpg', raw: { path: 'C:\\pics\\new.jpg' } }), null,
+    'a photo with no record was invented one',
+  );
+
+  const online = galleryPoolRecord({ kind: 'internet', path: '', raw: { id: 'x' } });
+  assert.ok(online && online.id === 'online1', 'the online path stopped working');
+
+  // Only the kinds this function actually knows about get an answer. Dropping that guard
+  // would hand an image record to any future card kind that happens to carry a path -
+  // including folder cards, whose identity is a folder and not the photo at that path.
+  assert.strictEqual(
+    galleryPoolRecord({ kind: 'subfolder', path: 'C:\\pics\\a.jpg', raw: { path: 'C:\\pics\\a.jpg' } }), null,
+    'a card kind the viewer treats differently was handed an image record anyway',
+  );
+  assert.strictEqual(galleryPoolRecord({ kind: 'pool-folder', path: 'C:\\pics', raw: pool.f1 }), null,
+    'a folder card was handed an image record');
+}
+
 console.log('gallery-payload.test.js ok');

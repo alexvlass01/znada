@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification, clipboard } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain: electronIpcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -10,19 +10,27 @@ const { pathToFileURL } = require('url');
 const { execFile, execFileSync } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
+const ipcAuthorityMod = require('./src/ipc-authority'); // SEC-002: кто вправе звать какой канал
+const pathGrantsMod = require('./src/path-grants'); // SEC-002: какие пути приложение подтвердило само
 const { pathKey, isDirectChildPath } = require('./src/path-key'); // canonical identity for every local path map
 const libraryAssignment = require('./src/library-assignment');
 const folderState = require('./src/folder-state'); // persistent firstSeenAt для файлов живых папок
 const liveFolderWatch = require('./src/live-folder-watch'); // lightweight fs.watch lifecycle + debounce
-const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онлайн-обои): URL + разбор
-const gelbooru = require('./src/gelbooru'); // Gelbooru: основной booru-провайдер
-const danbooru = require('./src/danbooru'); // Danbooru: URL + нормализация в общую онлайн-карточку
-const online = require('./src/online'); // смешивание и дедуп результатов внешних провайдеров
-const tagSuggest = require('./src/tag-suggest'); // anonymous Gelbooru tag autocomplete
+// ONL-013: ни поиск, ни поиск по отпечатку больше не называют сайтов — оба ходят через
+// реестр, поэтому прямые require адаптеров здесь не нужны.
+const online = require('./src/online');
+const onlineResume = require('./src/online-resume'); // ONL-014b: где какой сайт остановился // смешивание и дедуп результатов внешних провайдеров
+const providerRegistry = require('./src/provider-registry'); // ONL-011/012: единый список сайтов и их объявления
+const mediaFormats = require('./src/media-type'); // ONL-015: единый список форматов картинок
+const tagSuggest = require('./src/tag-suggest'); // ONL-014: строка поиска (написание тега, токен под курсором)
 const itemDetails = require('./src/item-details'); // bounded metadata reader + URL/path validation
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const libraryStore = require('./src/library-store'); // пул живёт в своём файле с пакетной записью
+const fingerprint = require('./src/fingerprint'); // что файл ЕСТЬ: кешируемый отпечаток байтов
+const metadataLookup = require('./src/metadata-lookup'); // кого спрашивать, стоит ли и что это значит
+const metadataStore = require('./src/metadata-store'); // отпечатки и журнал запросов (производное, не данные пользователя)
+const requestBudget = require('./src/request-budget'); // сколько запросов наружу вообще разрешено
 const coalesce = require('./src/coalesce'); // склейка частых рассылок конфига в интерфейс
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
@@ -332,9 +340,7 @@ function openDiagnosticsControlWindow() {
     backgroundColor: '#1b1b1b',
     webPreferences: {
       preload: path.join(__dirname, 'diagnostics', 'ui', 'control-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
+      ...windowSecurity('diagnostics'),
     },
   });
   diagnosticsControlWindow.setMenuBarVisibility(false);
@@ -349,7 +355,7 @@ function openDiagnosticsControlWindow() {
   diagnosticsControlWindow.webContents.on('did-fail-load', (e, code, desc) => {
     console.error('[Diag Control] did-fail-load:', code, desc);
   });
-  diagnosticsControlWindow.loadFile(path.join(__dirname, 'diagnostics', 'ui', 'control.html'));
+  diagnosticsControlWindow.loadFile(hardenWindow(diagnosticsControlWindow, 'diagnostics'));
   // Show WITHOUT stealing focus, so the main window stays foreground and keeps rendering
   // (and thus keeps being sampled) while this panel floats beside it.
   diagnosticsControlWindow.once('ready-to-show', () => {
@@ -378,18 +384,91 @@ async function importWallpaper(srcPath) {
   return dest;
 }
 
-// Download a remote image into the app's data dir (content-addressed, like importWallpaper).
-async function downloadImageTo(dir, url, fetchOptions = {}) {
+// Download a remote image into a private staging file beside its content-addressed
+// destination. The caller exposes it only after any session/ownership check succeeds.
+// That matters for Cloud: writing the shared destination first and later deleting it on
+// a stale result races a second, current operation that may already have adopted it.
+async function stageDownloadImage(dir, url, fetchOptions = {}) {
   await fs.promises.mkdir(dir, { recursive: true });
-  const res = await fetch(url, fetchOptions);
+  const options = fetchOptions && typeof fetchOptions === 'object' ? fetchOptions : {};
+  const { expectedFormat = '', ...requestOptions } = options;
+  const res = await fetch(url, requestOptions);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (expectedFormat) {
+    const responseType = res.headers && typeof res.headers.get === 'function'
+      ? res.headers.get('content-type')
+      : '';
+    if (!mediaFormats.mimeMatchesFormat(responseType, expectedFormat)) {
+      throw new Error('Unexpected image Content-Type');
+    }
+  }
   const buf = Buffer.from(await res.arrayBuffer());
   const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 16);
   let ext = '.jpg';
   try { const e = path.extname(new URL(url).pathname).toLowerCase(); if (/^\.[a-z0-9]{2,5}$/.test(e)) ext = e; } catch {}
   const dest = path.join(dir, `wp-${hash}${ext}`);
-  if (!fs.existsSync(dest)) await fs.promises.writeFile(dest, buf);
-  return dest;
+  if (fs.existsSync(dest)) return { path: dest, stagingPath: '' };
+  const stagingPath = path.join(dir,
+    `.download-${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`);
+  try {
+    await fs.promises.writeFile(stagingPath, buf, { flag: 'wx' });
+  } catch (err) {
+    try { fs.rmSync(stagingPath, { force: true }); } catch {}
+    throw err;
+  }
+  return { path: dest, stagingPath };
+}
+
+// Synchronous after the await-heavy body download. A session cannot change between a
+// caller's final guard, this promotion and the state mutation that takes ownership.
+// If a peer already promoted identical bytes, only our private staging file is removed.
+function commitDownloadArtifact(artifact, dir) {
+  if (!artifact || !isDirectChildPath(artifact.path, dir)) {
+    throw new Error('Unsafe download artifact path');
+  }
+  const stagingPath = artifact.stagingPath;
+  if (!stagingPath) return { path: artifact.path, created: false };
+  if (!isDirectChildPath(stagingPath, dir)) throw new Error('Unsafe download staging path');
+  try {
+    if (fs.existsSync(artifact.path)) {
+      fs.rmSync(stagingPath, { force: true });
+      return { path: artifact.path, created: false };
+    }
+    try {
+      fs.renameSync(stagingPath, artifact.path);
+      return { path: artifact.path, created: true };
+    } catch (err) {
+      // Another process may have won between existsSync and rename. A content hash names
+      // identical bytes, so its completed destination is the safe deduplicated result.
+      if (fs.existsSync(artifact.path)) {
+        fs.rmSync(stagingPath, { force: true });
+        return { path: artifact.path, created: false };
+      }
+      throw err;
+    }
+  } finally {
+    try { fs.rmSync(stagingPath, { force: true }); } catch {}
+  }
+}
+
+function discardDownloadArtifact(artifact, dir) {
+  const stagingPath = artifact && artifact.stagingPath;
+  if (!stagingPath || !isDirectChildPath(stagingPath, dir)) return false;
+  try {
+    fs.rmSync(stagingPath, { force: true });
+    return true;
+  } catch (err) {
+    console.error('stale Cloud download cleanup:', err);
+    return false;
+  }
+}
+
+async function downloadImageArtifactTo(dir, url, fetchOptions = {}) {
+  return commitDownloadArtifact(await stageDownloadImage(dir, url, fetchOptions), dir);
+}
+
+async function downloadImageTo(dir, url, fetchOptions = {}) {
+  return (await downloadImageArtifactTo(dir, url, fetchOptions)).path;
 }
 
 // Downloading INTO the library. ONL-009 also needs the same picture somewhere the
@@ -399,35 +478,6 @@ async function downloadWallpaperFromUrl(url, fetchOptions = {}) {
   return downloadImageTo(WALLPAPERS_DIR, url, fetchOptions);
 }
 
-// Bundled Wallhaven API key — official builds only. It lives in a gitignored file
-// (wallhaven-key.json) so it's never in the public repo; absent for self-builds, where
-// the app simply stays keyless (SFW+sketchy still work, NSFW needs the bundled key).
-function loadBundledWallhavenKey() {
-  try {
-    const k = require('./wallhaven-key.json');
-    return k && typeof k.apikey === 'string' ? k.apikey.trim() : '';
-  } catch { return ''; }
-}
-const BUNDLED_WALLHAVEN_KEY = loadBundledWallhavenKey();
-// Effective key: the bundled one (official builds only). Users can't enter their own —
-// the Wallhaven key is internal-only by design.
-function wallhavenKey() {
-  return BUNDLED_WALLHAVEN_KEY || '';
-}
-
-// Gelbooru credentials are bundled only with official/local builds and stay in
-// a gitignored file. If absent or rejected, the search path falls back to the
-// public Danbooru adapter instead of disabling the Internet source.
-function loadBundledGelbooruCredentials() {
-  try {
-    const k = require('./gelbooru-key.json');
-    const userId = String(k && (k.userId || k.user_id) || '').trim();
-    const apiKey = String(k && (k.apiKey || k.api_key) || '').trim();
-    return userId && apiKey ? { userId, apiKey } : null;
-  } catch { return null; }
-}
-const BUNDLED_GELBOORU_CREDENTIALS = loadBundledGelbooruCredentials();
-
 // Дефолты + load/migrate/save вынесены в ./src/config.js (тестируется: test/config.test.js).
 let config = configMod.freshDefaults();
 let slideshowPositionDirty = false;
@@ -436,6 +486,10 @@ let lastLibraryRemoval = null;
 // Set when the pool file could not be read at startup: every write is suppressed so a
 // temporary access problem cannot be turned into an empty library on disk.
 let libraryUnsafeToWrite = false;
+// BUG-023. The same rule for config.json. A read failure is not an empty profile: the
+// app runs on defaults for this session and writes nothing over the file it could not
+// read, so a locked file or a bad sector cannot become "your settings are gone".
+let configUnsafeToWrite = false;
 
 // The photo pool has its own file and its own batched writer (see
 // src/library-store.js). Settings stay on the immediate path — they are small and
@@ -445,6 +499,22 @@ const libraryWriter = libraryStore.createWriter({
   configPath: CONFIG_PATH,
   onWriteFailure: () => enterLibraryWriteDegradedMode(),
 });
+
+// META-001. Derived knowledge about local files: their fingerprints, and the journal of
+// what each catalogue has already answered about them. Kept apart from the pool on
+// purpose — see src/metadata-store.js. Loaded lazily on first use so a feature nobody
+// touches costs nothing at startup.
+let metadataCache = null;
+const metadataWriter = metadataStore.createWriter({ configPath: CONFIG_PATH });
+
+function metadataCacheStore() {
+  if (!metadataCache) metadataCache = metadataStore.load(CONFIG_PATH);
+  return metadataCache;
+}
+
+function markMetadataDirty() {
+  if (metadataCache) metadataWriter.markDirty(metadataCache);
+}
 
 // One channel for the pool file: to the user it is either usable or not, and the two
 // ways it breaks differ only in what they can do about it, which is what the
@@ -458,6 +528,29 @@ function reportLibraryStoreProblem(kind) {
   });
 }
 
+// BUG-023. One door for every config.json write. The gate is useless if a caller can
+// walk past it, and there were six of them — two on the startup path, one on a timer and
+// one that fires before any window exists. Returns false instead of throwing: a blocked
+// write must be reported to the caller, not take down the action that asked for it.
+function writeConfigFile(options) {
+  if (configUnsafeToWrite) {
+    reportConfigProblem();
+    return false;
+  }
+  return configMod.save(config, CONFIG_PATH, options);
+}
+
+// One channel for config.json, bounded the same way the pool file's is: the notifier is
+// edge-triggered, so a user who keeps clicking switches is told once and not once per
+// click. The two states differ only in what can be done about them, which is what the
+// body says.
+function reportConfigProblem(kind) {
+  reportChannelFailure('config-store', 'journal.configStore', {
+    titleKey: 'notify.configStoreFailedTitle',
+    bodyKey: kind === 'corrupt-unbacked' ? 'notify.configStoreDamagedBody' : 'notify.configStoreLockedBody',
+  });
+}
+
 // A store that was healthy at startup can still become unwritable later (locked tmp,
 // full disk, permissions). From that first failed write onward config.json becomes the
 // fail-closed copy for every pool edit until restart. Merely retaining the writer retry
@@ -467,12 +560,27 @@ function enterLibraryWriteDegradedMode() {
   if (libraryUnsafeToWrite) return;
   libraryUnsafeToWrite = true;
   console.error('Пул перестал записываться — новые изменения сохраняются inline до перезапуска.');
-  configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: true });
+  writeConfigFile({ skipLibrary: true, keepInline: true });
   reportLibraryStoreProblem('unreadable');
 }
 
 function loadConfig() {
   config = configMod.load(CONFIG_PATH);
+
+  // BUG-023. Decided FIRST, and before any of the early returns below: a settings file
+  // that could not be read must not be written over no matter what the pool file turns
+  // out to be. What is in memory right now is the defaults, not the user's profile.
+  const cfgSource = config._configSource || {};
+  configUnsafeToWrite = cfgSource.writable === false;
+  if (configUnsafeToWrite) {
+    console.error(
+      cfgSource.state === 'corrupt-unbacked'
+        ? 'config.json повреждён и бэкап не создан — настройки НЕ перезаписываются до перезапуска.'
+        : 'config.json не читается — настройки НЕ перезаписываются до перезапуска.',
+    );
+    reportConfigProblem(cfgSource.state);
+  }
+
   const source = config._poolSource || {};
 
   // An unreadable store (locked, permissions, failing disk) says NOTHING about what
@@ -546,7 +654,7 @@ function loadConfig() {
   if (!source.storeExisted || source.mergedInline || source.broken || source.normalizeAdded) {
     const ok = libraryStore.save(config.library, CONFIG_PATH, config.libraryTrash);
     if (ok) {
-      configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: false });
+      writeConfigFile({ skipLibrary: true, keepInline: false });
     } else {
       // This is the same state as a writer that becomes unwritable later. Merely
       // keeping the inline copy in THIS save is not enough: the next settings-only
@@ -691,7 +799,7 @@ function saveLibrarySoon() {
   // confirmed on screen, and gone after a restart. Synchronous and un-batched on
   // purpose; this is the degraded path, where being correct beats being cheap.
   if (libraryUnsafeToWrite) {
-    configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: true });
+    writeConfigFile({ skipLibrary: true, keepInline: true });
     return;
   }
   libraryWriter.markDirty(config.library, config.libraryTrash);
@@ -733,7 +841,7 @@ function saveConfig() {
     // successful save can safely remove it again.
     keepInline = !libraryWriter.flush();
   }
-  const saved = configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline });
+  const saved = writeConfigFile({ skipLibrary: true, keepInline });
   slideshowPositionDirty = false;
   broadcastConfig();
   return saved;
@@ -743,7 +851,7 @@ function saveConfig() {
 // scheduling a full rewrite of thousands of pool records — the coupling the split
 // storage existed to remove — without guessing on the paths that do touch the pool.
 function saveSettingsOnly() {
-  const saved = configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: libraryUnsafeToWrite });
+  const saved = writeConfigFile({ skipLibrary: true, keepInline: libraryUnsafeToWrite });
   if (!saved) return false;
   slideshowPositionDirty = false;
   broadcastConfig();
@@ -755,13 +863,20 @@ function saveSettingsOnly() {
 // Written directly (no broadcast) — it is main-only and the renderer never reads it.
 function ensureAnonId() {
   if (/^[A-Za-z0-9_-]{8,128}$/.test(config.anonId || '')) return;
+  // BUG-023. This is the write that turned a read failure into data loss: it runs on
+  // every start, sees no id in the defaults and saves them over the real file. An
+  // unreadable config very likely HAS an id, and one we cannot store would be a
+  // different install on every launch — so nothing is generated at all.
+  if (configUnsafeToWrite) return;
   config.anonId = crypto.randomBytes(16).toString('hex');
-  configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: libraryUnsafeToWrite });
+  writeConfigFile({ skipLibrary: true, keepInline: libraryUnsafeToWrite });
 }
 
 function persistSlideshowPosition() {
   if (!slideshowPositionDirty) return;
-  configMod.save(config, CONFIG_PATH, { skipLibrary: true, keepInline: libraryUnsafeToWrite });
+  // Stays dirty when the write is refused, so the position is retried rather than
+  // silently declared saved.
+  if (!writeConfigFile({ skipLibrary: true, keepInline: libraryUnsafeToWrite })) return;
   slideshowPositionDirty = false;
 }
 
@@ -933,6 +1048,32 @@ function pruneConfirmedMissingLiveFolderImages() {
 function syncLiveFolderWatchers() {
   if (!liveFolderWatcher) return { watched: 0, failed: 0 };
   return liveFolderWatcher.sync(liveFolderItems());
+}
+
+// Something OUTSIDE the main window changed which pictures the Library shows, without
+// changing the pool.
+//
+// Owner QA 2026-08-30: removing a photo in the fullscreen viewer left it on screen in the
+// grid behind until the user switched rails and came back. Removing a photo that only
+// lives inside a watched folder does not touch the pool — it is hidden by path — and the
+// grid rebuilds itself off a signature of the POOL. A pool removal needs no help here: the
+// ordinary config broadcast already carries it. This is only for the half that broadcast
+// cannot express.
+//
+// Sent on the live-folder channel deliberately: the question the main window has to re-ask
+// is exactly what that channel already means — "what is visible inside the folders you are
+// watching" — and its handler in the renderer already does the right thing with it.
+//
+// The counter exists because no window is created in tests, so this is how a test can
+// drive the real handler and see the decision. The send below is the same single line
+// broadcastLiveFolderChanges uses.
+const libraryViewStale = { count: 0, last: '' };
+function notifyLibraryViewStale(reason) {
+  libraryViewStale.count += 1;
+  libraryViewStale.last = String(reason || '');
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  diagCountSend('live-folders-changed');
+  mainWindow.webContents.send('live-folders-changed', { folderIds: [] });
 }
 
 function broadcastLiveFolderChanges(summaries) {
@@ -1467,7 +1608,7 @@ async function applyThemeSchedule() {
 function setWallpaper(imagePath) {
   return new Promise((resolve, reject) => {
     if (!imagePath || !fs.existsSync(imagePath)) {
-      return reject(new Error('Файл обоев не найден: ' + imagePath));
+      reject(new Error('Файл обоев не найден: ' + imagePath)); return;
     }
     const map = STYLE_MAP[config.style] || STYLE_MAP.fill;
     execFile(
@@ -1620,7 +1761,12 @@ function isOwnWallpaperCopy(p) {
 function gcWallpapers() {
   // Never sweep against a pool that failed to load: the keep-set would be wrong and
   // files still in use would be moved out from under the user.
-  if (libraryUnsafeToWrite) return;
+  //
+  // BUG-023: the same holds for the SETTINGS. The keep-set includes the two legacy
+  // global fallback paths out of config.json, so a defaults-only config makes an
+  // own-copy that nothing else references look like an orphan. Measured, not assumed:
+  // without this line the regression test's photo really is moved to .trash.
+  if (libraryUnsafeToWrite || configUnsafeToWrite) return;
   try {
     // Предохранитель: если пул пуст (переходное/битое состояние) — НЕ трогаем ничего,
     // иначе keep свёлся бы к одним глобалам и всё остальное уехало бы в корзину.
@@ -1900,9 +2046,7 @@ function createWindow() {
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
+      ...windowSecurity('main'),
       additionalArguments: diagRendererArgs('renderer-main'),
       // In diagnostics mode keep rAF running while the window is merely unfocused (the
       // floating control window must not zero out smoothness sampling). The probe still
@@ -1913,7 +2057,7 @@ function createWindow() {
 
   if (diagnosticsController) diagnosticsController.attachWindowEvents(mainWindow, 'main');
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  mainWindow.loadFile(hardenWindow(mainWindow, 'main'));
 
   mainWindow.webContents.on('console-message', ({ message, sourceId, lineNumber }) => {
     console.log(`[Renderer Console] ${message} (${sourceId}:${lineNumber})`);
@@ -1996,9 +2140,7 @@ function createGalleryWindow() {
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'renderer', 'viewer-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
+      ...windowSecurity('viewer'),
       backgroundThrottling: false,
       additionalArguments: diagRendererArgs('renderer-viewer'),
     },
@@ -2006,7 +2148,7 @@ function createGalleryWindow() {
 
   if (diagnosticsController) diagnosticsController.attachWindowEvents(galleryWindow, 'viewer');
 
-  galleryWindow.loadFile(path.join(__dirname, 'renderer', 'viewer.html'));
+  galleryWindow.loadFile(hardenWindow(galleryWindow, 'viewer'));
 
   galleryWindow.webContents.on('console-message', ({ message, sourceId, lineNumber }) => {
     console.log(`[Viewer Console] ${message} (${sourceId}:${lineNumber})`);
@@ -2384,6 +2526,141 @@ function broadcastWallpaperTheme(theme = wallpaperThemeName()) {
 // ---------------------------------------------------------------------------
 // IPC
 // ---------------------------------------------------------------------------
+// SEC-002. Which window may call which channel. Deny by default: `ipcAuthority.handle`
+// refuses to register a channel that is not named here, so a new handler cannot quietly
+// arrive without an answer to "who is this for".
+//
+// The lists ARE the three preload bridges — that is where a window's capability is actually
+// decided — and test/ipc-authority.test.js reads the bridges back and compares them to this,
+// so the two cannot drift. Before this, seventy-seven of the ninety-one channels asked
+// nothing at all: the viewer could drive every setting, and an <iframe> inside either window
+// shares its WebContents and therefore had its authority.
+const IPC_MAIN_ONLY = [
+  'add-slot-folder', 'add-slot-images', 'add-slot-paths', 'apply-now', 'check-for-updates',
+  'clear-slot', 'cloud-favorite', 'cloud-favorites', 'cloud-session', 'cloud-signin',
+  'cloud-signin-cancel', 'cloud-signout', 'create-shortcuts', 'current-image',
+  'cycle-theme-override',
+  'detect-location', 'event-log-clear', 'event-log-get', 'expand-folders', 'feature-flags',
+  'folder-entries', 'folder-info', 'gallery-open', 'get-cloud-capability', 'get-config',
+  'get-monitors', 'get-theme', 'get-update-state', 'get-version', 'get-wallpaper-theme',
+  'install-update', 'internet-search', 'internet-status', 'internet-tag-suggest',
+  'item-copy-path', 'item-details', 'item-open-source', 'item-reveal', 'library-add-folder',
+  'library-add-images', 'library-add-paths', 'library-add-tag', 'library-assign-record',
+  'library-assign-records', 'library-delete-forever', 'library-ensure-sizes',
+  'library-hidden-list', 'library-materialize', 'library-path-sizes', 'library-recent',
+  'library-refresh', 'library-remove-tag', 'library-restore', 'library-toggle-favorite',
+  'next-change-get', 'next-wallpaper', 'open-releases', 'open-website', 'quit-app',
+  'remove-slot-item', 'set-autostart', 'set-config', 'set-hotkey', 'set-hotkey-recording',
+  'set-slideshow', 'set-slideshow-index', 'set-slideshow-to-path', 'set-start-minimized',
+  'shortcuts-status', 'thumb', 'thumb-aspects', 'thumb-info',
+];
+
+// Both windows show cards, so both need the actions behind a card's menu (ONL-009).
+const IPC_MAIN_AND_VIEWER = [
+  'card-copy-file', 'card-copy-link', 'card-open-source', 'card-save-as', 'cloud-add',
+  'file-url', 'get-i18n', 'internet-add', 'internet-thumbnail', 'item-lookup-metadata',
+  'library-assign', 'library-remove-many', 'library-undo-remove',
+];
+
+// The fullscreen viewer's own window controls and its full-size image fetches.
+const IPC_VIEWER_ONLY = [
+  'card-assign-targets', 'card-ensure-record', 'gallery-close', 'gallery-payload',
+  'gallery-toggle-fullscreen', 'internet-full', 'internet-sample',
+];
+
+// Dev-only, and only in a gated diagnostics run; that window does not exist otherwise.
+// The eight after the first are registered by diagnostics/main/controller.js rather than
+// in this file, THROUGH THE SAME `ipcMain` it is handed - which is this guarded one.
+// Leaving them out of the table did not make them unguarded, it made them
+// unregisterable: the controller threw on the first one and diagnostics mode came up
+// with no handlers at all. Where a channel is registered is not the same question as
+// whose channel it is, and this list answers the second.
+const IPC_DIAGNOSTICS_ONLY = [
+  'diagnostics-test-notification',
+  'diagnostics-clear-sessions', 'diagnostics-export-sanitized', 'diagnostics-mark',
+  'diagnostics-open-report', 'diagnostics-open-session-folder', 'diagnostics-start',
+  'diagnostics-status', 'diagnostics-stop',
+];
+
+// The probe that measures the app attaches inside BOTH renderer preloads, so these two
+// come from the windows being measured, never from the control panel.
+const IPC_DIAGNOSTICS_PROBE = ['diagnostics-clock', 'diagnostics-record'];
+
+const IPC_ROLES = {};
+for (const channel of IPC_MAIN_ONLY) IPC_ROLES[channel] = ['main'];
+for (const channel of IPC_MAIN_AND_VIEWER) IPC_ROLES[channel] = ['main', 'viewer'];
+for (const channel of IPC_VIEWER_ONLY) IPC_ROLES[channel] = ['viewer'];
+for (const channel of IPC_DIAGNOSTICS_ONLY) IPC_ROLES[channel] = ['diagnostics'];
+for (const channel of IPC_DIAGNOSTICS_PROBE) IPC_ROLES[channel] = ['main', 'viewer'];
+
+const ipcAuthority = ipcAuthorityMod.create({ ipcMain: electronIpcMain, roles: IPC_ROLES });
+// Every `ipcMain.handle` below is that guarded door. The name is kept so the call sites read
+// as they always did — and so the contract test keeps finding them where it expects.
+const ipcMain = { handle: (channel, fn) => ipcAuthority.handle(channel, fn) };
+
+// SEC-002. One place that says what a window of ours is allowed to become. A renderer that
+// can be navigated somewhere else, open a window of its own, or be granted a device
+// permission is no longer the thing whose authority the table above describes.
+// A window's role and the page it is allowed to be on are ONE fact, not two arguments
+// that have to agree. Declared here so a call site cannot pair them wrongly: harden
+// returns the file to load, so getting the role wrong loads the wrong window outright
+// instead of quietly giving it somebody else's authority.
+// SEC-002, slice 4. What a window of ours is allowed to be, decided once.
+//
+// All three windows ran with the Chromium sandbox OFF. Context isolation and a
+// method-by-method bridge already stood between a page and Node, but the sandbox is the
+// layer under that: it is what keeps a renderer that has been taken over from reaching
+// the operating system directly, rather than only from reaching our bridge.
+//
+// It is on everywhere except the two app windows of a DIAGNOSTICS run, and for one
+// concrete reason: a sandboxed preload may only require `electron` and a couple of
+// built-ins, while the dev-only measuring probe is a separate file the preloads pull in
+// with a relative require. Bundling it would need a build step this project does not
+// have. Diagnostics is unpackaged-only and never ships - test/diagnostics-package-boundary
+// proves that separately - so the exception costs nothing a user could ever run into.
+// The diagnostics control panel is sandboxed regardless: its preload needs only electron.
+function windowSecurity(role) {
+  return {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: role === 'diagnostics' ? true : !DIAGNOSTICS_BOOTSTRAP.enabled,
+  };
+}
+
+const WINDOW_PAGES = {
+  main: () => path.join(__dirname, 'renderer', 'index.html'),
+  viewer: () => path.join(__dirname, 'renderer', 'viewer.html'),
+  diagnostics: () => path.join(__dirname, 'diagnostics', 'ui', 'control.html'),
+};
+
+function hardenWindow(win, role) {
+  const page = WINDOW_PAGES[role];
+  if (!page) throw new Error(`hardenWindow: unknown window role '${role}'`);
+  const expectedFile = page();
+  if (!win || win.isDestroyed()) return expectedFile;
+  const expected = pathToFileURL(expectedFile).href;
+  const contents = win.webContents;
+  ipcAuthority.register(contents, role, expected);
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('will-navigate', (event, url) => {
+    if (ipcAuthorityMod.baseUrl(url) === ipcAuthorityMod.baseUrl(expected)) return;
+    event.preventDefault();
+    console.error(`[Window] refused navigation of ${role} to ${url}`);
+  });
+  // Nothing in Znada needs a camera, a microphone, a location or notifications from
+  // inside a page: notifications are raised by main. Refusing them all is not a
+  // restriction on any feature, it is declining to hold a capability we never use.
+  const session = contents.session;
+  if (session && typeof session.setPermissionRequestHandler === 'function') {
+    session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  }
+  if (session && typeof session.setPermissionCheckHandler === 'function') {
+    session.setPermissionCheckHandler(() => false);
+  }
+  contents.on('destroyed', () => ipcAuthority.forget(contents));
+  return expectedFile;
+}
+
 ipcMain.handle('get-config', () => config);
 
 // Главная спрашивает это при открытии и при возврате окна из трея; дальше состояние
@@ -2430,25 +2707,86 @@ function cloudClient() {
 // public profile + entitlements through cloudAuthState().
 let _cloudToken = null;          // in-memory bearer token (never crosses IPC to renderer)
 let _cloudUser = null;           // cached { user, entitlements } from /v1/me
+let _cloudSessionRevision = 0;   // changes only when the bearer session itself changes
 const cloudSessionPath = () => path.join(app.getPath('userData'), 'cloud-session.bin');
+const defaultCloudSessionStorage = Object.freeze({
+  existsSync: (...args) => fs.existsSync(...args),
+  readFileSync: (...args) => fs.readFileSync(...args),
+  mkdirSync: (...args) => fs.mkdirSync(...args),
+  writeFileSync: (...args) => fs.writeFileSync(...args),
+  renameSync: (...args) => fs.renameSync(...args),
+  rmSync: (...args) => fs.rmSync(...args),
+});
+let cloudSessionStorage = defaultCloudSessionStorage;
 
 function loadStoredToken() {
   try {
     if (!safeStorage.isEncryptionAvailable()) return null;
     const p = cloudSessionPath();
-    if (!fs.existsSync(p)) return null;
-    return safeStorage.decryptString(fs.readFileSync(p)) || null;
+    if (!cloudSessionStorage.existsSync(p)) return null;
+    return safeStorage.decryptString(cloudSessionStorage.readFileSync(p)) || null;
   } catch { return null; }
 }
 function saveStoredToken(token) {
+  const p = cloudSessionPath();
+  const temp = `${p}.tmp`;
   try {
-    if (!safeStorage.isEncryptionAvailable()) return false; // no DPAPI → keep in memory only
-    fs.writeFileSync(cloudSessionPath(), safeStorage.encryptString(token));
+    // A Cloud account is either durable as one token/profile pair or is not published.
+    // Writing beside the target and renaming in the same directory keeps the previous
+    // encrypted bearer intact across write/rename failures and process interruption.
+    if (!safeStorage.isEncryptionAvailable()) return false;
+    const encrypted = safeStorage.encryptString(token);
+    cloudSessionStorage.mkdirSync(path.dirname(p), { recursive: true });
+    cloudSessionStorage.writeFileSync(temp, encrypted);
+    cloudSessionStorage.renameSync(temp, p);
     return true;
-  } catch (err) { console.error('cloud token save:', err); return false; }
+  } catch (err) {
+    try { cloudSessionStorage.rmSync(temp, { force: true }); } catch {}
+    console.error('cloud token save:', err);
+    return false;
+  }
 }
 function clearStoredToken() {
-  try { fs.rmSync(cloudSessionPath(), { force: true }); } catch {}
+  try {
+    cloudSessionStorage.rmSync(cloudSessionPath(), { force: true });
+    return true;
+  } catch (err) {
+    console.error('cloud token clear:', err);
+    return false;
+  }
+}
+
+// Every async protected call carries the identity of the session whose bearer token it
+// sent. Token text alone is not enough: a logout/sign-in cycle may eventually receive
+// the same token again, while a late answer from the older cycle must still be inert.
+function cloudSessionSnapshot() {
+  return { token: _cloudToken, revision: _cloudSessionRevision };
+}
+function cloudSessionIsCurrent(session) {
+  return !!session
+    && session.revision === _cloudSessionRevision
+    && session.token === _cloudToken;
+}
+function replaceCloudSession(token, user, { persist = false, broadcast = false } = {}) {
+  const nextToken = token || null;
+  let persisted = true;
+  if (persist) {
+    // The two directions are NOT symmetric, and treating them as one is what stranded
+    // the account. Failing to WRITE a token means the sign-in would not survive a
+    // restart, so refusing is honest. Failing to DELETE one — an antivirus holding the
+    // file, a roaming profile, a locked disk — says nothing about whether the user is
+    // still signed in, and refusing there left the app believing he was: every request
+    // then failed, and signing out again failed the same way, with no way back short of
+    // reinstalling. Forgetting the session in memory is what the user asked for, and it
+    // always happens; the leftover file is reported, not obeyed.
+    persisted = nextToken ? saveStoredToken(nextToken) : clearStoredToken();
+    if (nextToken && !persisted) return false;
+  }
+  _cloudToken = nextToken;
+  _cloudUser = _cloudToken && user ? user : null;
+  _cloudSessionRevision++;
+  if (broadcast) broadcastCloudSession();
+  return true;
 }
 
 // Renderer-safe auth state (no token).
@@ -2464,12 +2802,15 @@ function broadcastCloudSession() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('cloud-session-changed', cloudAuthState());
 }
 
-// A protected call returned a normalized result. If it's a 401, the session is dead:
-// drop the token everywhere and tell the renderer. Returns true if it was an auth error.
-function cloudHandleAuthError(result) {
+// A protected call returned a normalized result. If it's a 401 for the SAME session
+// that made the call, the session is dead: drop it everywhere and tell the renderer.
+// A late 401 from an older bearer must not sign out the account that replaced it.
+// Returns true if the result itself was an auth error, whether or not it was stale.
+function cloudHandleAuthError(result, session) {
   if (result && result.ok === false && result.error && result.error.status === 401) {
-    _cloudToken = null; _cloudUser = null; clearStoredToken();
-    broadcastCloudSession();
+    if (cloudSessionIsCurrent(session)) {
+      replaceCloudSession(null, null, { persist: true, broadcast: true });
+    }
     return true;
   }
   return false;
@@ -2477,22 +2818,54 @@ function cloudHandleAuthError(result) {
 
 // Bring up a one-shot loopback listener, open the system browser at the Google start
 // URL, and resolve with the one-time exchange code from the redirect (RFC 8252).
-function runLoopbackSignin(challenge) {
+// SEC-002, slice 3. One sign-in at a time, and the listener belongs to it.
+//
+// Two presses used to mean two listeners, two browser tabs and two codes in flight, with
+// no way to say which answer belonged to which attempt. Now a second press is refused
+// until the first transaction finishes. Its loopback socket and five-minute browser timer
+// end at redirect/cancel/timeout; the same single-flight then remains occupied for the
+// separately bounded exchange and /me requests.
+let activeCloudSignin = null;
+
+function cancelCloudSignin() {
+  if (!activeCloudSignin || typeof activeCloudSignin.cancel !== 'function') return false;
+  return activeCloudSignin.cancel();
+}
+
+function runLoopbackSignin(challenge, state, attempt) {
   return new Promise((resolve, reject) => {
+    let ourPort = 0;
     const server = http.createServer((req, res) => {
-      const code = cloudOauth.parseLoopbackCode(req.url);
-      res.writeHead(code ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(loopbackHtml(!!code));
-      if (code) { cleanup(); resolve(code); }
+      // Not "does the URL carry a code": the request has to look like the browser coming
+      // back to US, for THIS sign-in. See src/cloud/oauth.js for what that means.
+      const parsed = cloudOauth.parseLoopbackRequest(req, { port: ourPort, state });
+      res.writeHead(parsed.ok ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(loopbackHtml(parsed.ok));
+      if (parsed.ok) { cleanup(); resolve(parsed.code); }
+      else console.error(`[Cloud] refused a loopback request (${parsed.reason})`);
     });
     let done = false;
     const timer = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, 5 * 60 * 1000);
-    function cleanup() { if (done) return; done = true; clearTimeout(timer); try { server.close(); } catch {} }
+    function cleanup() {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { server.close(); } catch {}
+      attempt.cleanup = null;
+      attempt.cancel = null;
+    }
+    attempt.cleanup = cleanup;
+    attempt.cancel = () => {
+      if (done) return false;
+      cleanup();
+      reject(new Error('cancelled'));
+      return true;
+    };
     server.on('error', (err) => { cleanup(); reject(err); });
     server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      const url = cloudClientMod.buildGoogleStartUrl(cloudCapability().apiBase, { port, challenge });
-      shell.openExternal(url).catch((err) => { cleanup(); reject(err); });
+      ourPort = server.address().port;
+      const url = cloudClientMod.buildGoogleStartUrl(cloudCapability().apiBase, { port: ourPort, challenge, state });
+      Promise.resolve(shell.openExternal(url)).catch((err) => { cleanup(); reject(err); });
     });
   });
 }
@@ -2502,37 +2875,37 @@ function loopbackHtml(okCode) {
   return `<!doctype html><meta charset="utf-8"><title>Znada</title><body style="font-family:Segoe UI,system-ui,sans-serif;background:#fafafa;color:#2e3436;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h2 style="margin:0 0 8px">Znada</h2><p>${msg}</p></div></body>`;
 }
 
-// Catalog page (renderer never calls the API directly — everything goes through here).
-ipcMain.handle('cloud-catalog', async (e, opts) => {
-  const client = cloudClient();
-  if (!client) return { items: [], nextCursor: null, error: 'unavailable' };
-  const o = opts || {};
-  const rating = ['general', 'suggestive', 'explicit'].includes(o.rating) ? o.rating : 'general';
-  const tag = typeof o.tag === 'string' && o.tag.trim() ? o.tag.trim() : undefined;
-  const r = await client.getCatalog({ rating, tag, cursor: o.cursor || undefined, limit: 30, token: _cloudToken || undefined });
-  if (!r.ok) {
-    cloudHandleAuthError(r);
-    return { items: [], nextCursor: null, error: r.error.code, kind: r.error.kind };
-  }
-  return { items: r.data.items, nextCursor: r.data.next_cursor, error: null };
-});
-
 // Download a catalog image into the local Library — fetches a FRESH signed URL at
 // click time (never a stale catalog thumb URL), then reuses the existing safe import.
 ipcMain.handle('cloud-add', async (e, item) => {
   const client = cloudClient();
   if (!client) return { config, error: 'unavailable' };
   if (!item || !item.id) return { config, error: 'badItem' };
+  const session = cloudSessionSnapshot();
+  let stagedArtifact = null;
   try {
-    const dl = await client.getDownload(item.id, { token: _cloudToken || undefined });
-    if (!dl.ok) { cloudHandleAuthError(dl); return { config, error: dl.error.code }; }
-    const stored = await downloadWallpaperFromUrl(dl.data.url);
+    const dl = await client.getDownload(item.id, { token: session.token || undefined });
+    if (!cloudSessionIsCurrent(session)) return { config, error: 'session_changed' };
+    if (!dl.ok) { cloudHandleAuthError(dl, session); return { config, error: dl.error.code }; }
+    stagedArtifact = await stageDownloadImage(WALLPAPERS_DIR, dl.data.url);
+    if (!cloudSessionIsCurrent(session)) {
+      discardDownloadArtifact(stagedArtifact, WALLPAPERS_DIR);
+      stagedArtifact = null;
+      return { config, error: 'session_changed' };
+    }
     // The download is slow and touches nothing shared; everything after it is inside
     // the lock, because a re-download lands on the same content-addressed file that a
     // "delete from disk" may be aiming at right now.
     return await withLibraryLock(async () => {
+      if (!cloudSessionIsCurrent(session)) {
+        discardDownloadArtifact(stagedArtifact, WALLPAPERS_DIR);
+        stagedArtifact = null;
+        return { config, error: 'session_changed' };
+      }
+      const artifact = commitDownloadArtifact(stagedArtifact, WALLPAPERS_DIR);
+      stagedArtifact = null;
       const aspect = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
-      const id = addToPool('image', stored, { aspect });
+      const id = addToPool('image', artifact.path, { aspect });
       const it = config.library[id];
       // Through updateItem, not straight onto the record: a field written directly
       // leaves the revision untouched, and an untouched revision loses the next merge.
@@ -2543,6 +2916,8 @@ ipcMain.handle('cloud-add', async (e, item) => {
   } catch (err) {
     console.error('cloud add:', err);
     return { config, error: 'download' };
+  } finally {
+    discardDownloadArtifact(stagedArtifact, WALLPAPERS_DIR);
   }
 });
 
@@ -2551,9 +2926,11 @@ ipcMain.handle('cloud-add', async (e, item) => {
 ipcMain.handle('cloud-session', async () => {
   const client = cloudClient();
   if (_cloudToken && !_cloudUser && client) {
-    const me = await client.getMe(_cloudToken);
-    if (me.ok) _cloudUser = me.data;
-    else if (cloudHandleAuthError(me)) { /* token cleared */ }
+    const session = cloudSessionSnapshot();
+    const me = await client.getMe(session.token);
+    if (me.ok) {
+      if (cloudSessionIsCurrent(session)) _cloudUser = me.data;
+    } else if (cloudHandleAuthError(me, session)) { /* current token cleared; stale answer ignored */ }
   }
   return cloudAuthState();
 });
@@ -2562,32 +2939,78 @@ ipcMain.handle('cloud-session', async () => {
 ipcMain.handle('cloud-signin', async () => {
   const client = cloudClient();
   if (!client) return { ok: false, error: 'unavailable' };
+  // SEC-002. A second press while one is still going would open a second listener and a
+  // second browser tab, and neither answer could be tied to the press that asked for it.
+  if (activeCloudSignin) return { ok: false, error: 'busy' };
+  const attempt = { cleanup: null, cancel: null };
+  activeCloudSignin = attempt;
   try {
     const { verifier, challenge } = cloudOauth.generatePkce();
-    const code = await runLoopbackSignin(challenge);
+    // One per press. The backend stores it and hands it back on the redirect; anything
+    // that comes to the listener without it is not this sign-in.
+    const state = cloudOauth.generateState();
+    const code = await runLoopbackSignin(challenge, state, attempt);
     const ex = await client.exchangeAuth({ code, pkce_verifier: verifier, client_label: `Znada on ${os.hostname()}` });
     if (!ex.ok) return { ok: false, error: ex.error.code };
-    _cloudToken = ex.data.session_token;
-    saveStoredToken(_cloudToken);
-    const me = await client.getMe(_cloudToken);
-    _cloudUser = me.ok ? me.data : { user: ex.data.user, entitlements: [] };
-    broadcastCloudSession();
+    // Keep the exchange answer local until /me validates that exact bearer and returns
+    // its authoritative profile. No failed validation may replace the previous live or
+    // persisted session — including a definite 401 and a transient/server failure.
+    const candidateToken = ex.data.session_token;
+    const me = await client.getMe(candidateToken);
+    if (!me.ok) return { ok: false, error: me.error.code };
+    if (!replaceCloudSession(candidateToken, me.data, { persist: true, broadcast: true })) {
+      return { ok: false, error: 'storage' };
+    }
     return { ok: true, state: cloudAuthState() };
   } catch (err) {
-    const msg = err && /timeout/.test(String(err.message)) ? 'timeout' : 'signin_failed';
+    // A sign-in the user called off is not a failure, and the window already has a
+    // branch that stays silent for it — one that could never fire while every rejection
+    // arrived here as 'signin_failed'.
+    const text = String((err && err.message) || '');
+    const msg = /timeout/.test(text) ? 'timeout'
+      : /cancelled/.test(text) ? 'cancelled' : 'signin_failed';
     console.error('cloud signin:', err);
     return { ok: false, error: msg };
+  } finally {
+    // The socket is only the browser half. The single-flight covers the whole
+    // transaction through exchange + /me, so another attempt cannot race its commit.
+    if (attempt.cleanup) attempt.cleanup();
+    if (activeCloudSignin === attempt) activeCloudSignin = null;
   }
+});
+
+// A sign-in nobody finished used to hold the window for the full five minutes: the strip
+// said "Opening your browser…", drew no button, and the only cure was quitting — because
+// before-quit was the sole production caller of cancelCloudSignin. The machinery was
+// already here and already tested; what was missing was a door from the window.
+//
+// `cancelled` is the honest half. Past the redirect the listener is already down
+// (runLoopbackSignin cleans up before it resolves) and the token exchange cannot be
+// called back, so the window is told the difference rather than shown a control that
+// silently does nothing.
+ipcMain.handle('cloud-signin-cancel', () => {
+  // Through cancelCloudSignin, never by nulling the slot: the SEC-002 single-flight
+  // invariant depends on cleanup() closing the socket. After the redirect the socket
+  // is already closed, so cancellation honestly says false while the transaction stays
+  // busy until its bounded exchange/profile requests finish.
+  return { ok: true, cancelled: cancelCloudSignin() };
 });
 
 // Sign out: revoke the session server-side (best effort) and drop the local token.
 ipcMain.handle('cloud-signout', async () => {
   const client = cloudClient();
   const token = _cloudToken;
-  _cloudToken = null; _cloudUser = null; clearStoredToken();
+  // The session is forgotten whatever the disk does. Making the deletion the commit
+  // point meant a file we could not remove — an antivirus holding it, a roaming profile
+  // — kept the user signed in to an account he had just left, with every request failing
+  // and a second attempt failing the same way.
+  //
+  // Revoking remotely is what makes a leftover file harmless: the token stops working on
+  // the service, so finding it again after a restart signs nobody in. That is why the
+  // revoke now happens even when the delete did not, rather than being skipped with it.
+  replaceCloudSession(null, null, { persist: true, broadcast: true });
   if (client && token) { try { await client.logout(token); } catch {} }
-  broadcastCloudSession();
-  return { ok: true, state: cloudAuthState() };
+  return { ok: true, error: null, state: cloudAuthState() };
 });
 
 // Cloud favorites (C5) — account-synced, distinct from the local Library favorites.
@@ -2596,8 +3019,10 @@ ipcMain.handle('cloud-favorites', async () => {
   const client = cloudClient();
   if (!client) return { items: [], error: 'unavailable' };
   if (!_cloudToken) return { items: [], error: 'missing_token' };
-  const r = await client.getFavorites(_cloudToken);
-  if (!r.ok) { cloudHandleAuthError(r); return { items: [], error: r.error.code }; }
+  const session = cloudSessionSnapshot();
+  const r = await client.getFavorites(session.token);
+  if (!cloudSessionIsCurrent(session)) return { items: [], error: 'session_changed' };
+  if (!r.ok) { cloudHandleAuthError(r, session); return { items: [], error: r.error.code }; }
   return { items: r.data.items, error: null };
 });
 
@@ -2606,8 +3031,10 @@ ipcMain.handle('cloud-favorite', async (e, id, on) => {
   if (!client) return { ok: false, error: 'unavailable' };
   if (!_cloudToken) return { ok: false, error: 'missing_token' };
   if (!id) return { ok: false, error: 'badItem' };
-  const r = on ? await client.addFavorite(id, _cloudToken) : await client.removeFavorite(id, _cloudToken);
-  if (!r.ok) { cloudHandleAuthError(r); return { ok: false, error: r.error.code }; }
+  const session = cloudSessionSnapshot();
+  const r = on ? await client.addFavorite(id, session.token) : await client.removeFavorite(id, session.token);
+  if (!cloudSessionIsCurrent(session)) return { ok: false, error: 'session_changed' };
+  if (!r.ok) { cloudHandleAuthError(r, session); return { ok: false, error: r.error.code }; }
   return { ok: true, error: null };
 });
 
@@ -2628,23 +3055,115 @@ ipcMain.handle('get-theme', () => currentThemeName());
 
 ipcMain.handle('get-wallpaper-theme', () => wallpaperThemeName());
 
+// BUG-022. `set-config` is the window's settings channel, and it is deny-by-default.
+//
+// It used to shallow-merge whatever object arrived straight into the live config, so
+// every field was reachable through it — including the ones the window does not own.
+// `library` and `libraryTrash` are the dangerous pair: settings are written with
+// `skipLibrary`, which strips them out of config.json, so a patch that empties the pool
+// in memory leaves no trace on disk until the NEXT pool write (a tag, a favourite, an
+// assignment) makes the empty version the real one. The photos it named are orphans by
+// then, and the collector is free to sweep them.
+//
+// The table below is therefore not "the fields we validate": it is the complete set of
+// keys this channel can change at all, built from the actual `window.api.setConfig` call
+// sites in renderer.js. Placement (`monitors`), the pool, the trash, the slideshow,
+// autostart, the theme override, the anonymous install id and the hotkey each have their
+// own channel or belong to main alone, so they are refused here — as is any key we do
+// not recognise. Sender/frame authority is a separate boundary (SEC-002); this one is
+// only about WHAT may change.
+const REJECT_SETTING = Symbol('reject-setting');
+const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+const asBool = (v) => (typeof v === 'boolean' ? v : REJECT_SETTING);
+const asString = (v) => (typeof v === 'string' ? v : REJECT_SETTING);
+const asOneOf = (...allowed) => (v) => (allowed.includes(v) ? v : REJECT_SETTING);
+// The single value that is normalised rather than refused, because it always has been:
+// this mode drives `autoSwitch` and the apply branch below, and the handler has coerced
+// anything unexpected to 'system' since long before this boundary existed.
+const asWallpaperMode = (v) => (['off', 'system', 'time', 'sun'].includes(v) ? v : 'system');
+const asMinutes = (min, max) => (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= min ? Math.min(max, Math.floor(n)) : REJECT_SETTING;
+};
+
+// A nested setting is MERGED into the value already held: the window spreads the object
+// it has and changes one field, so a field it did not name keeps its current value
+// rather than falling back to a default. An unknown field inside refuses the patch too.
+function asMergedObject(fields) {
+  return (value, current) => {
+    if (!isPlainObject(value)) return REJECT_SETTING;
+    const out = { ...(isPlainObject(current) ? current : {}) };
+    for (const key of Object.keys(value)) {
+      if (!Object.prototype.hasOwnProperty.call(fields, key)) return REJECT_SETTING;
+      const validated = fields[key](value[key], out[key]);
+      if (validated === REJECT_SETTING) return REJECT_SETTING;
+      out[key] = validated;
+    }
+    return out;
+  };
+}
+
+const SETTINGS_FIELDS = {
+  style: asOneOf('fill', 'fit', 'stretch', 'center', 'tile', 'span'),
+  separateThemes: asBool,
+  singleWallpaper: asBool,
+  language: (v) => (v === 'system' || SUPPORTED_LANGS.includes(v) ? v : REJECT_SETTING),
+  firstRunDone: asBool,
+  telemetry: asBool,
+  notifyOnFailure: asBool,
+  gameModeBlock: asBool,
+  librarySort: asOneOf('added', 'name', 'size', 'shuffle'),
+  viewerBackground: asOneOf('ambient', 'charcoal', 'aurora', 'color'),
+  onlineSort: asOneOf('date_added', 'toplist', 'random', 'views'),
+  onlineSources: asMergedObject({ lumina: asBool, internet: asBool }),
+  onlinePurity: asMergedObject({ sfw: asBool, sketchy: asBool, nsfw: asBool }),
+  // Times and coordinates stay plain strings, exactly as config.normalize() treats them:
+  // a stored value the window spreads back must not become unchangeable because a
+  // stricter pattern was introduced under it.
+  themeSchedule: asMergedObject({
+    mode: asOneOf('off', 'time', 'sun'),
+    lightStart: asString, darkStart: asString, lat: asString, lng: asString,
+  }),
+  wallpaperSchedule: asMergedObject({
+    mode: asWallpaperMode, lightStart: asString, darkStart: asString,
+  }),
+  triggers: asMergedObject({
+    onStartup: asBool,
+    onWakeup: asBool,
+    stealth: asMergedObject({
+      enabled: asBool, startup: asBool, wakeup: asBool, interval: asBool,
+      timeoutMin: asMinutes(1, 60),
+    }),
+  }),
+};
+
+// Whole patch or nothing. Applying the allowed half of a mixed patch would make the
+// refusal advisory and leave the caller unable to tell what actually happened.
+function validateSettingsPatch(patch) {
+  if (!isPlainObject(patch)) {
+    throw new Error('E_SETTINGS_REJECTED: a settings patch must be an object');
+  }
+  const validated = {};
+  for (const key of Object.keys(patch)) {
+    if (!Object.prototype.hasOwnProperty.call(SETTINGS_FIELDS, key)) {
+      throw new Error(`E_SETTINGS_REJECTED: '${key}' is not a setting this channel owns`);
+    }
+    const value = SETTINGS_FIELDS[key](patch[key], config[key]);
+    if (value === REJECT_SETTING) {
+      throw new Error(`E_SETTINGS_REJECTED: '${key}' was sent a value it cannot hold`);
+    }
+    validated[key] = value;
+  }
+  return validated;
+}
+
 ipcMain.handle('set-config', async (e, patch) => {
+  // Validation is complete before anything mutates: a refused patch performs no
+  // assignment, no save, no broadcast and no apply, and rejects the IPC call instead of
+  // quietly returning the unchanged config.
+  const clean = validateSettingsPatch(patch);
   const previousConfig = config;
-  const next = { ...config, ...(patch || {}) };
-  if (patch && patch.themeSchedule && typeof patch.themeSchedule === 'object') {
-    next.themeSchedule = { ...config.themeSchedule, ...patch.themeSchedule };
-  }
-  if (patch && patch.wallpaperSchedule && typeof patch.wallpaperSchedule === 'object') {
-    next.wallpaperSchedule = { ...config.wallpaperSchedule, ...patch.wallpaperSchedule };
-  }
-  // Register before committing the setting. Windows returns false when another
-  // application owns the accelerator; in that case keep both the old config and
-  // the old working registration instead of claiming success.
-  let stagedHotkey = null;
-  if (patch && 'hotkeys' in patch) {
-    stagedHotkey = hotkeyCtl.prepare(next.hotkeys && next.hotkeys.nextWallpaper);
-    if (!stagedHotkey.ok) return config;
-  }
+  const next = { ...config, ...clean };
   config = next;
   if (patch && patch.triggers && Object.prototype.hasOwnProperty.call(patch.triggers, 'stealth')) {
     const s = config.triggers && config.triggers.stealth;
@@ -2669,10 +3188,8 @@ ipcMain.handle('set-config', async (e, patch) => {
   }
   if (!saveSettingsOnly()) { // settings only: never touches the pool
     config = previousConfig;
-    if (stagedHotkey) stagedHotkey.rollback();
     return config;
   }
-  if (stagedHotkey) stagedHotkey.commit();
   trayCtl.refresh();
   if (patch && 'themeSchedule' in patch) applyThemeSchedule();
   if (patch && 'viewerBackground' in patch && galleryWindow && !galleryWindow.isDestroyed()) {
@@ -2726,11 +3243,10 @@ ipcMain.handle('set-hotkey', async (e, nextWallpaper) => {
 });
 
 ipcMain.handle('set-hotkey-recording', (e, recording) => {
-  if (!isTrustedMainWindowSender(e)) return { ok: false, error: 'unauthorized' };
   return hotkeyCtl.setSuspended(!!recording);
 });
 
-const IMG_FILTERS = [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'] }];
+const IMG_FILTERS = [{ name: 'Images', extensions: mediaFormats.WALLPAPER_FORMATS.slice() }];
 
 function ensureSlot(monitorId, which) {
   const theme = which === 'dark' ? 'dark' : 'light';
@@ -2784,6 +3300,7 @@ ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
     filters: IMG_FILTERS,
   });
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };
+  for (const chosen of res.filePaths) grantMediaPath(chosen);
   // Making a photo active has to be ordered against deleting files, like every other
   // route into the pool — this one is on the Design page and was outside the lock.
   return withLibraryLock(async () => {
@@ -2809,7 +3326,7 @@ ipcMain.handle('add-slot-folder', async (e, monitorId, which) => {
     properties: ['openDirectory'],
   });
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };
-  const dir = res.filePaths[0];
+  const dir = grantMediaPath(res.filePaths[0], { root: true });
   return withLibraryLock(async () => {
     const slot = ensureSlot(monitorId, which);
     assignToSlot(slot, 'folder', dir);
@@ -2829,15 +3346,29 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => withLibra
   const folderIds = [];
   for (const src of paths) {
     try {
+      if (!itemDetails.isValidAbsolutePath(src)) continue;
       const stats = fs.statSync(src);
       if (stats.isDirectory()) {
         if (assignToSlot(slot, 'folder', src)) added++;
-        folderIds.push(library.idFor(src));
+        // The grant follows the POOL, not the slot, and it is issued only once the pool
+        // actually holds the folder. `assignToSlot` answers false for two different
+        // things — the pool refused it, or this slot already had it — and reading that
+        // as "accepted" handed out recursive read authority over a directory the app had
+        // just declined. Asking the pool directly tells the two apart: a folder already
+        // in the slot is legitimately ours and stays readable.
+        const folderId = library.idFor(src);
+        if (library.getItem(config.library, folderId)) {
+          grantMediaPath(src, { root: true });
+          folderIds.push(folderId);
+        }
       } else if (stats.isFile()) {
         const ext = path.extname(src).toLowerCase();
         if (playlist.IMG_EXTS.has(ext)) {
           const stored = await importWallpaper(src);
           if (assignToSlot(slot, 'image', stored)) added++;
+          // importWallpaper completing proves the supported file was actually readable.
+          // Rejected extensions and failed imports must not leave read authority behind.
+          grantMediaPath(src);
         }
       }
     } catch (err) {
@@ -2895,6 +3426,7 @@ ipcMain.handle('library-add-images', async () => {
     filters: IMG_FILTERS,
   });
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };
+  for (const chosen of res.filePaths) grantMediaPath(chosen);
   return withLibraryLock(async () => {
     const before = Object.keys(config.library).length;
     const revivalsBefore = poolRevivals;
@@ -2921,7 +3453,7 @@ ipcMain.handle('library-add-folder', async () => {
   return withLibraryLock(async () => {
     const before = Object.keys(config.library).length;
     const revivalsBefore = poolRevivals;
-    const id = addToPool('folder', res.filePaths[0]);
+    const id = addToPool('folder', grantMediaPath(res.filePaths[0], { root: true }));
     const added = Object.keys(config.library).length - before;
     if (added || poolRevivals !== revivalsBefore) saveConfig();
     if (id) syncLiveFolderWatchers();
@@ -2933,17 +3465,27 @@ ipcMain.handle('library-add-folder', async () => {
 // Добавить перетащенные пути (файлы/папки) в пул.
 ipcMain.handle('library-add-paths', async (e, paths) => withLibraryLock(async () => {
   if (!Array.isArray(paths)) return { config, added: 0 };
+  // SEC-002. Drag-and-drop: the path is asserted by the window, because Electron resolves
+  // a dropped File in the renderer and main has no way to confirm it. Adding is a visible
+  // act - a card appears - which is what keeps this from being a silent read of anything
+  // on the disk. Main grants only paths it has validated and successfully accepted below;
+  // a missing or unsupported renderer-supplied path must never acquire read authority.
   const before = Object.keys(config.library).length;
   const revivalsBefore = poolRevivals;
   const folderIds = [];
   for (const src of paths) {
     try {
+      if (!itemDetails.isValidAbsolutePath(src)) continue;
       const stats = fs.statSync(src);
       if (stats.isDirectory()) {
         const id = addToPool('folder', src);
-        if (id) folderIds.push(id);
+        if (id) {
+          grantMediaPath(src, { root: true });
+          folderIds.push(id);
+        }
       } else if (stats.isFile() && playlist.IMG_EXTS.has(path.extname(src).toLowerCase())) {
-        addToPool('image', await importWallpaper(src));
+        const stored = await importWallpaper(src);
+        if (addToPool('image', stored)) grantMediaPath(src);
       }
     } catch (err) { console.error('library: drop import failed', src, err); }
   }
@@ -3213,6 +3755,12 @@ ipcMain.handle('library-remove-many', async (e, rawRecords) => withLibraryLock(a
   const affected = records.filter((rec) => (
     (rec.id && removedIds.has(rec.id)) || changedPaths.has(pathKey(rec.path))
   )).length;
+
+  // A hide is invisible to the main window's grid, and only another window's removal
+  // needs telling — the main window updates itself as part of its own removal, and
+  // repeating it there would rebuild the grid twice and lose the scroll position.
+  const hiddenNow = hiddenResult.updated + dirResult.updated;
+  if (hiddenNow > 0 && ipcAuthority.roleOf(e) !== 'main') notifyLibraryViewStale('remove');
 
   return {
     config,
@@ -3712,7 +4260,7 @@ ipcMain.handle('library-path-sizes', async (e, paths) => {
   const out = [];
   const pending = [];
   for (const p of list) {
-    if (!p || typeof p !== 'string') continue;
+    if (!p || typeof p !== 'string' || !isAuthorizedMediaPath(p)) continue;
     const key = pathKey(p);
     if (pathSizeCache.has(key)) out.push({ path: p, size: pathSizeCache.get(key) });
     else pending.push({ p, key });
@@ -3742,6 +4290,61 @@ ipcMain.handle('library-path-sizes', async (e, paths) => {
 // cards that were never materialized into the pool; the same precedent as
 // `library-path-sizes`, which already stats renderer-supplied paths.
 const readItemDetails = itemDetails.createDetailsReader();
+// SEC-002, slice 2. Short-lived authority for paths main learned ITSELF — a dialog it
+// opened, or a listing it produced. Everything else has to be vouched for by the pool.
+const pathGrants = pathGrantsMod.create({
+  isSameOrDescendant: (child, ancestor) => itemDetails.isSameOrDescendant(child, ancestor),
+  normalize: (p) => pathKey(p),
+});
+
+// Counted rather than logged: a test needs to see that an unauthorised path was refused
+// BEFORE any bytes were read, and the empty result a blocked helper returns looks exactly
+// like the empty result a refusal returns.
+let thumbnailAttempts = 0;
+
+// The one answer to "may a window turn this path into bytes". Three sources, in order of
+// how much they are worth:
+//
+//   1. the pool — a record's own path, or anything inside a folder the user added;
+//   2. Znada's own wallpaper copies, which exist because the app made them;
+//   3. a short-lived grant, for a file that is legitimately on screen before it is a
+//      pool record: the moment after a picker closes, or a folder being browsed.
+//
+// KNOWN LIMIT, stated rather than papered over: drag-and-drop paths reach main as strings
+// the window asserts (Electron's `webUtils.getPathForFile` runs in the renderer, and main
+// cannot tell a real drop from a made-up string). So a compromised window can still get a
+// path in by pretending it was dropped — but only by ADDING it, which puts a card on
+// screen. Silent reading of any file on the disk, which is what this used to allow, is
+// gone. Closing the rest needs a drop contract Electron does not offer today.
+function isAuthorizedMediaPath(p) {
+  if (!itemDetails.isValidAbsolutePath(p)) return false;
+  if (isAuthorizedItemPath(p)) return true;
+  if (itemDetails.isSameOrDescendant(p, WALLPAPERS_DIR)) return true;
+  if (pathGrants.allows(p)) return true;
+  noteMediaRefusal();
+  return false;
+}
+
+// A refusal is either a bug in this rule or a window asking for something it should not
+// have. Both are worth knowing about, and neither is worth the path itself: that is the
+// user's business, and a log is the last place it belongs. Bounded, because a window in a
+// loop would otherwise fill the console with the same line.
+let mediaRefusals = 0;
+const MEDIA_REFUSAL_LOG_LIMIT = 5;
+function noteMediaRefusal() {
+  mediaRefusals += 1;
+  if (mediaRefusals <= MEDIA_REFUSAL_LOG_LIMIT) {
+    console.error(`[Media] refused a path nothing vouches for (${mediaRefusals})`);
+  }
+}
+
+// Called only after main has vouched for a path: either a native dialog/listing produced
+// it, or a renderer-reported drop passed the filesystem/type/import boundary.
+function grantMediaPath(p, options) {
+  if (itemDetails.isValidAbsolutePath(p)) pathGrants.grant(p, options);
+  return p;
+}
+
 function isAuthorizedItemPath(p) {
   if (!itemDetails.isValidAbsolutePath(p)) return false;
   return Object.values((config && config.library) || {}).some((item) => {
@@ -3754,14 +4357,13 @@ function isAuthorizedItemPath(p) {
 }
 
 ipcMain.handle('item-details', (e, p) => (
-  isTrustedMainWindowSender(e) && isAuthorizedItemPath(p)
-    ? readItemDetails(p) : itemDetails.emptyDetails()
+  isAuthorizedItemPath(p) ? readItemDetails(p) : itemDetails.emptyDetails()
 ));
 
 // Reveal in Explorer. Only selects an existing path — no execution, no content leaves
 // the machine — and the renderer can still only pass paths it already displays.
 ipcMain.handle('item-reveal', async (e, p) => {
-  if (!isTrustedMainWindowSender(e) || !isAuthorizedItemPath(p)) return false;
+  if (!isAuthorizedItemPath(p)) return false;
   try {
     await fs.promises.access(p, fs.constants.F_OK);
     shell.showItemInFolder(p);
@@ -3772,7 +4374,6 @@ ipcMain.handle('item-reveal', async (e, p) => {
 // Open an item's source page. The URL is NOT taken from the renderer: we look up the
 // pool item and open the source we stored at download time, validated as http(s).
 ipcMain.handle('item-open-source', async (e, id) => {
-  if (!isTrustedMainWindowSender(e)) return false;
   const item = id && config.library ? config.library[id] : null;
   const raw = item && typeof item.source === 'string' ? item.source : '';
   const url = itemDetails.normalizeHttpUrl(raw);
@@ -3784,7 +4385,7 @@ ipcMain.handle('item-open-source', async (e, id) => {
 });
 
 ipcMain.handle('item-copy-path', async (e, p) => {
-  if (!isTrustedMainWindowSender(e) || !isAuthorizedItemPath(p)) return false;
+  if (!isAuthorizedItemPath(p)) return false;
   try {
     // Electron 43 made clipboard.writeText() return a Promise. Without awaiting it a
     // failure would escape this catch as an unhandled rejection, and we would report
@@ -3797,14 +4398,12 @@ ipcMain.handle('item-copy-path', async (e, p) => {
 // ---------------------------------------------------------------------------
 // ONL-009 — card actions (right-click menu), shared by both windows
 // ---------------------------------------------------------------------------
-// The fullscreen viewer is a second window with its own bridge, so these cannot use
-// isTrustedMainWindowSender: they would work in the grid and silently fail in the
-// viewer, which is exactly the split ONL-008 was fixed for.
-function isTrustedAppSender(event) {
-  if (!event || !event.sender) return false;
-  const windows = [mainWindow, galleryWindow];
-  return windows.some((w) => w && !w.isDestroyed() && event.sender === w.webContents);
-}
+// These used to carry their own sender checks, one comparing against the main window and
+// one against either window. SEC-002 replaced both with the registrar above, which asks
+// the same question and three more besides — top frame, still-on-its-own-page, and
+// whether this window owns the channel at all. Two guards for one question is one guard
+// too many: the weaker one had to be kept in step by hand, and it also made these
+// handlers untestable, because it named a window the harness has no way to create.
 
 // Exports and clipboard copies land here, NOT in wallpapers/. A file inside wallpapers/
 // with no pool record pointing at it is an orphan, and the sweeper is entitled to move
@@ -3864,17 +4463,26 @@ async function ensureCardFile(descriptor, opts = {}) {
       if (!client) return { path: '', error: 'unavailable' };
       const id = descriptor.item && descriptor.item.id;
       if (!id) return { path: '', error: 'badItem' };
+      const session = cloudSessionSnapshot();
       // Always a FRESH signed URL. The one the card is holding may already be dead,
       // and it must never be reused or handed further.
-      const dl = await client.getDownload(id, { token: _cloudToken || undefined });
-      if (!dl.ok) { cloudHandleAuthError(dl); return { path: '', error: dl.error.code }; }
-      return { path: await downloadImageTo(dir, dl.data.url), error: null };
+      const dl = await client.getDownload(id, { token: session.token || undefined });
+      if (!cloudSessionIsCurrent(session)) return { path: '', error: 'session_changed' };
+      if (!dl.ok) { cloudHandleAuthError(dl, session); return { path: '', error: dl.error.code }; }
+      const stagedArtifact = await stageDownloadImage(dir, dl.data.url);
+      if (!cloudSessionIsCurrent(session)) {
+        discardDownloadArtifact(stagedArtifact, dir);
+        return { path: '', error: 'session_changed' };
+      }
+      const artifact = commitDownloadArtifact(stagedArtifact, dir);
+      return { path: artifact.path, error: null };
     }
 
     if (descriptor.kind === 'internet') {
-      if (!online.allowedDownloadUrl(descriptor.item)) return { path: '', error: 'badItem' };
+      if (!usableInternetDownload(descriptor.item)) return { path: '', error: 'badItem' };
       const stored = await downloadImageTo(dir, descriptor.item.full, {
         headers: internetRequestHeaders(descriptor.item),
+        expectedFormat: descriptor.item.format,
       });
       return { path: stored, error: null };
     }
@@ -3890,8 +4498,7 @@ async function ensureCardFile(descriptor, opts = {}) {
 // What the assign chooser needs, for a window that does not hold the config. The main
 // window already has both; the fullscreen viewer has neither, and giving it the two
 // values is cheaper and safer than giving it the whole config.
-ipcMain.handle('card-assign-targets', (e) => {
-  if (!isTrustedAppSender(e)) return { monitors: [], separateThemes: true };
+ipcMain.handle('card-assign-targets', () => {
   return {
     monitors: (monitorsCache || []).map((m) => ({ id: m.id, primary: !!m.primary })),
     separateThemes: config.separateThemes !== false,
@@ -3899,7 +4506,6 @@ ipcMain.handle('card-assign-targets', (e) => {
 });
 
 ipcMain.handle('card-open-source', async (e, raw) => {
-  if (!isTrustedAppSender(e)) return { ok: false, error: 'denied' };
   const url = resolveCardPageUrl(normalizeCardDescriptor(raw));
   if (!url) return { ok: false, error: 'noSource' };
   try {
@@ -3912,7 +4518,6 @@ ipcMain.handle('card-open-source', async (e, raw) => {
 });
 
 ipcMain.handle('card-copy-link', async (e, raw) => {
-  if (!isTrustedAppSender(e)) return { ok: false, error: 'denied' };
   const url = resolveCardPageUrl(normalizeCardDescriptor(raw));
   if (!url) return { ok: false, error: 'noSource' };
   try {
@@ -3929,7 +4534,6 @@ ipcMain.handle('card-copy-link', async (e, raw) => {
 // and promising "paste into a folder" without being able to deliver it would be worse
 // than the honest, useful thing.
 ipcMain.handle('card-copy-file', async (e, raw) => {
-  if (!isTrustedAppSender(e)) return { ok: false, error: 'denied' };
   const descriptor = normalizeCardDescriptor(raw);
   const file = await ensureCardFile(descriptor, { managed: false });
   if (file.error) return { ok: false, error: file.error };
@@ -3955,7 +4559,6 @@ function saveDialogStartDir() {
 }
 
 ipcMain.handle('card-save-as', async (e, raw) => {
-  if (!isTrustedAppSender(e)) return { ok: false, error: 'denied' };
   const descriptor = normalizeCardDescriptor(raw);
   const file = await ensureCardFile(descriptor, { managed: false });
   if (file.error) return { ok: false, error: file.error };
@@ -4067,10 +4670,8 @@ ipcMain.handle('library-assign', async (e, id, monitorId, which) => {
   return commitLibraryAssignmentRecord({ id }, monitorId, which);
 });
 
-// ---- Internet providers: Wallhaven + Gelbooru, with Danbooru fallback ----
+// ---- Internet providers: whoever the registry lists (src/provider-registry.js) ----
 
-const GELBOORU_PAGE_SIZE = 100;
-const DANBOORU_PAGE_SIZE = 100;
 const INTERNET_USER_AGENT = `Znada/${app.getVersion()} (https://github.com/alexvlass01/znada)`;
 const INTERNET_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const INTERNET_THUMBNAIL_CACHE_SIZE = 200;
@@ -4079,12 +4680,14 @@ const INTERNET_TAG_SUGGEST_CACHE_SIZE = 200;
 const internetThumbnailCache = new Map();
 const internetTagSuggestCache = new Map();
 
+// Two more fields used to ride along here — whether a Wallhaven key is bundled, twice
+// under different names. Nothing has ever read them, and keeping them meant main had to
+// name a site to fill them in. What the window actually asks is the next line.
 ipcMain.handle('internet-status', () => ({
-  hasKey: !!wallhavenKey(),
-  bundled: !!BUNDLED_WALLHAVEN_KEY,
-  // Gelbooru and the Danbooru fallback cover Explicit even when Wallhaven has
-  // no bundled API key.
-  nsfwAvailable: true,
+  // Computed rather than asserted: this used to be a hardcoded `true` beside a comment
+  // reasoning about which sites cover it, and that reasoning silently stopped being
+  // true whenever a site was removed or shipped without its key.
+  nsfwAvailable: explicitContentReachableIn(providerRegistry.active()),
 }));
 
 async function fetchInternetTagSuggestions(opts) {
@@ -4100,134 +4703,473 @@ async function fetchInternetTagSuggestions(opts) {
     return cached;
   }
 
-  const url = tagSuggest.buildGelbooruTagSuggestUrl({ q: prefix, limit });
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': INTERNET_USER_AGENT },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return { items: [], error: String(res.status) };
-    const json = await res.json();
-    const result = {
-      items: tagSuggest.parseGelbooruTagSuggestions(json, { prefix, limit }),
-      error: null,
-    };
-    internetTagSuggestCache.set(cacheKey, result);
-    while (internetTagSuggestCache.size > INTERNET_TAG_SUGGEST_CACHE_SIZE) {
-      internetTagSuggestCache.delete(internetTagSuggestCache.keys().next().value);
-    }
-    return result;
-  } catch (err) {
-    console.error('gelbooru tag suggest:', err);
-    return { items: [], error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+  const answer = await suggestTagsFromProviders(prefix, limit);
+  if (answer.error) return { items: [], error: answer.error };
+  const result = { items: answer.items, error: null };
+  internetTagSuggestCache.set(cacheKey, result);
+  while (internetTagSuggestCache.size > INTERNET_TAG_SUGGEST_CACHE_SIZE) {
+    internetTagSuggestCache.delete(internetTagSuggestCache.keys().next().value);
   }
+  return result;
+}
+
+// ONL-014. Ask whoever declared they can answer the search box, in registry order, and
+// take the first real answer.
+//
+// This was the last path that reached ONE named site with no alternative: while it was
+// unreachable the dropdown silently offered nothing, and there was no second site to
+// fall through to because there was no list to fall through. Sorting and the final cut
+// are done HERE, so a site returns what it found and does not each invent its own idea
+// of "the best ten".
+function suggestTagProviders(list) {
+  return (Array.isArray(list) ? list : providerRegistry.active()).filter((descriptor) => (
+    descriptor
+    && descriptor.status !== 'retired'
+    && descriptor.capabilities && descriptor.capabilities.tagSuggest
+    && typeof descriptor.suggestTags === 'function'
+  ));
+}
+
+function rankSuggestions(items, limit) {
+  const seen = new Set();
+  const out = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || !item.name || seen.has(item.name)) continue;
+    seen.add(item.name);
+    out.push(item);
+  }
+  out.sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
+  return out.slice(0, limit);
+}
+
+async function suggestTagsFromProviders(prefix, limit, list) {
+  let lastError = 'network';
+  for (const descriptor of suggestTagProviders(list)) {
+    if (descriptor.credentials && descriptor.credentials.required && !providerCredentials(descriptor)) {
+      lastError = 'unavailable';
+      continue;
+    }
+    let res;
+    try {
+      res = await descriptor.suggestTags({ q: prefix, limit }, providerContext(descriptor));
+    } catch (err) {
+      console.error(`${descriptor.id} tag suggest:`, err);
+      res = { error: 'network' };
+    }
+    if (!res || res.error) { lastError = (res && res.error) || 'network'; continue; }
+    const items = rankSuggestions(res.items, limit);
+    // An empty answer from a reachable site is an ANSWER — that tag prefix matches
+    // nothing — so the next site is not asked. Only a failure falls through.
+    return { items, error: null };
+  }
+  return { items: [], error: lastError };
 }
 
 ipcMain.handle('internet-tag-suggest', (e, opts) => fetchInternetTagSuggestions(opts));
 
-async function searchWallhavenProvider(opts) {
-  const o = opts || {};
-  const key = wallhavenKey();
-  const p = o.purity || { sfw: true, sketchy: true, nsfw: false };
-  const wantNsfw = !!p.nsfw && !!key;
-  if (!p.sfw && !p.sketchy && !wantNsfw) {
-    return { provider: 'wallhaven', items: [], meta: { currentPage: o.page || 1, lastPage: o.page || 1 }, error: null };
+// ---------------------------------------------------------------------------
+// ONL-012 — one search path, for every site there will ever be
+// ---------------------------------------------------------------------------
+//
+// There used to be a hand-written search function per site, each with its own fetch,
+// its own timeouts and its own way of turning a failure into a word, plus a hardwired
+// "ask Gelbooru, and Danbooru if that failed". None of it generalised: a fourth site
+// would have needed every one of those written again, and the graceful behaviour we
+// already had would not have come with it.
+//
+// Now the handler knows nothing about any site. It asks whoever DECLARES they can
+// answer, in the order the registry lists them, and everything peculiar to a site lives
+// in that site's own file.
+//
+// ONL-015. What Znada can put on a desktop is ONE list, and it is the same list a folder
+// is scanned with (`src/media-type.js`). It used to be narrower here than there, so the
+// same webp was ordinary wallpaper from a folder and invisible from a site.
+//
+// It is used TWICE and deliberately so: every answer is filtered by it, and it is also
+// handed to the sites, so one that can narrow its own reply does not spend page slots on
+// files that would only be dropped here. Asking and filtering must be the same list, or
+// widening one of them silently does nothing.
+const ACCEPTED_FORMAT_LIST = mediaFormats.WALLPAPER_FORMATS;
+
+// Credentials are loaded by the site that needs them, once. Absence is normal: a build
+// without a key simply cannot ask that site, and its group falls through to the next.
+const providerCredentialsCache = new Map();
+function providerCredentials(descriptor) {
+  if (!descriptor) return null;
+  // ONL-014c. A SESSION is asked for every single time. A key in a file is the same all
+  // day; an account session appears and disappears while the app runs, and a cached one
+  // would keep a signed-out user looking signed in until the next restart.
+  if (descriptor.credentials && descriptor.credentials.kind === 'session') return appSession();
+  if (!providerCredentialsCache.has(descriptor.id)) {
+    let value = null;
+    try {
+      value = typeof descriptor.loadCredentials === 'function' ? descriptor.loadCredentials() : null;
+    } catch (err) {
+      console.error(`${descriptor.id} credentials:`, err);
+    }
+    providerCredentialsCache.set(descriptor.id, value || null);
   }
-  const purity = wallhaven.purityMask({ sfw: !!p.sfw, sketchy: !!p.sketchy, nsfw: wantNsfw });
-  const url = wallhaven.buildSearchUrl({
-    q: o.q || '',
-    purity,
-    categories: o.categories || '111',
-    sorting: o.sort || o.sorting || 'date_added',
-    page: o.page || 1,
-    apikey: wantNsfw ? key : '',
-  });
+  return providerCredentialsCache.get(descriptor.id);
+}
+
+// ONL-014c. The account session, as the one site that needs it sees it. There is one
+// account in Znada, so “session” needs no site name to be unambiguous.
+//
+// The typed client is handed over rather than rebuilt: the catalogue’s contract already
+// lives in src/cloud/client.js, and a second copy inside an adapter would drift.
+function appSession() {
+  const client = cloudClient();
+  if (!client) return null;
+  const session = cloudSessionSnapshot();
+  return {
+    client,
+    token: session.token || null,
+    // Whether THIS account may be shown adult content. Carried with the session because
+    // it belongs to the account, and asking for what the server will refuse anyway just
+    // spends a request to be told no.
+    explicitAllowed: !!(_cloudUser && _cloudUser.user && _cloudUser.user.explicit_opt_in),
+    // A successful response is account-owned too. The shared provider path checks this
+    // after await so catalogue A cannot be rendered after the user moved to account B.
+    isCurrent: () => cloudSessionIsCurrent(session),
+    // A refused session has to be dropped where sessions are kept, not inside a site.
+    onAuthError: (res) => cloudHandleAuthError(res, session),
+  };
+}
+
+// Which sources the user has switched on. A site declares WHICH switch it belongs to;
+// the handler never works it out from what kind of site it is.
+function sourceEnabled(descriptor) {
+  const sources = (config && config.onlineSources) || {};
+  const key = (descriptor && descriptor.sourceKey) || 'internet';
+  return sources[key] !== false;
+}
+// The one way any site reaches the network. Timeouts, headers and the wording of a
+// failure are the handler's business, so a new site inherits all of it and cannot get
+// them subtly wrong. Never throws: a site that breaks must drop out of the round, not
+// take the round down.
+function providerFetchJson(descriptor) {
+  return async (url, opts) => {
+    const timeoutMs = Number(opts && opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 15000;
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': INTERNET_USER_AGENT, ...(descriptor.requestHeaders || {}) },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) return { error: String(res.status) };
+      return { json: await res.json() };
+    } catch (err) {
+      return { error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+    }
+  };
+}
+
+function providerContext(descriptor, credentials = providerCredentials(descriptor)) {
+  return {
+    credentials,
+    fetchJson: providerFetchJson(descriptor),
+  };
+}
+
+// Is this a picture Znada can use?
+//
+// The sites used to decide this themselves and throw the rest away before the app could
+// see it — which is why a video from a board was unreachable no matter what the app
+// learned. They now report the format and this decides, once, against the one list.
+//
+// ONL-015: a site that CANNOT state a format is not judged on it. Our own catalogue does
+// not carry one on a browse card, and it is ours — what is in it is our doing, so it
+// vouches for its content instead. Which of the two a site is, it declares; a site that
+// said it states formats and then sends a card without one is refused, not excused.
+function usableCard(item, descriptor) {
+  if (!item) return false;
+  const states = !descriptor || !descriptor.capabilities || descriptor.capabilities.cardFormat !== false;
+  return states ? mediaFormats.isWallpaperFormat(item.format) : true;
+}
+
+// An item arriving over IPC is input, even if it originally came from our own renderer.
+// The feed already applies the format rule, but every network/disk boundary must repeat
+// it so a direct invoke cannot turn an allowed image host into a WebM downloader.
+function usableInternetDownload(item) {
+  if (!online.allowedDownloadUrl(item) || !mediaFormats.isWallpaperFormat(item && item.format)) return false;
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': INTERNET_USER_AGENT }, signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return { provider: 'wallhaven', items: [], meta: {}, error: String(res.status) };
-    const json = await res.json();
-    return { provider: 'wallhaven', ...wallhaven.parseSearch(json), error: null };
-  } catch (err) {
-    console.error('wallhaven search:', err);
-    return { provider: 'wallhaven', items: [], meta: {}, error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+    const urlFormat = path.extname(new URL(item.full).pathname);
+    return mediaFormats.sameWallpaperFormat(item.format, urlFormat);
+  } catch {
+    return false;
   }
 }
 
-async function searchDanbooruProvider(opts) {
-  const o = opts || {};
-  const page = Number(o.page) > 0 ? Number(o.page) : 1;
-  const url = danbooru.buildSearchUrl({
-    q: o.q || '',
-    purity: o.purity,
-    sorting: o.sort || o.sorting || 'date_added',
-    page,
-    limit: DANBOORU_PAGE_SIZE,
-  });
+async function searchOneProvider(descriptor, params) {
+  if (!descriptor) return { provider: '', items: [], meta: {}, error: 'unsupported' };
+  const blank = { provider: descriptor.id, items: [], meta: {}, error: null };
+  if (typeof descriptor.search !== 'function') return { ...blank, error: 'unsupported' };
+  const credentials = providerCredentials(descriptor);
+  if (descriptor.credentials && descriptor.credentials.required && !credentials) {
+    return { ...blank, error: 'unavailable' };
+  }
+  let res;
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': INTERNET_USER_AGENT }, signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return { provider: 'danbooru', items: [], meta: {}, error: String(res.status) };
-    const json = await res.json();
-    return { provider: 'danbooru', ...danbooru.parseSearch(json, { page, limit: DANBOORU_PAGE_SIZE }), error: null };
+    // The format rule travels WITH the request. A site that can narrow its own reply
+    // does so; one that cannot simply ignores it and is filtered below instead.
+    res = await descriptor.search(
+      { ...(params || {}), formats: ACCEPTED_FORMAT_LIST },
+      providerContext(descriptor, credentials),
+    );
   } catch (err) {
-    console.error('danbooru search:', err);
-    return { provider: 'danbooru', items: [], meta: {}, error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+    console.error(`${descriptor.id} search:`, err);
+    return { ...blank, error: 'network' };
+  }
+  if (credentials && typeof credentials.isCurrent === 'function' && !credentials.isCurrent()) {
+    return { ...blank, error: 'session_changed' };
+  }
+  if (!res || res.error) return { ...blank, error: (res && res.error) || 'network' };
+  return {
+    provider: descriptor.id,
+    // The one thing a window has to know about a site: whether it may load the image
+    // itself. Some hosts refuse a request that does not say where it came from, and a
+    // window cannot send that — so those go through main. Carried ON THE CARD, so the
+    // windows never have to hold the registry or name a site.
+    items: (Array.isArray(res.items) ? res.items : []).filter((item) => usableCard(item, descriptor))
+      .map((item) => ({
+        ...item,
+        loadsDirectly: !!descriptor.loadsDirectly,
+        // ONL-014c. What KIND of card this is: one with a lasting page and file, or one
+        // whose file is minted on demand. Declared by the site, carried on the card, so
+        // no window has to ask which site a picture came from.
+        cardKind: descriptor.cardKind || 'internet',
+      })),
+    meta: res.meta || {},
+    error: null,
+  };
+}
+
+// Sites in one group are ALTERNATIVES — the same kind of pictures from a different
+// place — so they are asked in order until one answers, and only the answer is used.
+// This is what the hardwired Gelbooru→Danbooru pair became; a third alternative is now
+// a row in the registry rather than another branch here.
+// ONL-014b. `attempts` collects every member that was actually ASKED, with the exact
+// parameters it was asked with. Alternatives page independently of one another, so the
+// one that answered this round has to carry on from where IT got to — a single "the
+// group is on page N" would put the fallback back at the beginning the moment the
+// primary recovered.
+async function searchProviderGroup(members, buildParams, attempts) {
+  let carried = null;
+  for (const descriptor of members) {
+    const params = buildParams(descriptor);
+    const result = await searchOneProvider(descriptor, params);
+    if (attempts) attempts.push({ descriptor, params, result });
+    if (!online.providerFailed(result)) {
+      if (carried) console.warn(`${carried.provider} unavailable (${carried.error}); using ${descriptor.id} instead`);
+      return carried ? online.resolveFallback(carried, result) : result;
+    }
+    carried = carried ? online.resolveFallback(carried, result) : result;
+  }
+  return carried || { provider: '', items: [], meta: {}, error: 'network' };
+}
+
+// Every group that can answer this kind of request, in registry order. Retired sites are
+// absent; a site that declares it cannot browse is absent too.
+function searchableGroups(list) {
+  const groups = new Map();
+  for (const descriptor of Array.isArray(list) ? list : []) {
+    if (!descriptor) continue;
+    // Checked HERE and not only by whoever assembled the list: "a retired site is never
+    // asked for new pictures" has to hold however the list was put together.
+    if (descriptor.status === 'retired') continue;
+    if (!descriptor.capabilities || !descriptor.capabilities.browse) continue;
+    const key = descriptor.group || descriptor.id;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(descriptor);
+  }
+  return Array.from(groups.values());
+}
+
+// The list is passed in rather than fetched here: a wrapper that quietly reaches for
+// the wrong list is exactly the kind of wiring a test cannot see, and this way there is
+// no wrapper to get wrong.
+// Returns the answers AND a record of who was asked what, because "carry on from here"
+// is decided per site and cannot be reconstructed from the merged answer.
+async function searchAllProviders(buildParams, list) {
+  const members = Array.isArray(list) ? list : providerRegistry.active();
+  const attempts = [];
+  const results = await Promise.all(
+    searchableGroups(members).map((group) => searchProviderGroup(group, buildParams, attempts)),
+  );
+  return { results, attempts };
+}
+
+// BUG-020 — the front page is OURS, a search is the user's.
+//
+// Until somebody types something we are not filtering anything; we are choosing what to
+// put in front of them, and that is a different job with different rules. The measured
+// problem was that we had never made that choice deliberately: the newest uploads on
+// Wallhaven, with every category enabled, are mostly photo shoots of people (56% of a
+// page, against 8 landscapes in 48), and the anime board was asked for four times as
+// many cards as Wallhaven, so the feed alternated for one screen and then became one
+// site for the rest of the page (79% of it).
+//
+// So while the search box is empty:
+//   * Wallhaven is asked WITHOUT the `people` category. This is not a content rating —
+//     a perfectly safe portrait is still `people`, which is why turning the rating down
+//     does not remove them (measured: 56% -> 31%, not 0%);
+//   * both sites are asked for the SAME number of cards, so the feed keeps alternating
+//     all the way down instead of turning into one site after the first screen;
+//   * both are asked for two orderings at once — what is new and what is well rated —
+//     and the result is shuffled into one feed.
+//
+// The moment the user types anything, none of this applies: they asked for something
+// specific and they get it, with every category and their own chosen ordering. The one
+// thing that DOES cross over is the content rating, because that is their standing
+// answer to "what am I willing to see", not our curation.
+const BROWSE_CATEGORIES = '110';     // general + anime, no people
+const SEARCH_CATEGORIES = '111';     // a search is not curated
+const BROWSE_PAGE_SIZE = 24;         // Wallhaven's own page size; the booru matches it
+const BROWSE_SORTS = ['date_added', 'toplist'];
+// Wallhaven's "top" is scoped to the last month by default, so it renews on its own.
+// Gelbooru has no such window — verified 2026-08-25: it rejects every date-scoped form
+// of the query — so its "top" is ALL TIME and would hand back the identical cards on
+// every launch. Starting from a random slice of that top keeps the ordering the owner
+// asked for and still varies, which is the whole point of putting it on the front page.
+const BROWSE_TOP_SLICES = 10;
+// Injected so a test can pin the order and the slice; production uses Math.random.
+let browseRandom = Math.random;
+
+// ONL-014b. Where such a site STARTS, chosen once. It used to be re-rolled on every
+// press of "show more", which meant a second press could ask for a slice already seen —
+// the grid drops what it already has, so the button did the work and added nothing.
+// Now the dice are thrown when the site has no bookmark yet, and from then on it simply
+// walks forward (owner's decision, 2026-08-27).
+function browseTopStartPage() {
+  return 1 + Math.floor(browseRandom() * BROWSE_TOP_SLICES);
+}
+
+// Where this site should carry on from, for this ordering.
+function positionFor(token, descriptor, sorting) {
+  const key = onlineResume.slotKey(descriptor.id, sorting);
+  const at = onlineResume.positionOf(token, key);
+  if (at !== undefined) return at;                    // null means finished
+  return sorting === 'toplist' && descriptor.capabilities && descriptor.capabilities.topIsAllTime
+    ? browseTopStartPage()
+    : 1;
+}
+
+// One round of asking, for one ordering. Sites that have already said "nothing more" are
+// not asked at all — the measured waste this whole change is about.
+// The list is a parameter for the same reason it is everywhere else in this file: the
+// wiring between a stored bookmark and the parameters a site is handed cannot be proved
+// with the shipped sites alone, and a wrapper that quietly reaches for the wrong list is
+// exactly the kind of thing a test cannot see.
+async function searchRound(token, sorting, extra, list) {
+  const live = (Array.isArray(list) ? list : providerRegistry.active())
+    .filter(sourceEnabled)
+    .filter((descriptor) => !onlineResume.isFinished(token, onlineResume.slotKey(descriptor.id, sorting)));
+  if (!live.length) return { results: [], attempts: [] };
+  return searchAllProviders((descriptor) => {
+    const at = positionFor(token, descriptor, sorting);
+    return {
+      ...extra,
+      sort: sorting,
+      // ONL-014c. A bookmark is whatever the site said it was. Sites that count pages
+      // read `page`; the one that hands back an opaque marker reads `cursor`. Which of
+      // the two it is, is the shape of the value, not a question about which site it is.
+      page: typeof at === 'number' ? at : 1,
+      cursor: typeof at === 'string' ? at : '',
+    };
+  }, live);
+}
+
+// Write down where everyone got to. A site that failed keeps its bookmark and is asked
+// the same piece again next time; only MAX_FAILS in a row finishes it.
+function recordRound(token, attempts) {
+  for (const attempt of attempts) {
+    const key = onlineResume.slotKey(attempt.descriptor.id, attempt.params.sort);
+    const asked = attempt.params.cursor || attempt.params.page;
+    if (online.providerFailed(attempt.result)) {
+      onlineResume.record(token, key, asked, { failed: true });
+    } else {
+      onlineResume.record(token, key, asked, { next: onlineResume.nextFrom(attempt.result, asked) });
+    }
   }
 }
 
-async function searchGelbooruProvider(opts) {
-  const o = opts || {};
-  const page = Number(o.page) > 0 ? Number(o.page) : 1;
-  const credentials = BUNDLED_GELBOORU_CREDENTIALS;
-  if (!credentials) return { provider: 'gelbooru', items: [], meta: {}, error: 'unavailable' };
-  const url = gelbooru.buildSearchUrl({
-    q: o.q || '',
-    purity: o.purity,
-    sorting: o.sort || o.sorting || 'date_added',
-    page,
-    limit: GELBOORU_PAGE_SIZE,
-    ...credentials,
-  });
-  try {
-    const res = await fetch(url, { headers: { 'User-Agent': INTERNET_USER_AGENT }, signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return { provider: 'gelbooru', items: [], meta: {}, error: String(res.status) };
-    const json = await res.json();
-    const apiError = gelbooru.responseError(json);
-    if (apiError) return { provider: 'gelbooru', items: [], meta: {}, error: apiError };
-    return { provider: 'gelbooru', ...gelbooru.parseSearch(json, { page, limit: GELBOORU_PAGE_SIZE }), error: null };
-  } catch (err) {
-    console.error('gelbooru search:', err);
-    return { provider: 'gelbooru', items: [], meta: {}, error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
-  }
+async function searchBrowseFeed(o, token) {
+  const rounds = await Promise.all(BROWSE_SORTS.map((sorting) => searchRound(token, sorting, {
+    ...o,
+    q: '',
+    categories: BROWSE_CATEGORIES,
+    limit: BROWSE_PAGE_SIZE,
+  })));
+  const results = rounds.flatMap((round) => round.results);
+  rounds.forEach((round) => recordRound(token, round.attempts));
+  if (!rounds.some((round) => round.attempts.length)) return nobodyLeft();
+  // mergeSearchResults does the deduplication — a picture that is both new and well
+  // rated must appear once — and the shuffle then removes the two orderings' rhythm.
+  const merged = online.mergeSearchResults(results);
+  return { ...merged, items: online.shuffle(merged.items, browseRandom) };
 }
 
-async function searchBooruProvider(opts) {
-  const primary = await searchGelbooruProvider(opts);
-  if (!online.providerFailed(primary)) return primary;
-  const fallback = await searchDanbooruProvider(opts);
-  const resolved = online.resolveFallback(primary, fallback);
-  if (!online.providerFailed(resolved)) {
-    console.warn(`gelbooru unavailable (${primary.error}); using danbooru fallback`);
-  }
-  return resolved;
+async function searchQueryFeed(o, token) {
+  const sorting = String(o.sort || 'date_added');
+  const round = await searchRound(token, sorting, { ...o, categories: SEARCH_CATEGORIES });
+  recordRound(token, round.attempts);
+  if (!round.attempts.length) return nobodyLeft();
+  return online.mergeSearchResults(round.results);
+}
+
+// Everyone has already said "nothing more". That is not a failure and must not be
+// dressed as one: "no answers" means the same thing as "everybody refused" to
+// mergeSearchResults, and only the caller knows which of the two actually happened.
+function nobodyLeft() {
+  return { items: [], meta: {}, error: null, providerErrors: {} };
 }
 
 ipcMain.handle('internet-search', async (e, opts) => {
   const o = opts || {};
-  const page = Number(o.page) > 0 ? Number(o.page) : 1;
-  const results = await Promise.all([searchWallhavenProvider({ ...o, page }), searchBooruProvider({ ...o, page })]);
-  const merged = online.mergeSearchResults(results, page);
+  // Both conditions, not just the renderer's flag: curation must never be able to
+  // silently narrow a real search, whatever the renderer believes it asked for.
+  const browsing = o.browse === true && !String(o.q || '').trim();
+  // ONL-014b. The bookmarks travel with the request. They are the window's to carry and
+  // nobody's to read — including the window's, which passes them back untouched. A token
+  // that does not belong to this exact question is discarded rather than repaired.
+  const token = onlineResume.parse(o.resume, onlineResume.signatureOf({ ...o, browse: browsing }));
+  const merged = browsing ? await searchBrowseFeed(o, token) : await searchQueryFeed(o, token);
   return {
     ...merged,
-    hasKey: !!wallhavenKey(),
-    nsfwAvailable: true,
+    browsing,
+    resume: onlineResume.forReply(token),
+    nsfwAvailable: explicitContentReachableIn(providerRegistry.active()),
   };
 });
 
+// Headers a site's own hosts require. Declared by the site (some image hosts refuse a
+// request that does not say where it came from) rather than special-cased here.
 function internetRequestHeaders(item) {
-  const headers = { 'User-Agent': INTERNET_USER_AGENT };
-  if (item && item.provider === 'gelbooru') headers.Referer = 'https://gelbooru.com/';
-  return headers;
+  const descriptor = item ? providerRegistry.byId(item.provider) : null;
+  return { 'User-Agent': INTERNET_USER_AGENT, ...((descriptor && descriptor.requestHeaders) || {}) };
 }
+
+// Can adult content be reached at all in THIS build?
+//
+// This used to be the constant `true` with a comment reasoning about which site covers
+// it — a claim that quietly stopped being true when a site was removed or shipped
+// without its key. Computed from the registry it cannot drift. It still describes what
+// is CONFIGURED, not what is reachable this second: a site that is down right now is a
+// separate problem, and pretending otherwise would need failure tracking this does not
+// have.
+// The list is a parameter so the rule can be tested against sites that do not exist —
+// the whole point being that it follows the registry rather than asserting a constant.
+function explicitContentReachableIn(list) {
+  return (Array.isArray(list) ? list : []).some((descriptor) => {
+    if (!descriptor) return false;
+    const explicit = descriptor.capabilities && descriptor.capabilities.explicit;
+    if (!explicit || explicit === 'never') return false;
+    const needsKey = explicit === 'withCredentials'
+      || (descriptor.credentials && descriptor.credentials.required);
+    return needsKey ? !!providerCredentials(descriptor) : true;
+  });
+}
+
+
 
 async function fetchInternetThumbnail(item) {
   if (!online.allowedThumbnailUrl(item)) return { dataUrl: '', error: 'badItem' };
@@ -4309,97 +5251,36 @@ async function fetchInternetSample(item) {
 }
 ipcMain.handle('internet-sample', (e, item) => fetchInternetSample(item));
 
-// Gelbooru posts carry tag NAMES without types, so the base response can't tell
-// us the artist. At download time we look up the tag types once and cache them per
-// name (popular artist tags recur), then keep the artist(s) as the item's author.
-// Danbooru already provides tag_string_artist; Wallhaven has no artist concept.
-const gelbooruTagTypeCache = new Map();
-const GELBOORU_TAG_TYPE_CACHE_MAX = 4000;
-
-// Wallhaven's search endpoint carries no tags at all, so a downloaded wallpaper used
-// to land in the library with none (ONL-008). The single-wallpaper endpoint has them;
-// read it once, on the explicit download, not for every card in the feed.
-async function wallhavenTagsForItem(item) {
+// ONL-012. The per-card extra request, asked of whoever declares one.
+//
+// Never fatal and never noisy: a site that cannot answer just gives nothing more, and
+// the picture keeps whatever the search response already carried.
+async function enrichProviderItem(item) {
+  const descriptor = item ? providerRegistry.byId(item.provider) : null;
+  if (!descriptor || typeof descriptor.enrich !== 'function') return { author: '', tags: [] };
+  let extra;
   try {
-    const url = wallhaven.buildWallpaperUrl(item && item.id, { apikey: wallhavenKey() });
-    if (!url) return [];
-    const res = await fetch(url, {
-      headers: { 'User-Agent': INTERNET_USER_AGENT },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return [];
-    return wallhaven.tagsFromWallpaper(await res.json());
+    extra = await descriptor.enrich(item, providerContext(descriptor));
   } catch (err) {
-    console.error('wallhaven tags:', err);
-    return [];
+    console.error(`${descriptor.id} enrich:`, err);
+    return { author: '', tags: [] };
   }
+  return {
+    author: String((extra && extra.author) || '').trim(),
+    tags: Array.isArray(extra && extra.tags) ? extra.tags : [],
+  };
 }
 
-// Returns { label, tags }: the display label for item.author and the artist tags in
-// their original underscore form, so the artist is searchable alongside other tags.
-async function gelbooruArtistsForItem(item) {
-  try {
-    let tags = Array.isArray(item && item.tags)
-      ? item.tags.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean)
-      : [];
-    // The item's tags came from the SEARCH response, where compactTags caps them at 24.
-    // Gelbooru sorts tags alphabetically, so a late-sorting artist (BUG-002: tag 45 of
-    // 51) is already missing here. Re-read the single post to see its full tag list;
-    // this costs one request on an explicit user action, not on every search card.
-    const postUrl = gelbooru.buildPostUrl(item && item.id, BUNDLED_GELBOORU_CREDENTIALS || {});
-    if (postUrl) {
-      const postRes = await fetch(postUrl, {
-        headers: { 'User-Agent': INTERNET_USER_AGENT },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (postRes.ok) {
-        const posts = gelbooru.postsFromResponse(await postRes.json());
-        const full = posts.length ? gelbooru.allTags(posts[0]) : [];
-        if (full.length) tags = full;
-      }
-    }
-    if (!tags.length) return { label: '', tags: [] };
-    const typeMap = new Map();
-    const unknown = [];
-    for (const tag of tags) {
-      if (gelbooruTagTypeCache.has(tag)) typeMap.set(tag, gelbooruTagTypeCache.get(tag));
-      else unknown.push(tag);
-    }
-    if (unknown.length) {
-      const url = gelbooru.buildTagTypesUrl(unknown, BUNDLED_GELBOORU_CREDENTIALS || {});
-      if (url) {
-        const res = await fetch(url, { headers: { 'User-Agent': INTERNET_USER_AGENT }, signal: AbortSignal.timeout(10000) });
-        if (res.ok) {
-          for (const [name, type] of gelbooru.parseTagTypes(await res.json())) {
-            gelbooruTagTypeCache.set(name, type);
-            typeMap.set(name, type);
-          }
-          while (gelbooruTagTypeCache.size > GELBOORU_TAG_TYPE_CACHE_MAX) {
-            gelbooruTagTypeCache.delete(gelbooruTagTypeCache.keys().next().value);
-          }
-        }
-      }
-    }
-    // Owner decision: join multiple artists with a comma, at most 3.
-    return {
-      label: gelbooru.artistLabel(gelbooru.artistNamesFromTypes(tags, typeMap), 3).slice(0, 120),
-      tags: gelbooru.artistTagsFromTypes(tags, typeMap),
-    };
-  } catch (err) {
-    console.error('gelbooru author:', err);
-    return { label: '', tags: [] };
-  }
-}
-
-// Download a normalized provider item into the local pool. The renderer cannot
-// turn this into an arbitrary downloader: provider and CDN host must match.
 ipcMain.handle('internet-add', async (e, item, query) => {
-  if (!online.allowedDownloadUrl(item)) return { config, error: 'badItem' };
+  if (!usableInternetDownload(item)) return { config, error: 'badItem' };
   try {
     // The download itself is outside the lock — it is slow and touches nothing shared.
     // Everything from "this file is now ours" onwards is inside it: a re-download lands
     // on the same content-addressed path a "delete from disk" may be aiming at.
-    const stored = await downloadWallpaperFromUrl(item.full, { headers: internetRequestHeaders(item) });
+    const stored = await downloadWallpaperFromUrl(item.full, {
+      headers: internetRequestHeaders(item),
+      expectedFormat: item.format,
+    });
     return await withLibraryLock(async () => {
       const width = Number(item.width); const height = Number(item.height);
       const aspect = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 0;
@@ -4415,18 +5296,15 @@ ipcMain.handle('internet-add', async (e, item, query) => {
         if (typeof item.artist === 'string' && item.artist.trim()) {
           library.updateItem(config.library, id, { author: item.artist.trim().slice(0, 120) });
         }
-        // Both providers hide part of the metadata behind a per-item endpoint, so it is
-        // fetched here, on the explicit download, rather than for every card in the feed.
-        let extraTags = [];
-        if (item.provider === 'gelbooru') {
-          const artists = await gelbooruArtistsForItem(item);
-          if (!it.author && artists.label) {
-            library.updateItem(config.library, id, { author: artists.label });
-          }
-          extraTags = artists.tags;
-        } else if (item.provider === 'wallhaven') {
-          extraTags = await wallhavenTagsForItem(item);
+        // Some sites hide part of the metadata behind a per-item endpoint. ONL-012: the
+        // extra request is a hook the site declares, asked here on the explicit download
+        // and never for a card in the feed. A site without one simply has nothing more
+        // to give, and nothing here needs to know which site that is.
+        const extra = await enrichProviderItem(item);
+        if (!it.author && extra.author) {
+          library.updateItem(config.library, id, { author: extra.author });
         }
+        const extraTags = extra.tags;
         (Array.isArray(item.tags) ? item.tags : []).slice(0, 24).forEach((tag) => {
           if (typeof tag === 'string') library.addTag(config.library, id, tag.slice(0, 80));
         });
@@ -4446,6 +5324,429 @@ ipcMain.handle('internet-add', async (e, item, query) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// META-001 — what an online catalogue knows about a file the user already has
+// ---------------------------------------------------------------------------
+//
+// The question travels as a FINGERPRINT and nothing else: no bytes, no filename and no
+// path leave the machine. What comes back — tags, artist, rating, the post's page — is
+// written onto the photo's own record, so a picture the user brought himself ends up
+// describing itself the same way a downloaded one does. That parity is the point.
+//
+// Three protections, because there are three separate ways to get this wrong:
+//
+//   * a wrong answer. The catalogue is asked for an exact hash, and the post that comes
+//     back is CHECKED to carry that same hash before a single tag is believed. Attaching
+//     somebody else's tags to the user's photo is worse than finding nothing.
+//   * losing something the user wrote. The merge only fills blanks for fields a person
+//     can set himself — see metadataLookup.planFor.
+//   * a ban. Every request passes the budget; every question is remembered against the
+//     fingerprint, so the same bytes are asked about once ever, no matter how many
+//     copies or how many clicks; and the work runs one at a time.
+//
+// Deliberately manual for now: one photo, one explicit action. The queue and the budget
+// exist anyway, because "look up everything as it is added" is meant to arrive later as
+// a different CALLER of this same path rather than as a second, unbudgeted one.
+
+// The thumbnail queue's primitive, at concurrency one. A manual click is high priority
+// so that a future background sweep can never make the user wait behind it.
+const metadataQueue = createTaskQueue(1);
+const METADATA_MANUAL_PRIORITY = 10;
+
+// Hashing reads every byte, so a pathological file is refused rather than holding the
+// queue for minutes. No wallpaper comes close to this.
+const MAX_FINGERPRINT_BYTES = 256 * 1024 * 1024;
+
+// Per-provider traffic state. Kept in memory only: after a restart the journal still
+// prevents repeat questions, and starting with a full bucket costs at most a few
+// requests that the host was going to allow anyway.
+const metadataBudgets = new Map();
+// The live limits. An object rather than the module defaults so a test can loosen them
+// without waiting out real seconds — the alternative is a suite that either takes
+// minutes or, worse, quietly stops exercising the limiter at all.
+let metadataBudgetConfig = null;
+// Only the ordinary intra-operation separation is worth waiting inside the sole worker.
+// A long/custom host policy must surface as busy rather than monopolise the queue.
+const METADATA_INLINE_GAP_WAIT_MAX_MS = 1000;
+
+function metadataBudgetTake(providerId, now) {
+  const gate = requestBudget.take(metadataBudgets.get(providerId), now, metadataBudgetConfig);
+  if (gate.allowed) metadataBudgets.set(providerId, gate.state);
+  return gate;
+}
+
+function metadataBudgetNote(providerId, ok, now, kind) {
+  const state = metadataBudgets.get(providerId);
+  metadataBudgets.set(providerId, ok
+    ? requestBudget.noteSuccess(state, now, metadataBudgetConfig)
+    : requestBudget.noteFailure(state, now, kind, metadataBudgetConfig));
+}
+
+// One request through the budget. Returns a tagged outcome instead of throwing, so the
+// caller never has to guess whether a failure was the host refusing, the network, or
+// simply our own limiter saying "not yet".
+async function metadataFetchJson(providerId, url, timeoutMs = 10000) {
+  let gate = metadataBudgetTake(providerId, Date.now());
+  // The minimum host gap separates REQUESTS, not user operations. Gelbooru legitimately
+  // needs a second request for tag kinds after it found the post. Returning `busy` here
+  // silently made that enrichment partial forever because the found result is journalled
+  // and never asked again. Wait only for the short gap; rate exhaustion and host backoff
+  // remain immediate refusals so a burst or a 429 can never turn into an unbounded queue.
+  const gapMs = Number(gate.retryAfterMs);
+  if (!gate.allowed && gate.reason === 'gap'
+      && Number.isFinite(gapMs) && gapMs > 0 && gapMs <= METADATA_INLINE_GAP_WAIT_MAX_MS) {
+    const waitMs = Math.max(1, Math.ceil(gapMs) + 1);
+    await new Promise((resolve) => { setTimeout(resolve, waitMs); });
+    gate = metadataBudgetTake(providerId, Date.now());
+  }
+  if (!gate.allowed) return { blocked: true, reason: gate.reason, retryAfterMs: Math.ceil(gate.retryAfterMs) };
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': INTERNET_USER_AGENT },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      metadataBudgetNote(providerId, false, Date.now(), requestBudget.failureKind(res.status, null));
+      return { failed: true, reason: String(res.status) };
+    }
+    const json = await res.json();
+    metadataBudgetNote(providerId, true, Date.now());
+    return { json };
+  } catch (err) {
+    metadataBudgetNote(providerId, false, Date.now(), requestBudget.failureKind(0, err));
+    return { failed: true, reason: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+  }
+}
+
+function hashFileMd5(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('md5');
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', reject);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+// The file's fingerprint, from cache when the file has not changed since it was hashed.
+// Streamed rather than read whole: a fingerprint is needed for files far larger than a
+// thumbnail, and holding one in memory for the sake of one hash is pure waste.
+async function fingerprintForFile(filePath, kind = 'md5') {
+  const store = metadataCacheStore();
+  const key = fingerprint.fileKey(filePath);
+  // BUG-026. Hashing is streamed, so the file can be replaced WHILE it is being read —
+  // a live folder rescan, a re-download, any outside tool. The hash would then be of the
+  // new bytes while the size and mtime recorded beside it belong to the old ones, and
+  // that pairing is what gets cached: every later lookup of this photo would ask a
+  // catalogue about a file that never existed. So the stamp is taken again afterwards
+  // and must still match. One retry, because a single swap is ordinary; a file being
+  // rewritten continuously is not something to keep chasing.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let stat;
+    try {
+      stat = await fs.promises.stat(filePath);
+    } catch { return { error: 'missing' }; }
+    if (!stat.isFile()) return { error: 'missing' };
+    if (stat.size <= 0 || stat.size > MAX_FINGERPRINT_BYTES) return { error: 'unsupported' };
+
+    const stamp = fingerprint.stampOf(stat);
+    const cached = fingerprint.valueOf(store.files[key], stamp, kind);
+    if (cached) return { value: cached, cached: true, stamp };
+
+    let value;
+    try {
+      value = await hashFileMd5(filePath);
+    } catch (err) {
+      console.error('metadata fingerprint:', err);
+      return { error: 'unreadable' };
+    }
+
+    let after;
+    try {
+      after = await fs.promises.stat(filePath);
+    } catch { return { error: 'missing' }; }
+    if (!fingerprint.sameStamp(fingerprint.stampOf(after), stamp)) continue;
+
+    const entry = fingerprint.withValues(store.files[key], stamp, { [kind]: value });
+    // `at` belongs to the store, not to the pure fingerprint shape: it is only there so
+    // eviction can drop the least recently touched file rather than an arbitrary one.
+    store.files[key] = Object.assign({}, entry, { at: Date.now() });
+    markMetadataDirty();
+    return { value, cached: false, stamp };
+  }
+  return { error: 'changed' };
+}
+
+// A post is only believed when it carries the very hash we asked about. Gelbooru's
+// `md5:` term is an ordinary search term, and a search that silently ignored it would
+// otherwise hand back an arbitrary picture — with tags that would then be written onto
+// the user's photo.
+//
+// BUG-026. This used to demand a match only when the post HAD a hash, so a post that
+// carried none was accepted by default — and that is not a rare shape: Danbooru omits
+// the file fields on restricted and deleted posts, and both adapters turn a missing
+// field into an empty string. "I cannot tell you which file this is" is not the same
+// answer as "this is your file", and only one of them may write tags onto a photo.
+//
+// Both sides are normalised first, because the other half of exactness is not being
+// needlessly strict: a catalogue that spells the same hash in capitals has answered our
+// question, and refusing it would report "not found" for a photo it does hold.
+function normalizedFingerprint(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function postMatchesHash(summary, hash) {
+  if (!summary) return false;
+  const claimed = normalizedFingerprint(summary.md5);
+  const asked = normalizedFingerprint(hash);
+  return !!claimed && !!asked && claimed === asked;
+}
+
+// ONL-013. One way to ask a site "which post IS this exact file", for every site.
+//
+// There used to be a hand-written function per site here, plus a small table mapping an
+// id to one of them — the same shape `ONL-012` removed from the search path, still alive
+// on this one, and a second list of sites beside the registry's. A site now DECLARES
+// that it can be searched by fingerprint and provides the hook; nothing below names one.
+//
+// The BUDGET is what makes this path different from the search path, and it stays here
+// rather than in the sites: every request is metered, and a refusal by our own limiter
+// is not the same thing as a failure by the host. The site sees an ordinary failure —
+// it never has to learn the word — while this remembers that the refusal was OURS, so
+// the answer becomes "busy, try later" and nothing is written to the journal. Nothing
+// was asked, so nothing is known.
+function metadataContext(descriptor) {
+  const state = { blocked: null };
+  return {
+    credentials: providerCredentials(descriptor),
+    state,
+    fetchJson: async (url, opts) => {
+      const timeoutMs = Number(opts && opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 10000;
+      const res = await metadataFetchJson(descriptor.id, url, timeoutMs);
+      if (res.blocked) {
+        if (!state.blocked) state.blocked = { reason: res.reason, retryAfterMs: res.retryAfterMs };
+        return { error: res.reason || 'busy' };
+      }
+      if (res.failed) return { error: res.reason || 'network' };
+      return { json: res.json };
+    },
+  };
+}
+
+async function askProviderForFingerprint(descriptor, kind, hash) {
+  if (!descriptor || typeof descriptor.findByFingerprint !== 'function') {
+    return { status: 'error', reason: 'unsupported' };
+  }
+  if (descriptor.credentials && descriptor.credentials.required && !providerCredentials(descriptor)) {
+    return { status: 'error', reason: 'unavailable' };
+  }
+  const ctx = metadataContext(descriptor);
+  let res;
+  try {
+    res = await descriptor.findByFingerprint(kind, hash, ctx);
+  } catch (err) {
+    console.error(`${descriptor.id} fingerprint lookup:`, err);
+    res = { error: 'network' };
+  }
+  // A post FIRST, and only then the limiter. A site whose extra request was refused —
+  // Gelbooru asks separately for tag kinds — has still found the picture, and answering
+  // "busy" would throw away an answer already in hand.
+  if (res && res.result) {
+    // Checked HERE, once, for every site, and never delegated to the site itself:
+    // `md5:` is an ordinary search term, so a catalogue that quietly ignored it would
+    // hand back an arbitrary picture — whose tags would then be written onto the user's
+    // photo. A site that forgot this check would be indistinguishable from one that did.
+    return postMatchesHash(res.result, hash)
+      ? { status: 'found', result: res.result }
+      : { status: 'absent', reason: 'mismatch' };
+  }
+  if (ctx.state.blocked) {
+    return { status: 'busy', reason: ctx.state.blocked.reason, retryAfterMs: ctx.state.blocked.retryAfterMs };
+  }
+  if (!res || typeof res !== 'object' || res.error) {
+    return { status: 'error', reason: (res && res.error) || 'network' };
+  }
+  // "Not here" is an ANSWER, not a failure, and it rests for a MONTH where a failure
+  // rests for an hour — so a site has to say it explicitly. An answer we cannot read is
+  // a failure: silently reading it as "not here" would silence a findable photo for a
+  // month on the strength of a shape we did not understand.
+  if (res.result === null) return { status: 'absent' };
+  return { status: 'error', reason: 'malformed' };
+}
+
+// Which sites are holding the key they declared they need. Only sites that require one
+// appear at all: for the rest the question does not arise.
+function metadataCredentials() {
+  const map = {};
+  for (const descriptor of providerRegistry.active()) {
+    if (descriptor.credentials && descriptor.credentials.required) {
+      map[descriptor.id] = !!providerCredentials(descriptor);
+    }
+  }
+  return map;
+}
+
+// Ask whoever still has something to say about this fingerprint, in order, stopping at
+// the first real answer. A provider that is merely rate-limited right now does NOT get
+// journalled: nothing was asked, so nothing is known, and the next click may try again.
+async function lookupByFingerprint(kind, hash) {
+  const store = metadataCacheStore();
+  const key = metadataLookup.journalKey(kind, hash);
+  if (!key) return { status: 'error', reason: 'badFingerprint' };
+
+  const known = metadataLookup.normalizeEntry(store.lookups[key]);
+  if (known.result) return { status: 'found', result: known.result, cached: true };
+
+  const now = Date.now();
+  const pending = metadataLookup.pendingProviders(store.lookups[key], kind, now, {
+    credentials: metadataCredentials(),
+  });
+  if (!pending.length) {
+    // Nothing to ask is not the same as nothing being there. A catalogue that was
+    // UNREACHABLE an hour ago has not told us the picture is absent, so reporting a
+    // miss would be a lie the user acts on — he would stop pressing the button.
+    const reasons = metadataLookup.providersFor(kind, { credentials: metadataCredentials() })
+      .map((id) => metadataLookup.shouldAsk(store.lookups[key], id, now).reason);
+    if (!reasons.length) return { status: 'error', reason: 'noProvider', settled: true };
+    // BUG-032. `some`, not `every`. Absence is a claim about EVERY catalogue that could
+    // have answered, so one of them still resting after an error is enough to make the
+    // claim unsupportable — and the mixed state (one answered "not here", the other timed
+    // out) is the common one in real life, not the rare one. The earlier `every` demanded
+    // that ALL of them be unreachable before it would admit uncertainty, so the ordinary
+    // case was reported as a definite "no catalogue has this file". A miss is remembered
+    // for a month, so that answer stuck and pressing the button again did not re-ask.
+    if (reasons.some((reason) => reason === 'errorRecently')) {
+      return { status: 'error', reason: 'errorRecently', settled: true };
+    }
+    return { status: 'absent', reason: reasons[0], settled: true };
+  }
+
+  let lastError = null;
+  for (const providerId of pending) {
+    // Never throws: a site that breaks drops out of this round the same way it drops out
+    // of a search round.
+    const outcome = await askProviderForFingerprint(providerRegistry.byId(providerId), kind, hash);
+    if (outcome.status === 'busy') { lastError = outcome; continue; }
+    store.lookups[key] = Object.assign(
+      metadataLookup.recordOutcome(store.lookups[key], providerId, outcome, Date.now()),
+      { at: Date.now() },
+    );
+    markMetadataDirty();
+    if (outcome.status === 'found') {
+      return { status: 'found', result: metadataLookup.normalizeEntry(store.lookups[key]).result, provider: providerId };
+    }
+    if (outcome.status === 'error') lastError = outcome;
+  }
+  return lastError && lastError.status === 'busy'
+    ? { status: 'busy', reason: lastError.reason, retryAfterMs: lastError.retryAfterMs }
+    : (lastError ? { status: 'error', reason: lastError.reason } : { status: 'absent' });
+}
+
+// Write a found result onto one pool record. Re-reads the item AFTER the network work:
+// the user may have removed the photo while the request was in flight, and reviving a
+// removed record by writing tags to it is exactly the class of resurrection DATA-005
+// was about.
+function applyLookupToItem(id, result) {
+  const item = library.getItem(config.library, id);
+  if (!item) return { applied: false, reason: 'missing' };
+  const plan = metadataLookup.planFor(item, result);
+  if (metadataLookup.planIsEmpty(plan)) return { applied: false, reason: 'nothingNew', plan };
+  // Every field goes through the library's own mutators so the record's revision moves
+  // with it; a direct assignment would leave it looking older than it is and lose the
+  // next merge.
+  library.updateItem(config.library, id, plan.patch);
+  let added = 0;
+  for (const tag of plan.tags) {
+    if (library.addTag(config.library, id, tag)) added++;
+  }
+  savePoolOnly();
+  return { applied: true, added, plan };
+}
+
+// The renderer's whole view of one lookup. Deliberately flat and provider-agnostic:
+// the interface says what happened, not which catalogue happened to answer.
+function metadataLookupReply(outcome, applied) {
+  const result = outcome.result || null;
+  return {
+    status: outcome.status,
+    reason: outcome.reason || '',
+    cached: !!outcome.cached,
+    retryAfterMs: Number(outcome.retryAfterMs) || 0,
+    provider: result ? result.provider : (outcome.provider || ''),
+    page: result ? result.page : '',
+    author: result ? result.author : '',
+    rating: result ? result.rating : '',
+    tagCount: result ? result.tags.length : 0,
+    addedTags: applied && applied.applied ? applied.added : 0,
+    skipped: applied && applied.plan ? applied.plan.skipped : [],
+  };
+}
+
+// Look up one pool photo: fingerprint it, ask whoever can answer, write what comes back.
+// Split out of the IPC handler so tests can drive the real sequence — the order of these
+// steps is precisely what a module-level test cannot see.
+// BUG-026. What "the same photo" has to mean for the length of one lookup: the same
+// record, still naming the same path, with the same bytes behind it. The network round
+// trip takes seconds, and all three can change inside it — so the answer is checked
+// against the world it was asked about, not against whatever is there when it arrives.
+//
+// `addedAt` is in here on purpose. A record removed and added again keeps its id (the id
+// is derived from the path), so `getItem` still finds one; but it is a decision the user
+// made AFTER this request, and tags fetched for the old one do not belong to it.
+async function itemIdentityUnchanged(id, snapshot) {
+  const item = library.getItem(config.library, id);
+  if (!item || item.type !== 'image') return false;
+  // Redundant while ids are derived from paths (`library.idFor`) and nothing patches a
+  // record's `path` — checked, and a mutation removing this line survives the battery
+  // because of it. Kept as a stated invariant rather than deleted: it costs nothing, and
+  // the day an id stops being the path is the day this becomes the only thing that
+  // notices. Do not "prove" it with a test that hand-writes a path a record cannot have.
+  if (pathKey(item.path) !== snapshot.path) return false;
+  if ((Number(item.addedAt) || 0) !== snapshot.addedAt) return false;
+  let stat;
+  try {
+    stat = await fs.promises.stat(item.path);
+  } catch { return false; }
+  return fingerprint.sameStamp(fingerprint.stampOf(stat), snapshot.stamp);
+}
+
+async function runItemMetadataLookup(id) {
+  const item = library.getItem(config.library, id);
+  if (!item || item.type !== 'image') return { status: 'error', reason: 'unsupported' };
+  const filePath = item.path;
+  if (!isAuthorizedItemPath(filePath)) return { status: 'error', reason: 'denied' };
+
+  return metadataQueue(async () => {
+    // Re-read rather than close over the record above: this runs behind a queue, so the
+    // wait before it starts is as real as the wait inside it.
+    const current = library.getItem(config.library, id);
+    if (!current || current.type !== 'image' || pathKey(current.path) !== pathKey(filePath)) {
+      return metadataLookupReply({ status: 'error', reason: 'changed' }, null);
+    }
+    const print = await fingerprintForFile(filePath, 'md5');
+    if (print.error) return metadataLookupReply({ status: 'error', reason: print.error }, null);
+    const snapshot = {
+      path: pathKey(current.path),
+      addedAt: Number(current.addedAt) || 0,
+      stamp: print.stamp,
+    };
+    const outcome = await lookupByFingerprint('md5', print.value);
+    if (outcome.status !== 'found') return metadataLookupReply(outcome, null);
+    if (!(await itemIdentityUnchanged(id, snapshot))) {
+      // The journal still keeps what the catalogue said — the answer is about a
+      // fingerprint, not about this record — so pressing the button again is cheap and
+      // will write it to whatever is actually there now.
+      return metadataLookupReply({ status: 'error', reason: 'changed' }, null);
+    }
+    return metadataLookupReply(outcome, applyLookupToItem(id, outcome.result));
+  }, { priority: METADATA_MANUAL_PRIORITY });
+}
+
+// Manual, explicit, one at a time — the button the user pressed.
+ipcMain.handle('item-lookup-metadata', async (e, id) => {
+  return runItemMetadataLookup(id);
+});
+
 // resolved current image for a slot (renderer can't scan folders itself)
 ipcMain.handle('current-image', (e, monitorId, which) => {
   const theme = which === 'dark' ? 'dark' : 'light';
@@ -4458,6 +5759,7 @@ ipcMain.handle('current-image', (e, monitorId, which) => {
 // Превью папки для библиотеки: число картинок внутри + N подпапок + первые превью
 // (renderer сам сканировать ФС не может). Папки не копируем — живое сканирование.
 ipcMain.handle('folder-info', (e, dir) => {
+  if (!isAuthorizedMediaPath(dir)) return { count: 0, subfolders: 0, previews: [] };
   try {
     const { folders, images } = playlist.scanFolderEntries(dir);
     // The card's count and collage must match what opening the folder will show,
@@ -4503,6 +5805,11 @@ async function thumbnailData(p, w, h, priority = 0) {
   if (!p || typeof p !== 'string' || p.includes('\0') || !path.isAbsolute(p)) {
     return { url: '', width: 0, height: 0 };
   }
+  // SEC-002. A thumbnail IS the file's contents, re-encoded and handed back as a data
+  // URL. Guarded here rather than at each of the three channels above it, so a fourth
+  // caller cannot arrive without the check.
+  if (!isAuthorizedMediaPath(p)) return { url: '', width: 0, height: 0 };
+  thumbnailAttempts += 1;
   const requestedWidth = Number(w);
   const requestedHeight = Number(h);
   const W = Number.isFinite(requestedWidth) ? Math.max(16, Math.min(1024, Math.round(requestedWidth))) : 320;
@@ -4561,25 +5868,17 @@ async function thumbnailData(p, w, h, priority = 0) {
   thumbPending.set(key, job);
   return job;
 }
-function isTrustedMainWindowSender(event) {
-  return !!(event && mainWindow && !mainWindow.isDestroyed()
-    && event.sender === mainWindow.webContents);
-}
 ipcMain.handle('thumb', async (e, p, w, h) => {
-  if (!isTrustedMainWindowSender(e)) return '';
   const data = await thumbnailData(p, w, h);
   return data.url;
 });
-ipcMain.handle('thumb-info', (e, p, w, h, priority) => (
-  isTrustedMainWindowSender(e) ? thumbnailData(p, w, h, priority) : { url: '', width: 0, height: 0 }
-));
+ipcMain.handle('thumb-info', (e, p, w, h, priority) => thumbnailData(p, w, h, priority));
 
 // Resolve proportions before renderer inserts the next justified-grid chunk. A small
 // worker pool avoids hammering Windows shell with dozens of simultaneous thumbnail jobs.
 // Pool-item aspects are persisted as additive metadata; folder-expanded images are
 // persisted separately in folder-state by thumbnailData's batched backfill.
 ipcMain.handle('thumb-aspects', async (e, entries, w, h) => {
-  if (!isTrustedMainWindowSender(e)) return [];
   const input = Array.isArray(entries) ? entries.slice(0, 100) : [];
   const result = new Array(input.length);
   let cursor = 0;
@@ -4620,6 +5919,7 @@ function liveFolderDiscovery(p) {
 // Содержимое папки для навигации ВНУТРЬ библиотеки: подпапки + картинки (один уровень).
 // Span #1 of the MVP-A diagnostics budget.
 ipcMain.handle('folder-entries', (e, dir) => {
+  if (!isAuthorizedMediaPath(dir)) return { folders: [], images: [] };
   const endSpan = diagSpan('library', 'folder-entries');
   try {
     const { folders, images } = playlist.scanFolderEntries(dir);
@@ -4711,6 +6011,11 @@ function liveMaterializeExtra(p, itemType, discoveryByPath = null) {
 
 async function validateMaterializePath(p, itemType) {
   if (!p || typeof p !== 'string') return 'bad_request';
+  // SEC-002. Both routes into the pool that take a PATH from the window come through
+  // here. Without this, a window could name any file, have a record made for it, and
+  // every check above would then say yes to it honestly - authority laundered in one
+  // call. Drag-and-drop is deliberately not this route; see isAuthorizedMediaPath.
+  if (!isAuthorizedMediaPath(p)) return 'bad_request';
   let stats;
   try { stats = await fs.promises.stat(p); }
   catch { return itemType === 'folder' ? 'missing_folder' : 'missing_file'; }
@@ -4839,10 +6144,13 @@ ipcMain.handle('library-assign-records', async (e, rawRecords, monitorId, which)
 // оригинальный путь, как и сама папка-источник живёт по оригиналу). Нужно, чтобы назначить/★
 // картинку из открытой папки: получаем настоящий id, дальше работают обычные library-assign/
 // toggle-favorite/assign-меню. id = idFor(origPath) → совпадает с pool-item ⇒ нет дублей в «Все».
-ipcMain.handle('library-materialize', async (e, p, type) => withLibraryLock(async () => {
-  if (!p || typeof p !== 'string') return { config, id: null };
+// The one materialize. Both channels below are the same act — put a path the app already
+// vouches for into the pool — and differ only in what the calling window is handed back.
+// Two implementations of this is how the two windows drifted apart in the first place.
+async function materializePathIntoPool(p, type) {
+  if (!p || typeof p !== 'string') return null;
   const itemType = type === 'folder' ? 'folder' : 'image';
-  if (await validateMaterializePath(p, itemType)) return { config, id: null };
+  if (await validateMaterializePath(p, itemType)) return null;
   // Inherit the discovery date from the live-folder index so assigning/★-ing a file
   // out of a watched folder does NOT mark it "just added" and jump it to the top under
   // "Newest first". Only genuinely new standalone imports (no index entry) keep now().
@@ -4853,8 +6161,21 @@ ipcMain.handle('library-materialize', async (e, p, type) => withLibraryLock(asyn
     syncLiveFolderWatchers();
     requestLiveFolderRefresh([id]);
   }
-  return { config, id };
-}));
+  return id || null;
+}
+
+ipcMain.handle('library-materialize', (e, p, type) => withLibraryLock(
+  async () => ({ config, id: await materializePathIntoPool(p, type) }),
+));
+
+// META-001 / ONL-009. The fullscreen viewer's half of "the record is made when the user
+// acts". The main window gets the whole config back because it owns one; this window
+// holds no config at all, so it is told the single thing it needs — the same choice
+// `card-assign-targets` makes. The authority question is unchanged: validateMaterializePath
+// still refuses a path nothing vouches for.
+ipcMain.handle('card-ensure-record', (e, p, type) => withLibraryLock(
+  async () => ({ id: (await materializePathIntoPool(p, type)) || '' }),
+));
 
 ipcMain.handle('set-slideshow', (e, patch) => {
   config.slideshow = { ...config.slideshow, ...(patch || {}) };
@@ -5029,8 +6350,11 @@ ipcMain.handle('open-website', () => shell.openExternal('https://github.com/alex
 ipcMain.handle('get-update-state', () => ({ state: updateState, supported: updatesSupported() }));
 
 ipcMain.handle('file-url', (e, p) => {
+  // SEC-002. This is the channel that hands a window the address of a file on the disk.
+  // It used to accept any absolute path at all.
+  if (!isAuthorizedMediaPath(p)) return '';
   try {
-    return p ? pathToFileURL(p).href : '';
+    return pathToFileURL(p).href;
   } catch {
     return '';
   }
@@ -5181,7 +6505,9 @@ app.whenReady().then(async () => {
   loadConfig();
   ensureAnonId(); // generate the anonymous install id once, before any cloud request
   loadLiveFolderState();
-  _cloudToken = loadStoredToken(); // restore a previous Znada Cloud session (validated on first use)
+  // Restore as a new session generation: any in-flight answer from an earlier lifecycle
+  // (tests exercise reloads in one process) must not be allowed to mutate it.
+  replaceCloudSession(loadStoredToken(), null); // validated on first use
   // Установщик пересоздаёт ярлыки при каждом обновлении, поэтому чинить их место
   // нужно на каждом старте, а не один раз после установки.
   normalizeStartMenuShortcut();
@@ -5364,10 +6690,17 @@ app.on('before-quit', () => {
   flushPendingLiveFolderAspects();
   flushLiveFolderState();
   libraryWriter.flush(); // batched pool edits must not die with the process
+  // META-001: losing the journal costs no user data, but it does cost the memory of
+  // which questions have already been asked — and re-asking is what gets us blocked.
+  metadataWriter.flush();
   configBroadcast.dispose();
   if (liveFolderWatcher) liveFolderWatcher.closeAll();
   void thumbnailHost.dispose();
   wpHost.dispose();
+  // SEC-002. Only the browser-waiting phase owns this socket and five-minute timer;
+  // post-redirect exchange and /me have their own short request deadlines. On quit,
+  // cancel the listener phase when it still exists.
+  cancelCloudSignin();
 });
 
 app.on('will-quit', () => {
@@ -5392,7 +6725,58 @@ module.exports = {
     loadConfig,
     getConfig: () => config,
     isUnsafeToWrite: () => libraryUnsafeToWrite,
+    // SEC-002 slice 2: what the media guard let through, and the grant side of it.
+    thumbnailAttempts: () => thumbnailAttempts,
+    mediaRefusals: () => mediaRefusals,
+    grantPath: (p, options) => grantMediaPath(p, options),
+    isAuthorizedMediaPath: (path_) => isAuthorizedMediaPath(path_),
+    // SEC-002. The harness has no real windows, so it registers stand-ins through the
+    // REAL authority and sends events shaped like real ones. Exposing the registration
+    // rather than a bypass is the point: a test that could skip the guard would prove
+    // nothing about the guard.
+    // The window policy itself, so the three refusals it installs are provable without a
+    // real Electron window: navigation away, a window of the page's own, and any device
+    // permission. Without this seam they were code nothing had ever run.
+    hardenWindow: (win, role) => hardenWindow(win, role),
+    windowPages: () => Object.keys(WINDOW_PAGES),
+    windowSecurity: (role) => windowSecurity(role),
+    diagnosticsEnabled: () => DIAGNOSTICS_BOOTSTRAP.enabled,
+    ipcAuthority: {
+      register: (contents, role, url) => ipcAuthority.register(contents, role, url),
+      forget: (contents) => ipcAuthority.forget(contents),
+      roleOf: (event) => ipcAuthority.roleOf(event),
+      roles: () => IPC_ROLES,
+      denials: () => ipcAuthority.denials(),
+      trackedWindows: () => ipcAuthority.trackedWindows(),
+    },
+    // BUG-022. Deny-by-default is only safe while this list keeps up with the window:
+    // a setting added to renderer.js and forgotten here stops working silently. The
+    // test reads the real call sites back out of renderer.js and compares them to this.
+    settingsKeys: () => Object.keys(SETTINGS_FIELDS),
+    libraryViewStale: () => ({ ...libraryViewStale }),
+    // BUG-033. Which sites a checkout can reach is a property of the MACHINE: the keys
+    // live in gitignored files, so an official build has them and a fresh clone does not.
+    // Tests written on a machine that had one silently assumed it, passed here, and went
+    // red for everyone else — while the app was behaving correctly and falling back. This
+    // lets a test SAY which site is in play instead of inheriting the answer, so both the
+    // first choice and the fallback are exercised wherever the suite runs.
+    setProviderCredentials: (id, value) => {
+      if (value === undefined) providerCredentialsCache.delete(id);
+      else providerCredentialsCache.set(id, value);
+    },
     eventLogEntries: () => eventLog.list(),
+    // BUG-023. Both of these write config.json outside any IPC handler — anonId on
+    // startup, the slideshow position from a timer — so a test cannot reach them through
+    // the handlers, and they are exactly the two that must not write over a config the
+    // app failed to read.
+    ensureAnonId: () => ensureAnonId(),
+    persistSlideshowPosition: (markDirty) => {
+      if (markDirty) slideshowPositionDirty = true;
+      persistSlideshowPosition();
+    },
+    // Mirrors poolWritePending() for the settings side: a refused write has to leave the
+    // position outstanding, or it is silently declared saved and never retried.
+    slideshowPositionPending: () => slideshowPositionDirty,
     applyLoginItem: () => applyLoginItem(),
     squirrelEvent: () => SQUIRREL_LIFECYCLE_EVENT,
     flushLibraryWriter: () => libraryWriter.flush(),
@@ -5424,15 +6808,69 @@ module.exports = {
     checkLiveFolderReachability: () => checkLiveFolderReachability(),
     addToPool: (type, p, extra) => addToPool(type, p, extra),
     saveConfig: () => saveConfig(),
+    // META-001. The IPC guard is exercised through the real handler (an untrusted
+    // sender must be refused); this entry drives everything AFTER it, so the test sees
+    // the actual order — fingerprint, journal, provider, merge, save — rather than the
+    // modules in isolation, which is where the previous rounds of defects hid.
+    lookupItemMetadata: (id) => runItemMetadataLookup(id),
+    setMetadataBudget: (cfg) => { metadataBudgetConfig = cfg || null; metadataBudgets.clear(); },
+    // BUG-020. The browse feed is deliberately shuffled, which is untestable against a
+    // real clock: a test that asserts "the order changed" is a coin toss it will
+    // eventually lose. Pinning the generator makes the order exact.
+    setBrowseRandom: (fn) => { browseRandom = typeof fn === 'function' ? fn : Math.random; },
+    // ONL-012. The adult-content answer is a RULE over the registry, not a constant;
+    // proving that needs a list the shipped registry cannot produce.
+    explicitContentReachableIn: (list) => explicitContentReachableIn(list),
+    // Driving one site directly is the only way to prove the guarantees that matter for
+    // a site we do not ship: one that throws, one that has no key, one that is refused.
+    searchOneProvider: (descriptor, params) => searchOneProvider(descriptor, params),
+    searchAllProviders: (buildParams, list) => searchAllProviders(buildParams, list),
+    // The one list of formats an online picture may have. Exported so a test can hold it
+    // beside what Znada accepts from a folder and prove the two paths stay identical.
+    acceptedFormats: () => ACCEPTED_FORMAT_LIST,
+    // ONL-013. Driving one site directly is the only way to prove the guarantees that
+    // matter for a site we have NOT written: one that throws, one that answers a shape
+    // we cannot read, one whose extra request is refused after it already found the post.
+    askProviderForFingerprint: (descriptor, kind, hash) => askProviderForFingerprint(descriptor, kind, hash),
+    // Whether a site's declared key is present is a fact about THIS build, so a test can
+    // only pin the shape: exactly the sites that said they need one, and nobody else.
+    metadataCredentials: () => metadataCredentials(),
+    // ONL-014. The list is a parameter so "a broken site is skipped and the next one
+    // answers" can be proved with sites the shipped registry cannot produce.
+    suggestTagsFromProviders: (prefix, limit, list) => suggestTagsFromProviders(prefix, limit, list),
+    suggestTagProviders: (list) => suggestTagProviders(list).map((d) => d.id),
+    searchRound: (token, sorting, extra, list) => searchRound(token, sorting, extra, list),
+    recordRound: (token, attempts) => recordRound(token, attempts),
+    // ONL-014c. A key in a file is read once and kept; a session must be asked for every
+    // time. The difference is only visible from here.
+    providerCredentials: (descriptor) => providerCredentials(descriptor),
+    setCloudSession: (token, user, persist = false) => replaceCloudSession(token, user, { persist }),
+    setCloudSessionStorage: (overrides) => {
+      cloudSessionStorage = { ...defaultCloudSessionStorage, ...(overrides || {}) };
+    },
+    cloudAuthState: () => cloudAuthState(),
+    stageDownloadArtifact: (dir, url, options) => stageDownloadImage(dir, url, options),
+    commitDownloadArtifact: (artifact, dir) => commitDownloadArtifact(artifact, dir),
+    discardDownloadArtifact: (artifact, dir) => discardDownloadArtifact(artifact, dir),
+    metadataCache: () => metadataCacheStore(),
+    flushMetadataWriter: () => metadataWriter.flush(),
     // Проверять надо не саму функцию, а что плановый обход её ЗОВЁТ при скрытом окне:
     // ровно эта развилка и молчала.
     runHourlyLiveFolderPass: () => scheduleLiveFolderFullScan(String("hourly"), 0),
     windowVisibleForLiveFolders: () => liveFolderWindowVisible(),
     blockIntervalLikeGameMode: () => retrySlideshowIntervalSoon(),
+    cloudSigninInFlight: () => !!activeCloudSignin,
+    cancelCloudSignin: () => cancelCloudSignin(),
     disposeForTests: () => {
+      cancelCloudSignin();
       libraryWriter.dispose();
+      metadataWriter.dispose();
       configBroadcast.dispose();
       clearSlideshowTimer();
+      // A test that switches the theme schedule on arms the next flip, which can be
+      // hours away; without this the node process simply never exits.
+      clearThemeTimer();
+      clearWallpaperTimer();
       if (folderStateSaveTimer) clearTimeout(folderStateSaveTimer);
       if (liveFolderAspectTimer) clearTimeout(liveFolderAspectTimer);
     },

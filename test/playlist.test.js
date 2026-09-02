@@ -138,4 +138,20 @@ ok('scanFolderImagesDeep: respects cap', P.scanFolderImagesDeep(tree, { cap: 1 }
 
 fs.rmSync(tree, { recursive: true, force: true });
 
+// ONL-015. Exercise the actual scanners, not only their exported Set: casing comes from
+// real filenames and every one of the six formats must cross all three local paths.
+const formatsTree = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-formats-'));
+const formatNames = ['a.JPG', 'b.JpEg', 'c.PNG', 'd.BmP', 'e.WeBp', 'f.GIF'];
+formatNames.forEach((name) => fs.writeFileSync(path.join(formatsTree, name), 'x'));
+fs.writeFileSync(path.join(formatsTree, 'moving.WEBM'), 'x');
+fs.writeFileSync(path.join(formatsTree, 'note.TXT'), 'x');
+const shallowFormats = P.scanFolder(formatsTree).map((p) => path.basename(p)).sort();
+const entryFormats = P.scanFolderEntries(formatsTree).images.map((p) => path.basename(p)).sort();
+const deepFormats = P.scanFolderImagesDeep(formatsTree).map((p) => path.basename(p)).sort();
+ok('all local playlist scanners accept the six formats case-insensitively and reject the rest',
+  shallowFormats.join() === formatNames.slice().sort().join()
+  && entryFormats.join() === shallowFormats.join()
+  && deepFormats.join() === shallowFormats.join());
+fs.rmSync(formatsTree, { recursive: true, force: true });
+
 console.log('\nAll ' + passed + ' playlist tests passed.');

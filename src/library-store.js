@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { idFor: libraryIdFor } = require('./library');
 
 const VERSION = 1;
 const SUFFIX = '.library.json';
@@ -51,10 +52,24 @@ const TRASH_LIMIT = 500;
 function normalizeTrashEntry(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const item = raw.item;
-  if (!item || typeof item !== 'object' || typeof item.path !== 'string' || !item.path) return null;
-  if (typeof item.id !== 'string' || !item.id) return null;
+  // A tombstone arbitrates against a live pool record, so its embedded item must meet
+  // the same identity/type/path boundary as that record. Otherwise a large revision on
+  // `{ item: { id, path } }` can delete the healthy record while leaving an entry that
+  // `referencedFiles` cannot protect from GC because it has no supported type.
+  const filed = normalizeLibraryRecord(item && item.id, item);
+  if (!filed) return null;
+  // Re-filing is safe for a LIVE record and unsafe for a tombstone, and the difference is
+  // which way the mistake falls. A live record filed wrong, put back under its own id,
+  // shows a photo that was going to be shown anyway. A tombstone filed wrong, put back
+  // under its own id, starts asserting that a DIFFERENT photo was deleted — one the user
+  // may still have and never touched. So a deletion event has to have been right about
+  // its own identity from the start; if it was not, it says nothing we can act on.
+  if (filed.id !== item.id) return null;
   const at = Number(raw.removedAt);
-  const entry = { item, removedAt: Number.isFinite(at) && at > 0 ? at : Date.now() };
+  // `filed`, not `item`: a tombstone arbitrates against a live record BY ID, so one that
+  // kept a wrong id would either fail to match the photo it is about, or match a
+  // different photo entirely.
+  const entry = { item: filed, removedAt: Number.isFinite(at) && at > 0 ? at : Date.now() };
   // The tombstone's revision is deliberately top-level: item.rev describes the
   // last live version, while this revision describes the later deletion. Dropping
   // it while normalizing makes an older live record look newer after a restart and
@@ -164,14 +179,56 @@ function describeStoreDamage(parsed, normalized) {
   return { ok: true, reason: '' };
 }
 
+// BUG-024. What makes something a POOL RECORD, asked in one place.
+//
+// Both sides of a merge used to be admitted on `typeof item === 'object'` alone, and
+// their revisions were then compared. A revision is an argument about which of two
+// records is newer; it is not evidence that either one IS a record. `{ id, rev: 999 }`
+// carries no path, so it names no photo — and it was beating healthy entries and being
+// written back as the canonical one, taking the path, the tags and the star with it.
+//
+// Deliberately tolerant about everything else: unknown and legacy fields are kept as
+// they are, and a missing revision still reads as 0. Identity is not tolerant: pool IDs
+// are deterministically derived from the canonical path. A record that borrows another
+// path's ID can otherwise win revision arbitration and remove the real owned copy from
+// the destructive GC keep-set.
+// Returns the record under the id it BELONGS to, or null when there is nothing to keep.
+//
+// The key a record was filed under is not part of what makes it valid. A record whose key
+// does not match its own path is filed WRONG, not broken, and the first version of this
+// check dropped it — silently and permanently, taking the user's tags, star, author and
+// slot membership with it on the next save. Re-filing it under its derived id removes the
+// danger the check was added for (under its own id it cannot borrow another path's place
+// in revision arbitration or in the GC keep-set) without throwing anything away.
+//
+// Only a record with nothing to re-file by is refused: not an object, no usable path, or
+// a type this app does not know how to keep alive.
+function normalizeLibraryRecord(id, item) {
+  void id; // the incoming key is what we are correcting, so it cannot be a condition
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+  if (item.type !== 'image' && item.type !== 'folder') return null;
+  if (typeof item.path !== 'string' || !item.path) return null;
+  const owned = libraryIdFor(item.path);
+  if (!owned || typeof owned !== 'string') return null;
+  if (item.id === owned) return item;
+  return { ...item, id: owned };
+}
+
+// File a record under its own id, keeping the newer one if two paths normalise together.
+// Losing the higher revision here would undo a deletion or an edit the user has already
+// seen applied.
+function fileRecord(into, record) {
+  const rival = into[record.id];
+  if (!rival || revOf(record) >= revOf(rival)) into[record.id] = record;
+}
+
 function normalizeStore(raw) {
   const out = emptyStore();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   const lib = raw.library && typeof raw.library === 'object' && !Array.isArray(raw.library) ? raw.library : {};
   for (const [id, item] of Object.entries(lib)) {
-    if (!id || !item || typeof item !== 'object' || Array.isArray(item)) continue;
-    if (typeof item.path !== 'string' || !item.path) continue;
-    out.library[id] = item;
+    const record = normalizeLibraryRecord(id, item);
+    if (record) fileRecord(out.library, record);
   }
   out.trash = boundedTrash(raw.trash);
   return out;
@@ -250,10 +307,23 @@ function revOf(entry) {
 // last. Two sides can each hold a stale copy of the same removal.
 function newestTombstones(entries) {
   const byId = new Map();
-  for (const entry of entries) {
-    if (!entry || !entry.item || !entry.item.id) continue;
+  for (const raw of entries) {
+    // BUG-024. Validate BEFORE arbitrating, with the same reader boundedTrash uses.
+    // Asking only for `item.id` let a tombstone whose item has no path win on its
+    // revision and delete a live record — and boundedTrash then dropped that tombstone
+    // for being malformed, so the photo was gone from the pool AND from the trash, with
+    // nothing left to restore from.
+    const entry = normalizeTrashEntry(raw);
+    if (!entry) continue;
     const seen = byId.get(entry.item.id);
-    if (!seen || revOf(entry) > revOf(seen)) byId.set(entry.item.id, entry);
+    if (!seen) { byId.set(entry.item.id, entry); continue; }
+    // Same tie-break as boundedTrash, and for the same reason. This ran FIRST, so
+    // keeping whichever source came first meant the later removal never reached the
+    // place that knows how to choose between them.
+    if (revOf(entry) > revOf(seen)
+      || (revOf(entry) === revOf(seen) && entry.removedAt > seen.removedAt)) {
+      byId.set(entry.item.id, entry);
+    }
   }
   return [...byId.values()];
 }
@@ -263,13 +333,20 @@ function mergePool(fromStore, fromConfig) {
   const config = fromConfig && typeof fromConfig === "object" ? fromConfig : {};
 
   const library = {};
+  // BUG-024. Both sides are checked for BEING a record before either revision is read,
+  // and the check is per candidate: one rejected entry must not cost its healthy
+  // neighbours their place.
+  let inlineContributed = false;
   for (const [id, item] of Object.entries(config.library || {})) {
-    if (id && item && typeof item === "object") library[id] = item;
+    const record = normalizeLibraryRecord(id, item);
+    if (!record) continue;
+    fileRecord(library, record);
+    inlineContributed = true;
   }
   for (const [id, item] of Object.entries(store.library || {})) {
-    if (!id || !item || typeof item !== "object") continue;
-    const rival = library[id];
-    if (!rival || revOf(item) >= revOf(rival)) library[id] = item;
+    const record = normalizeLibraryRecord(id, item);
+    if (!record) continue;
+    fileRecord(library, record);
   }
 
   const kept = [];
@@ -290,7 +367,15 @@ function mergePool(fromStore, fromConfig) {
     kept.push(entry);
   }
 
-  return { library, trash: boundedTrash(kept) };
+  const trash = boundedTrash(kept);
+  // Whether anything inline actually contributed, as opposed to merely being present.
+  // main uses this to decide whether the canonical file needs rewriting, and counting
+  // rejected candidates as a contribution made a damaged config.json trigger a rewrite
+  // of a healthy store.
+  for (const entry of Array.isArray(config.trash) ? config.trash : []) {
+    if (normalizeTrashEntry(entry)) { inlineContributed = true; break; }
+  }
+  return { library, trash, inlineContributed };
 }
 
 // Which pool wins when both files carry one. The dedicated store is authoritative:
@@ -336,7 +421,7 @@ function load(configPath) {
   }
   let parsed;
   try {
-    parsed = JSON.parse(raw.replace(/^﻿/, ''));
+    parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
   } catch (err) {
     try { fs.copyFileSync(file, `${file}.corrupt-${Date.now()}.bak`); } catch {}
     console.error('library.json не разбирается, бэкап сохранён; пул будет взят из config.json:', err);
@@ -383,14 +468,26 @@ function save(library, configPath, trash = []) {
 // Debounced writer. Adding one tag used to cost a full config write; now it marks
 // the pool dirty and a single write covers the whole burst. Timers are injected so
 // tests drive this without waiting on wall-clock time.
-function createWriter({
-  configPath,
-  delayMs = 1200,
-  saveFn = save,
-  onWriteFailure = null,
-  setTimer = setTimeout,
-  clearTimer = clearTimeout,
-} = {}) {
+/**
+ * @param {object} options
+ * @param {string} options.configPath
+ *   Required. The settings file whose sibling holds the pool; the store path is derived
+ *   from it, never fixed, so two configs in one directory cannot share a pool.
+ * @param {number} [options.delayMs] Debounce window for coalescing pool edits.
+ * @param {Function} [options.saveFn]
+ * @param {Function|null} [options.onWriteFailure]
+ * @param {Function} [options.setTimer]
+ * @param {Function} [options.clearTimer]
+ */
+function createWriter(options) {
+  const {
+    configPath,
+    delayMs = 1200,
+    saveFn = save,
+    onWriteFailure = null,
+    setTimer = setTimeout,
+    clearTimer = clearTimeout,
+  } = options || {};
   let timer = null;
   let pending = null;   // the library object to write; null = nothing outstanding
   let writes = 0;
@@ -444,6 +541,7 @@ module.exports = {
   validateStoreShape,
   describeStoreDamage,
   VERSION, SUFFIX, TRASH_LIMIT, storePathFor, emptyStore, normalizeStore, normalizeTrashEntry,
+  normalizeLibraryRecord,
   boundedTrash, pushEntry, mergeLibraries, mergePool, newestTombstones, mergeTrash,
   load, save, createWriter,
 };

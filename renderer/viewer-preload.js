@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('viewerApi', {
   cardCopyFile: (card) => ipcRenderer.invoke('card-copy-file', card),
   cardSaveAs: (card) => ipcRenderer.invoke('card-save-as', card),
   cardAssignTargets: () => ipcRenderer.invoke('card-assign-targets'),
+  cardEnsureRecord: (p, type) => ipcRenderer.invoke('card-ensure-record', p, type),
+  itemLookupMetadata: (id) => ipcRenderer.invoke('item-lookup-metadata', id),
   libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
   onPayload: (cb) => ipcRenderer.on('gallery-payload', (_e, payload) => cb(payload)),
   onFullscreenChanged: (cb) => ipcRenderer.on('gallery-fullscreen-changed', (_e, on) => cb(on)),

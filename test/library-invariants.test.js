@@ -210,7 +210,7 @@ console.log('\nlibrary invariants (fourth review repros)\n');
       onTrash: async (target) => {
         if (!target.endsWith('doomed.png')) return;
         concurrent = handle.invoke('add-slot-paths', 'M1', 'light', [doomed]).catch(() => null);
-        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => { setImmediate(r); });
       },
     });
     // Deleting files is switched OFF for users until its guard is proved (see

@@ -12,7 +12,7 @@ const ok = (name, cond) => { if (cond) { pass++; console.log('  ✓', name); } e
 function makeHarness() {
   let nowMs = 0;
   let seq = 1;
-  let timers = []; // { id, fn, fireAt }
+  const timers = []; // { id, fn, fireAt }
   let monitorIds = ['M1', 'M2'];
   let coveredIds = [];
   const calls = { apply: [] };
@@ -173,7 +173,7 @@ function makeHarness() {
 // ---- 8. REGRESSION: cancel() while an apply is in flight must not crash ----
 // (the bug: tick read session.advance after the apply await, after cancel had nulled session)
 (async () => {
-  let nowMs = 0, seq = 1; const timers = [];
+  const nowMs = 0; let seq = 1; const timers = [];
   let resolveApply = null;
   const env = {
     now: () => nowMs, pollMs: 3000, log: () => {},

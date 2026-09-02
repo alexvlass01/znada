@@ -18,7 +18,6 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const H = require('./helpers/main-harness');
-const configMod = require('../src/config');
 const folderState = require('../src/folder-state');
 const library = require('../src/library');
 

@@ -18,6 +18,15 @@ const DEFAULT_SOURCE_FILES = [
   // отдаёт готовый ключ. Без него эти строки остались бы без контекста и без
   // проверки ссылок на несуществующий ключ.
   'src/next-change.js',
+  // ONL-009 moved the card menu, its labels and the messages its actions produce out of
+  // renderer.js into shared modules that BOTH windows load. The keys went with them, so
+  // scanning only renderer.js left the whole `card.*` family without context — and a key
+  // with no context is one a translator has to guess at. META-001's lookup messages live
+  // here too.
+  'renderer/card-actions.js',
+  'renderer/card-transfer.js',
+  'renderer/card-metadata.js',
+  'renderer/online-browse.js',
 ];
 
 // Dynamic templates cannot reveal their finite members by syntax alone. Keep the
@@ -323,7 +332,7 @@ function regexCanStartAt(source, offset) {
   let i = offset - 1;
   while (i >= 0 && /\s/.test(source[i])) i--;
   if (i < 0) return true;
-  if (/[\(\[\{,:;=!?&|+\-*%^~<>]/.test(source[i])) return true;
+  if (/[([{,:;=!?&|+\-*%^~<>]/.test(source[i])) return true;
   if (source[i] === ')') {
     let depth = 1;
     let open = i - 1;
@@ -682,7 +691,6 @@ function inferJsType(
   if (via === 'tMain' || /showOpenDialog/.test(window)) return ['dialog-title', 'high'];
   if (/setAttribute\s*\(\s*['"]aria-label['"]/.test(window)) return ['aria-label', 'high'];
   if (objectProperty === 'placeholder' || /\.placeholder\s*=/.test(window)) return ['placeholder', 'high'];
-  if (/appendContextMenuItem\s*\(/.test(window)) return ['menu-item', 'high'];
   if (/\baddAction\s*\(/.test(window)) return ['button', 'high'];
   if (/\bdetailsRow\s*\(/.test(window)) return ['field-label', 'high'];
   if (/^(?:subtitle|detail)$/.test(objectProperty)) return ['description', 'high'];

@@ -171,6 +171,19 @@ async function testScanner() {
       && complete.entries.length === 2
       && complete.entries.every((x) => Number.isFinite(x.modifiedAt)));
 
+    const formatTree = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-folder-formats-'));
+    try {
+      const accepted = ['a.JPG', 'b.JpEg', 'c.PNG', 'd.BmP', 'e.WeBp', 'f.GIF'];
+      accepted.forEach((name) => fs.writeFileSync(path.join(formatTree, name), 'x'));
+      fs.writeFileSync(path.join(formatTree, 'moving.WEBM'), 'x');
+      const formats = await F.scanFolderTree(formatTree);
+      ok('folder-state scans the same six formats case-insensitively and no moving picture',
+        formats.status === 'complete'
+        && formats.entries.map((entry) => path.basename(entry.path)).sort().join() === accepted.sort().join());
+    } finally {
+      fs.rmSync(formatTree, { recursive: true, force: true });
+    }
+
     const shallow = await F.scanFolderTree(tree, { maxDepth: 0 });
     ok('depth limit produces a conservative partial result', shallow.status === 'partial'
       && shallow.entries.length === 1

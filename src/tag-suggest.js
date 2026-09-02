@@ -1,6 +1,14 @@
 'use strict';
 
-const GELBOORU_TAG_API = 'https://gelbooru.com/index.php';
+// The online SEARCH BOX: how a typed tag is spelled, and how the token under the caret
+// is found and replaced.
+//
+// ONL-014: this file used to also contain one named site's autocomplete endpoint and its
+// answer parser — the last path in the app that reached a single site with no alternative,
+// so while that site was unreachable the dropdown silently offered nothing at all. Those
+// two now live in the site's own file, behind a declared `tagSuggest` capability. What is
+// left here is about the user's text box and belongs to no site.
+
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 20;
 const MIN_PREFIX_LEN = 3;
@@ -17,65 +25,6 @@ function normalizeTagPrefix(value) {
 function clampLimit(value) {
   const n = Math.floor(Number(value) || DEFAULT_LIMIT);
   return Math.max(1, Math.min(MAX_LIMIT, n));
-}
-
-function buildGelbooruTagSuggestUrl(opts = {}) {
-  const prefix = normalizeTagPrefix(opts.q);
-  const p = new URLSearchParams({
-    page: 'autocomplete2',
-    term: prefix,
-    type: 'tag',
-    limit: String(clampLimit(opts.limit)),
-  });
-  return `${GELBOORU_TAG_API}?${p.toString()}`;
-}
-
-function tagEntriesFromResponse(json) {
-  if (Array.isArray(json)) return json;
-  if (json && Array.isArray(json.tag)) return json.tag;
-  if (json && json.tag && typeof json.tag === 'object') return [json.tag];
-  if (json && Array.isArray(json.tags)) return json.tags;
-  return [];
-}
-
-function tagCategory(type) {
-  const raw = String(type || '').toLowerCase();
-  if (raw === 'tag' || raw === 'general') return 'general';
-  if (raw === 'artist') return 'artist';
-  if (raw === 'copyright') return 'copyright';
-  if (raw === 'character') return 'character';
-  if (raw === 'metadata' || raw === 'meta') return 'metadata';
-  const n = Number(type);
-  if (n === 1) return 'artist';
-  if (n === 3) return 'copyright';
-  if (n === 4) return 'character';
-  if (n === 5) return 'metadata';
-  return 'general';
-}
-
-function normalizeSuggestion(entry) {
-  const rawName = String(entry && (entry.name || entry.tag || entry.value) || '').trim();
-  if (!rawName || /\s/.test(rawName)) return null;
-  const name = normalizeTagPrefix(rawName);
-  if (!name) return null;
-  const count = Math.max(0, Math.floor(Number(entry.count ?? entry.post_count ?? entry.posts) || 0));
-  return { name, count, category: tagCategory(entry.category ?? entry.type) };
-}
-
-function parseGelbooruTagSuggestions(json, opts = {}) {
-  const prefix = normalizeTagPrefix(opts.prefix || opts.q);
-  const limit = clampLimit(opts.limit);
-  const seen = new Set();
-  const items = [];
-  for (const entry of tagEntriesFromResponse(json)) {
-    const item = normalizeSuggestion(entry);
-    if (!item || seen.has(item.name)) continue;
-    if (prefix && !item.name.startsWith(prefix)) continue;
-    seen.add(item.name);
-    items.push(item);
-  }
-  items.sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
-  return items.slice(0, limit);
 }
 
 function currentTokenRange(query, caret = String(query || '').length) {
@@ -110,17 +59,11 @@ function replaceCurrentToken(query, caret, tag) {
 }
 
 module.exports = {
-  GELBOORU_TAG_API,
   DEFAULT_LIMIT,
   MAX_LIMIT,
   MIN_PREFIX_LEN,
   normalizeTagPrefix,
   clampLimit,
-  buildGelbooruTagSuggestUrl,
-  tagEntriesFromResponse,
-  tagCategory,
-  normalizeSuggestion,
-  parseGelbooruTagSuggestions,
   currentTokenRange,
   replaceCurrentToken,
 };

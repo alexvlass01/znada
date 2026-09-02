@@ -88,7 +88,7 @@ async function run() {
   ctl2.sync([{ id: 'q', path: 'C:/Queue' }]);
   rt2.watches[0].callback('change', 'a.jpg');
   const firstFlush = rt2.flush();
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
   rt2.watches[0].callback('change', 'b.jpg');
   await rt2.flush();
   release();

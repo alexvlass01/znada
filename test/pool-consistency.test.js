@@ -142,22 +142,30 @@ ok('старый глобальный запасной путь ремонт н�
   await test('целый профиль при старте не чинится и молчит', async (dir) => {
     const photo = path.join(dir, 'a.png');
     fs.writeFileSync(photo, 'png');
+    // A REAL id, derived from the path the way every record on disk is. With a made-up
+    // one this case used to pass for the wrong reason: the store dropped the record as
+    // mis-filed, the pool came up empty, and the repair skipped an empty pool by design —
+    // so "a sound profile was not repaired" was measured on a profile that had already
+    // lost its only photo.
+    const soundId = require('../src/library').idFor(photo);
     fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({
       autoSwitch: true,
       style: 'fill',
-      monitors: { m1: { light: { itemIds: ['a'] }, dark: { itemIds: [] } } },
+      monitors: { m1: { light: { itemIds: [soundId] }, dark: { itemIds: [] } } },
     }), 'utf8');
     fs.writeFileSync(path.join(dir, 'config.library.json'), JSON.stringify({
       version: 1,
-      library: { a: { id: 'a', type: 'image', path: photo, tags: [] } },
+      library: { [soundId]: { id: soundId, type: 'image', path: photo, tags: [] } },
       trash: [],
     }), 'utf8');
 
     const m = H.loadMain(dir);
     m.__test.loadConfig();
 
-    assert.deepStrictEqual(m.__test.getConfig().monitors.m1.light.itemIds, ['a'],
+    assert.deepStrictEqual(m.__test.getConfig().monitors.m1.light.itemIds, [soundId],
       'a sound profile was "repaired"');
+    assert.ok(m.__test.getConfig().library[soundId],
+      'the photo the slot points at did not survive the load');
     assert.strictEqual(
       m.__test.eventLogEntries().filter((e) => e.channel === 'pool-consistency').length, 0,
       'a sound profile was reported as broken',

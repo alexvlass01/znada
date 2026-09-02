@@ -3,9 +3,16 @@
 // Pure Gelbooru adapter. Network requests and credentials stay in main.js;
 // this module only builds API URLs and maps posts to Znada's online-card shape.
 
+const media = require('./media-type');
+// The SEARCH BOX module, not another site: it owns how a typed tag is spelled
+// (lowercase, underscores) and how the token under the caret is found and replaced.
+const searchBox = require('./tag-suggest');
+
 const API_BASE = 'https://gelbooru.com/index.php';
 const POST_BASE = 'https://gelbooru.com/index.php?page=post&s=view&id=';
-const SUPPORTED_EXTS = new Set(['jpg', 'jpeg', 'png']);
+// The most this API will send in one page. A caller that asks for fewer gets fewer; the
+// handler's own front-page size is its decision, not this file's.
+const MAX_PAGE_SIZE = 100;
 const RATINGS = ['general', 'sensitive', 'questionable', 'explicit'];
 
 function queryTags(query, max = 2) {
@@ -98,7 +105,8 @@ function purityName(rating) {
 function mapItem(post) {
   if (!post || post.id == null) return null;
   const ext = fileExtension(post);
-  if (!SUPPORTED_EXTS.has(ext)) return null;
+  // ONL-012: reported, not judged. Whether Znada can use this kind of file is the
+  // handler's decision, in one place, for every site.
   const full = String(post.file_url || '');
   if (!full) return null;
   const width = Number(post.width) || 0;
@@ -118,6 +126,7 @@ function mapItem(post) {
     width,
     height,
     fileType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+    format: media.normalizeFormat(ext),
     purity: purityName(post.rating),
     category: 'anime',
     source: post.source || '',
@@ -298,7 +307,329 @@ function buildPostUrl(id, { apiKey, userId } = {}) {
   return `${API_BASE}?${p.toString()}`;
 }
 
+// META-001: find the post that IS this exact file.
+//
+// `md5:<hash>` is an ordinary Gelbooru search term, so this reuses the search endpoint
+// rather than needing a new one. The hash is validated here and not merely interpolated:
+// the value comes from a local file, but a malformed one would otherwise turn into a
+// search for arbitrary text and quietly return somebody else's picture.
+function buildMd5Url(md5, { apiKey, userId } = {}) {
+  const hash = String(md5 == null ? '' : md5).trim().toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(hash)) return '';
+  const p = new URLSearchParams({
+    page: 'dapi',
+    s: 'post',
+    q: 'index',
+    json: '1',
+    limit: '1',
+    tags: `md5:${hash}`,
+  });
+  if (apiKey) p.set('api_key', String(apiKey));
+  if (userId) p.set('user_id', String(userId));
+  return `${API_BASE}?${p.toString()}`;
+}
+
+const TAG_TYPE_NAME_BY_ID = Object.freeze(
+  Object.entries(TAG_TYPE_BY_NAME).reduce((acc, [name, id]) => {
+    // `meta` and `metadata` share an id; keep the shorter, canonical spelling.
+    if (!acc[id] || name.length < acc[id].length) acc[id] = name;
+    return acc;
+  }, {}),
+);
+
+// Gelbooru speaks in type numbers; everything downstream of the adapters speaks in
+// names, so the numeric encoding stops here and never reaches storage.
+function tagTypeName(type) {
+  const id = normalizeTagType(type);
+  return Number.isFinite(id) && TAG_TYPE_NAME_BY_ID[id] ? TAG_TYPE_NAME_BY_ID[id] : '';
+}
+
+// A post reduced to the shape the metadata lookup stores. `typeMap` is optional: the
+// post response carries no tag types at all, so they arrive from a second request that
+// is allowed to fail — untyped tags are still the tags the user asked for.
+function postSummary(post, typeMap) {
+  if (!post || post.id == null) return null;
+  const postId = String(post.id).trim();
+  if (!/^\d+$/.test(postId)) return null;
+  const map = typeMap instanceof Map ? typeMap : new Map(Object.entries(typeMap || {}));
+  const names = allTags(post);
+  const artists = artistNamesFromTypes(names, map);
+  return {
+    postId,
+    page: `${POST_BASE}${postId}`,
+    md5: String(post.md5 || '').trim().toLowerCase(),
+    rating: String(post.rating || '').trim().toLowerCase(),
+    author: artistLabel(artists),
+    tags: names.map((name) => {
+      const type = tagTypeName(map.get(name));
+      return type ? { name, type } : { name };
+    }),
+  };
+}
+
+// ONL-011. What this site IS, as data — see the note in src/wallhaven.js.
+const PROVIDER = Object.freeze({
+  id: 'gelbooru',
+  name: 'Gelbooru',
+  status: 'active',
+  hosts: Object.freeze({
+    page: Object.freeze(['gelbooru.com', 'www.gelbooru.com']),
+    image: Object.freeze([Object.freeze({ pattern: /^img\d*\.gelbooru\.com$/i })]),
+    // The apex hotlink endpoint is reachable ONLY through the main process: it needs a
+    // Referer the window cannot send, and it is a single path rather than a whole host.
+    imageProxyOnly: Object.freeze([
+      Object.freeze({ host: 'gelbooru.com', path: '/hotlink.php' }),
+      Object.freeze({ host: 'www.gelbooru.com', path: '/hotlink.php' }),
+    ]),
+    thumb: Object.freeze([Object.freeze({ pattern: /^img\d*\.gelbooru\.com$/i })]),
+  }),
+  // ONL-012. Same group as Danbooru: they are alternatives, not two separate sources.
+  group: 'anime',
+  // Without the bundled key this site cannot be asked at all — the group then falls
+  // through to the next member.
+  credentials: Object.freeze({ kind: 'bundled', required: true }),
+  // Read by the shared handler — see the note in src/wallhaven.js about what does and
+  // does not belong here.
+  capabilities: Object.freeze({
+    browse: true,
+    textSearch: true,
+    explicit: 'always',
+    // Verified against the live API 2026-08-25: this site rejects every date-scoped form
+    // of the query, so its "top" is ALL TIME and would hand back identical cards on every
+    // launch unless it is read from a moving slice.
+    topIsAllTime: true,
+    // ONL-013. By which fingerprints this site can be asked "which post IS this exact
+    // file". `META-001` used to keep its own separate list of sites for this; a site is
+    // now declared once, here, and cannot be in one list and missing from the other.
+    // A perceptual hash would be another entry, not another list.
+    fingerprints: Object.freeze(['md5']),
+    // ONL-014. This site can say what to offer while somebody types in the search box.
+    tagSuggest: true,
+    // ONL-015. Cards from here carry their format — see the note in src/wallhaven.js.
+    cardFormat: true,
+  }),
+  // The image hosts refuse a request that does not say it came from the site.
+  requestHeaders: Object.freeze({ Referer: 'https://gelbooru.com/' }),
+  loadsDirectly: false,
+});
+
+// ONL-012. What the shared handler may ask this site to DO. See src/wallhaven.js for
+// why `ctx.fetchJson` is injected rather than called directly here.
+async function search(params, ctx) {
+  const o = params || {};
+  const page = Number(o.page) > 0 ? Number(o.page) : 1;
+  const credentials = ctx && ctx.credentials;
+  // No key means this site cannot be asked at all; the group falls through to the next.
+  if (!credentials) return { error: 'unavailable' };
+  const limit = Number(o.limit) > 0 ? Number(o.limit) : MAX_PAGE_SIZE;
+  const url = buildSearchUrl({
+    q: o.q || '',
+    purity: o.purity,
+    sorting: o.sort || o.sorting || 'date_added',
+    page,
+    limit,
+    ...credentials,
+  });
+  const res = await ctx.fetchJson(url, { timeoutMs: 15000 });
+  if (res.error) return { error: res.error };
+  // This site can answer 200 and still be reporting a failure inside the body.
+  const apiError = responseError(res.json);
+  if (apiError) return { error: apiError };
+  return parseSearch(res.json, { page, limit });
+}
+
+// Which KIND each of these tags is (artist, character, copyright, …).
+//
+// A tag's kind is a global fact about the catalogue, not a fact about one picture, so
+// the answers accumulate in one process-wide cache and only names nobody has asked
+// about yet cost a request. Both callers — downloading a picture and looking one up by
+// fingerprint — come through here, so a name resolved once is free afterwards.
+//
+// The cache is why this module has state at all, and why `resetState` exists: without
+// it one test would quietly answer another test's question.
+const tagTypeCache = new Map();
+const TAG_TYPE_CACHE_MAX = 4000;
+
+function resetState() {
+  tagTypeCache.clear();
+}
+
+async function tagTypesFor(tags, ctx) {
+  const typeMap = new Map();
+  const unknown = [];
+  for (const tag of Array.isArray(tags) ? tags : []) {
+    if (tagTypeCache.has(tag)) typeMap.set(tag, tagTypeCache.get(tag));
+    else if (tag) unknown.push(tag);
+  }
+  if (!unknown.length) return typeMap;
+  // One URL carries every unknown name, but a post with hundreds of tags would build a
+  // request line long enough to be rejected outright, so the batch is bounded.
+  const url = buildTagTypesUrl(unknown.slice(0, 100), (ctx && ctx.credentials) || {});
+  if (!url) return typeMap;
+  const res = await ctx.fetchJson(url, { timeoutMs: 10000 });
+  if (res.error || !res.json) return typeMap;
+  for (const [name, type] of parseTagTypes(res.json)) {
+    tagTypeCache.set(name, type);
+    typeMap.set(name, type);
+  }
+  while (tagTypeCache.size > TAG_TYPE_CACHE_MAX) {
+    tagTypeCache.delete(tagTypeCache.keys().next().value);
+  }
+  return typeMap;
+}
+
+// The artist and the complete tag list, neither of which the search response carries.
+//
+// The post is re-read first: the search response caps tags at 24 and this site sorts
+// them alphabetically, so a late-sorting artist (BUG-002: tag 45 of 51) is simply not
+// in it. One request on an explicit download, never per card in the feed.
+async function enrich(item, ctx) {
+  let tags = Array.isArray(item && item.tags)
+    ? item.tags.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean)
+    : [];
+  const postUrl = buildPostUrl(item && item.id, (ctx && ctx.credentials) || {});
+  if (postUrl) {
+    const res = await ctx.fetchJson(postUrl, { timeoutMs: 10000 });
+    if (!res.error && res.json) {
+      const posts = postsFromResponse(res.json);
+      const full = posts.length ? allTags(posts[0]) : [];
+      if (full.length) tags = full;
+    }
+  }
+  if (!tags.length) return {};
+  const typeMap = await tagTypesFor(tags, ctx);
+  // Owner decision: join multiple artists with a comma, at most 3.
+  return {
+    author: artistLabel(artistNamesFromTypes(tags, typeMap), 3).slice(0, 120),
+    tags: artistTagsFromTypes(tags, typeMap),
+  };
+}
+
+// ONL-013 (META-001). Which post IS this exact file.
+//
+// `md5:` is an ordinary search term here, so this is the search endpoint again rather
+// than a new one — which is precisely why the post that comes back must be checked
+// against the fingerprint before it is believed. That check is NOT done here: it is one
+// rule in the handler, for every site, because a site that forgot it would quietly write
+// somebody else's tags onto the user's photo.
+//
+// `ctx.fetchJson` on this path is the BUDGETED one. The difference is invisible from
+// here on purpose: a refusal by our own limiter arrives as an ordinary failure, and the
+// handler — which owns the limiter — is what turns it into "busy, try later".
+async function findByFingerprint(kind, value, ctx) {
+  if (kind !== 'md5') return { error: 'unsupported' };
+  const credentials = (ctx && ctx.credentials) || null;
+  if (!credentials) return { error: 'unavailable' };
+  const url = buildMd5Url(value, credentials);
+  if (!url) return { error: 'badFingerprint' };
+  const res = await ctx.fetchJson(url, { timeoutMs: 10000 });
+  if (res.error) return { error: res.error };
+  // This site can answer 200 and still be reporting a failure inside the body.
+  const apiError = responseError(res.json);
+  if (apiError) return { error: apiError };
+  const post = postsFromResponse(res.json)[0];
+  // No post is an ANSWER — "not here" — and not a failure. The two are journalled
+  // differently, so they must not be collapsed.
+  if (!post) return { result: null };
+  // Tag kinds cost a second request that is allowed to fail or be refused: untyped tags
+  // are still the tags the user asked for, and the artist is a bonus on top. Swallowed
+  // rather than reported, because losing the post over it would be the worse answer.
+  let typeMap = new Map();
+  try { typeMap = await tagTypesFor(allTags(post), ctx); } catch { typeMap = new Map(); }
+  return { result: postSummary(post, typeMap) };
+}
+
+// --- Tag suggestions (ONL-014) -------------------------------------------
+// What to offer while somebody is typing in the search box.
+//
+// This used to live in src/tag-suggest.js — the only path left that reached one named
+// site directly, with no fallback, so the moment this site was unreachable the box
+// silently stopped suggesting anything. It is a declared capability like every other
+// now, and the site's own endpoint and spelling live here beside the rest of it.
+//
+// Anonymous on purpose: the autocomplete endpoint needs no key, and sending one would
+// spend the bundled credentials on every keystroke.
+const TAG_SUGGEST_API = API_BASE;
+
+function buildTagSuggestUrl({ q, limit } = {}) {
+  const p = new URLSearchParams({
+    page: 'autocomplete2',
+    term: searchBox.normalizeTagPrefix(q),
+    type: 'tag',
+    limit: String(searchBox.clampLimit(limit)),
+  });
+  return `${TAG_SUGGEST_API}?${p.toString()}`;
+}
+
+function suggestionEntries(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.tag)) return json.tag;
+  if (json && json.tag && typeof json.tag === 'object') return [json.tag];
+  if (json && Array.isArray(json.tags)) return json.tags;
+  return [];
+}
+
+// One suggestion in the shape every site answers in. The KIND of tag is spelled the way
+// the rest of Znada spells it (`tagTypeName`) rather than in a second vocabulary of its
+// own — until ONL-014 this file said `meta` while the suggestion box said `metadata`.
+function normalizeSuggestion(entry) {
+  const raw = String((entry && (entry.name || entry.tag || entry.value)) || '').trim();
+  if (!raw || /\s/.test(raw)) return null;
+  const name = searchBox.normalizeTagPrefix(raw);
+  if (!name) return null;
+  const rawCount = entry.count == null ? (entry.post_count == null ? entry.posts : entry.post_count) : entry.count;
+  const count = Math.max(0, Math.floor(Number(rawCount) || 0));
+  const rawType = entry.category == null ? entry.type : entry.category;
+  return { name, count, category: tagTypeName(rawType) || 'general' };
+}
+
+function parseTagSuggestions(json, opts = {}) {
+  // This API answers by prefix, so anything that does not start with what was typed is
+  // noise rather than a useful alias, and is dropped.
+  const prefix = searchBox.normalizeTagPrefix(opts.prefix || opts.q);
+  const out = [];
+  for (const entry of suggestionEntries(json)) {
+    const item = normalizeSuggestion(entry);
+    if (!item) continue;
+    if (prefix && !item.name.startsWith(prefix)) continue;
+    out.push(item);
+  }
+  return out;
+}
+
+async function suggestTags(params, ctx) {
+  const o = params || {};
+  const url = buildTagSuggestUrl({ q: o.q, limit: o.limit });
+  const res = await ctx.fetchJson(url, { timeoutMs: 10000 });
+  if (res.error) return { error: res.error };
+  const apiError = responseError(res.json);
+  if (apiError) return { error: apiError };
+  return { items: parseTagSuggestions(res.json, { prefix: o.q }) };
+}
+
+// This site cannot be asked anything without the bundled credentials; a keyless build
+// simply falls through to the next member of its group.
+function loadCredentials() {
+  try {
+    const k = require('../gelbooru-key.json');
+    const userId = String((k && (k.userId || k.user_id)) || '').trim();
+    const apiKey = String((k && (k.apiKey || k.api_key)) || '').trim();
+    return userId && apiKey ? { userId, apiKey } : null;
+  } catch { return null; }
+}
+
 module.exports = {
+  PROVIDER,
+  loadCredentials,
+  search,
+  enrich,
+  findByFingerprint,
+  suggestTags,
+  tagTypesFor,
+  TAG_SUGGEST_API,
+  buildTagSuggestUrl,
+  parseTagSuggestions,
+  resetState,
   API_BASE,
   POST_BASE,
   queryTags,
@@ -322,4 +653,7 @@ module.exports = {
   artistLabel,
   allTags,
   buildPostUrl,
+  buildMd5Url,
+  tagTypeName,
+  postSummary,
 };

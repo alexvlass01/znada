@@ -254,5 +254,96 @@ ok('createClient: throws without a fetch', (() => {
     ok('client.exchangeAuth: missing verifier → request error', bad.ok === false && bad.error.code === 'invalid_request');
   }
 
+  // -------------------------------------------------------------------------
+  // BUG-030 — every call has a deadline, and a missed one says so.
+  //
+  // This file had no timeout and no AbortSignal anywhere, so a stalled backend held
+  // the caller for undici's own default, around five minutes. That is what made the
+  // sign-in strip sit there while its Cancel could not reach the token exchange.
+  //
+  // The signal is injected here rather than waited on: a test that actually waits
+  // fifteen seconds is a test nobody runs.
+  // -------------------------------------------------------------------------
+  {
+    const abortError = (name) => Object.assign(new Error('aborted'), { name });
+    const seen = [];
+    const spySignal = (ms) => { seen.push(ms); return { spy: ms }; };
+
+    // Every method, not a sample: a deadline that covers most calls is the kind of
+    // guard that looks present and is missing exactly where it matters.
+    const ff = fakeFetch({ status: 200, body: { ok: true } });
+    const client = CL.createClient({ baseUrl: BASE, fetchImpl: ff, makeTimeoutSignal: spySignal });
+    const TOKEN = 'tok';
+    await client.health();
+    await client.getCatalog({});
+    await client.getContent('c1');
+    await client.getDownload('c1');
+    await client.getMe(TOKEN);
+    await client.logout(TOKEN);
+    await client.getFavorites(TOKEN);
+    await client.addFavorite('c1', TOKEN);
+    await client.removeFavorite('c1', TOKEN);
+    await client.exchangeAuth({ code: 'C', pkce_verifier: 'V' });
+    ok('every call is given a deadline', seen.length === ff.calls.length && ff.calls.length === 10);
+    ok('and the deadline actually reaches fetch', ff.calls.every((c) => c.init.signal && c.init.signal.spy > 0));
+    ok('a deadline is a real number of milliseconds, not a flag',
+      seen.every((ms) => Number.isFinite(ms) && ms >= 1000));
+
+    // The calls a person is actively waiting on get the shorter budget. Checked by
+    // position so a method silently losing its override cannot hide behind the others.
+    const short = [seen[4], seen[5], seen[7], seen[8], seen[9]]; // me, logout, add, remove, exchange
+    const long = [seen[0], seen[1], seen[2], seen[3], seen[6]];
+    ok('the calls a person waits on get the shorter budget',
+      short.every((ms) => ms === CL.SHORT_TIMEOUT_MS));
+    ok('and the rest get the ordinary one', long.every((ms) => ms === CL.DEFAULT_TIMEOUT_MS));
+    ok('the two budgets are actually different, or the split means nothing',
+      CL.SHORT_TIMEOUT_MS < CL.DEFAULT_TIMEOUT_MS);
+
+    // A missed deadline is its own answer. It used to be indistinguishable from a
+    // dead connection, and the tab then told the user to check their internet.
+    for (const name of ['TimeoutError', 'AbortError']) {
+      const c = CL.createClient({
+        baseUrl: BASE,
+        fetchImpl: fakeFetch(abortError(name)),
+        makeTimeoutSignal: spySignal,
+      });
+      const r = await c.health();
+      ok(`a ${name} is reported as a timeout, not as a broken connection`,
+        r.ok === false && r.error.code === 'timeout' && r.error.kind === 'network');
+    }
+    const offline = await CL.createClient({
+      baseUrl: BASE, fetchImpl: fakeFetch(new Error('getaddrinfo ENOTFOUND')), makeTimeoutSignal: spySignal,
+    }).health();
+    ok('an ordinary network failure still says network', offline.ok === false && offline.error.code === 'network');
+
+    // Headers arrived, body never did. Swallowed, this looked like a 200 with an empty
+    // body, and the contract check then blamed the server for sending nonsense.
+    const stalledBody = async () => ({ status: 200, async text() { throw abortError('TimeoutError'); } });
+    const stalled = await CL.createClient({
+      baseUrl: BASE, fetchImpl: stalledBody, makeTimeoutSignal: spySignal,
+    }).getMe('tok');
+    ok('a body that never arrives is a timeout, not a broken contract',
+      stalled.ok === false && stalled.error.code === 'timeout');
+
+    // A body that is merely junk must still be tolerated exactly as before.
+    const junk = await CL.createClient({
+      baseUrl: BASE,
+      fetchImpl: async () => ({ status: 500, async text() { return '<html>oops</html>'; } }),
+      makeTimeoutSignal: spySignal,
+    }).health();
+    ok('a junk body is still an ordinary server error', junk.ok === false && junk.error.kind !== 'network');
+
+    // And the deadline is settable, because staging and a slow connection are not the
+    // same question as production.
+    const custom = [];
+    await CL.createClient({
+      baseUrl: BASE,
+      fetchImpl: fakeFetch({ status: 200, body: { ok: true } }),
+      timeoutMs: 2500,
+      makeTimeoutSignal: (ms) => { custom.push(ms); return null; },
+    }).health();
+    ok('the default deadline can be overridden by the caller', custom[0] === 2500);
+  }
+
   console.log('\nAll ' + passed + ' cloud-client tests passed.');
 })().catch((e) => { console.error(e); process.exit(1); });

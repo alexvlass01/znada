@@ -10,13 +10,13 @@ function diagSpan(category, name) {
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, slideshowCurrentPath: {}, triggers: { onStartup: false, onWakeup: false, stealth: { enabled: false, startup: true, wakeup: true, interval: false, timeoutMin: 5 } }, onlineSources: { lumina: false, internet: true }, onlineSort: 'date_added', onlinePurity: { sfw: true, sketchy: true, nsfw: false } };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, slideshowCurrentPath: {}, triggers: { onStartup: false, onWakeup: false, stealth: { enabled: false, startup: true, wakeup: true, interval: false, timeoutMin: 5 } }, onlineSources: { lumina: false, internet: true }, onlineSort: 'date_added', onlinePurity: { sfw: true, sketchy: false, nsfw: false } };
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockUndo = []; // last mock removal, so the preview can exercise the Undo toast
   let mockUndoToken = '';
   let mockUndoSeq = 0;
-  let mockSc = { desktop: false, startmenu: false };
-  let mockCloud = { signedIn: false, user: null };
+  const mockSc = { desktop: false, startmenu: false };
+  const mockCloud = { signedIn: false, user: null };
   let mockEventLog = [
     { atMs: Date.now() - 600e3, channel: 'live-folder:x', kind: 'failure', messageKey: 'journal.liveFolder', params: { name: 'Pictures' } },
     { atMs: Date.now() - 1800e3, channel: 'wallpaper-auto', kind: 'recovered', messageKey: 'journal.wallpaperAuto' },
@@ -187,14 +187,6 @@ if (!window.api) {
     itemCopyPath: async () => true,
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
-    cloudCatalog: async (opts) => {
-      const o = opts || {};
-      const rating = o.rating === 'suggestive' ? 'suggestive' : 'general';
-      const mk = (i, color) => ({ id: 'cloud' + i, title: 'Sample ' + i, rating, published_at: Date.now() / 1000, width: 1920, height: 1080,
-        thumb_url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="${color}"/></svg>`) });
-      if (!o.cursor) return { items: [mk(1, '#3584e4'), mk(2, '#e23'), mk(3, '#2c6'), mk(4, '#fb0')], nextCursor: 'p2', error: null };
-      return { items: [mk(5, '#8e24aa'), mk(6, '#1e88e5')], nextCursor: null, error: null };
-    },
     cloudAdd: async (item) => { const iid = 'cl' + item.id; mock.library[iid] = { id: iid, type: 'image', path: 'C:/fake/' + item.id + '.jpg', source: 'lumina:' + item.id }; return { config: mock, id: iid, error: null }; },
     cloudSession: async () => ({ available: true, signedIn: mockCloud.signedIn, user: mockCloud.signedIn ? mockCloud.user : null, entitlements: mockCloud.signedIn ? ['online_catalog'] : [] }),
     cloudSignin: async () => { mockCloud.signedIn = true; mockCloud.user = { id: 'u1', display_name: 'Test User', email: 'test@example.com', role: 'user', explicit_opt_in: false, created_at: Math.floor(Date.now() / 1000) }; return { ok: true, state: { available: true, signedIn: true, user: mockCloud.user, entitlements: ['online_catalog'] } }; },
@@ -202,11 +194,11 @@ if (!window.api) {
     onCloudSession: () => {},
     cloudFavorites: async () => { const favs = mockCloud.favs || {}; const items = Object.keys(favs).map((id) => favs[id]); return { items, error: null }; },
     cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
-    internetStatus: async () => ({ hasKey: false, bundled: false, nsfwAvailable: true }),
+    internetStatus: async () => ({ nsfwAvailable: true }),
     internetSearch: async (opts) => {
       const page = (opts && opts.page) || 1;
       const mk = (i, color) => ({ id: 'net' + page + '_' + i, provider: 'wallhaven', page: 'https://wh/' + page + '-' + i, full: 'data:', thumb: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="${color}"/></svg>`), resolution: '1920x1080', category: 'general', width: 1920, height: 1080 });
-      return { items: [mk(1, '#4b5563'), mk(2, '#374151'), mk(3, '#475569'), mk(4, '#334155')], meta: { currentPage: page, lastPage: 3 }, error: null, hasKey: false, nsfwAvailable: true };
+      return { items: [mk(1, '#4b5563'), mk(2, '#374151'), mk(3, '#475569'), mk(4, '#334155')], meta: { currentPage: page, lastPage: 3 }, error: null, nsfwAvailable: true };
     },
     internetTagSuggest: async (opts) => {
       const q = String(opts && opts.q || '').toLowerCase();
@@ -1014,7 +1006,13 @@ let libraryResizeFinishTimer = 0;
 let libraryResizeLastChangeAt = 0;
 let libraryResizeActive = false;
 const LIB_RESIZE_SETTLE_MS = 120;
-const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
+// BUG-020. `sortTouched` is the ONE exception to "an empty search box means the curated
+// front page". It is set only when the user changes the ordering while the box is empty
+// — at that point the control has to do what it says, or it reads as broken — and it is
+// deliberately NOT persisted and NOT remembered past a real search. So the front page
+// always comes back curated on the next visit; the ordering the user keeps is the one
+// that applies to their searches.
+const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: false, nsfw: false }, resume: null, nsfwAvailable: false, searched: false, statusFetched: false, sortTouched: false };
 const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
 const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
 const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
@@ -1031,8 +1029,6 @@ const CLOUD = { cap: null, fetched: false };
 const ONLINE = {
   view: 'search', loaded: false, loading: false, generation: 0, renderEpoch: 0, entries: [],
 };
-// Znada Cloud cursor pagination within the shared feed.
-const ZNADA_FEED = { cursor: null };
 // Cloud C4: account/session state (renderer-safe; the token never leaves main).
 const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
 // Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
@@ -2321,7 +2317,7 @@ const LOCAL_GRID_ADAPTER = {
   bindCard: (card, entry, index, grid) => bindLocalGridCard(card, entry, grid),
 };
 
-function renderEntriesLazily(grid, entries, assigned, tok) {
+function renderEntriesLazily(grid, entries, assigned) {
   const sentinel = $('#libSentinel');
   if (sentinel) sentinel.hidden = true;
   // Resolve pool-backed subfolders in one O(library + entries) pass. Looking up
@@ -2387,9 +2383,6 @@ function bindCardGalleryItem(card, item, index) {
   else delete card.dataset.galleryIndex;
 }
 
-function galleryItemFromEntry(entry) {
-  return entry && entry.item ? galleryItemFromLibrary(entry.item) : galleryItemFromPath(entry && entry.path);
-}
 
 function galleryPayloadWindow(items, index) {
   const list = (items || []).filter(Boolean);
@@ -2425,14 +2418,30 @@ function galleryItemFromPath(p) {
   };
 }
 
+// Search cards arrive in the shared provider shape (`thumb`/`purity`), while the
+// account-favorites endpoint still returns the Cloud API shape (`thumb_url`/`rating`).
+// Keep the compatibility at this one renderer boundary instead of making either feed
+// pretend it speaks the other's contract.
+function cloudThumbUrl(item) {
+  return String((item && (item.thumb || item.thumb_url)) || '');
+}
+
+function cloudRating(item) {
+  const direct = String((item && item.rating) || '').trim().toLowerCase();
+  if (['general', 'suggestive', 'explicit'].includes(direct)) return direct;
+  const purity = String((item && item.purity) || '').trim().toLowerCase();
+  return ({ sfw: 'general', sketchy: 'suggestive', nsfw: 'explicit' })[purity] || '';
+}
+
 function galleryItemFromCloud(item) {
   const resolution = item.width && item.height ? `${item.width}x${item.height}` : '';
+  const rating = cloudRating(item);
   return {
     kind: 'cloud',
     key: `cloud:${item.id}`,
     title: item.title || t('online.sourceLumina'),
-    subtitle: gallerySubtitle([t('online.sourceLumina'), resolution, item.rating && t(`online.rating${item.rating[0].toUpperCase()}${item.rating.slice(1)}`)]),
-    previewUrl: item.thumb_url || '',
+    subtitle: gallerySubtitle([t('online.sourceLumina'), resolution, rating && t(`online.rating${rating[0].toUpperCase()}${rating.slice(1)}`)]),
+    previewUrl: cloudThumbUrl(item),
     raw: item,
   };
 }
@@ -2499,8 +2508,20 @@ function openGalleryViewer(items, index = 0) {
 
 function galleryPoolRecord(entry) {
   if (!entry || !entry.raw) return null;
-  if (entry.kind !== 'cloud' && entry.kind !== 'internet') return null;
-  return OnlineAdd.pooledItem((config && config.library) || {}, entry.kind, entry.raw);
+  if (entry.kind === 'cloud' || entry.kind === 'internet') {
+    return OnlineAdd.pooledItem((config && config.library) || {}, entry.kind, entry.raw);
+  }
+  // A local picture is not a different kind of thing because the viewer is showing it.
+  // Without this every local entry crossed the window boundary as added:false/pooled:null
+  // EVEN WHEN IT HAD A RECORD, and the viewer's menu then behaved as if the photo were an
+  // un-added online card: "find tags" and "remove" did nothing and said nothing, and
+  // assign asked main to download a file already sitting on the disk.
+  if (entry.kind !== 'library' && entry.kind !== 'path') return null;
+  return poolItemForRecord({
+    id: (entry.raw && entry.raw.id) || null,
+    path: entry.path,
+    type: 'image',
+  });
 }
 
 // ---- Multi-selection helpers ----
@@ -3302,21 +3323,6 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
   });
 }
 
-function appendContextMenuItem(pop, label, action, opts = {}) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'lib-context-item' + (opts.danger ? ' danger' : '');
-  button.setAttribute('role', 'menuitem');
-  button.textContent = label;
-  button.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    closeLibPopup({ restoreFocus: true });
-    action();
-  });
-  pop.appendChild(button);
-  return button;
-}
 
 // One card, same meaning as the multi-select button: stop showing this in Znada.
 // Goes through the same path so a photo without a pool record is removable too.
@@ -3381,6 +3387,22 @@ function isOpenableDetailsSource(value) {
     const parsed = new URL(value);
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
   } catch { return false; }
+}
+
+// Catalogue ratings, spelled for a person. `safe` is the older name some providers
+// still use for `general`; an unknown word is shown as nothing rather than raw, so a
+// provider inventing a new one cannot leak a bare English token into the interface.
+const DETAILS_RATING_KEYS = {
+  general: 'details.ratingGeneral',
+  safe: 'details.ratingGeneral',
+  sensitive: 'details.ratingSensitive',
+  questionable: 'details.ratingQuestionable',
+  explicit: 'details.ratingExplicit',
+};
+
+function detailsRatingLabel(value) {
+  const key = DETAILS_RATING_KEYS[String(value || '').trim().toLowerCase()];
+  return key ? t(key) : '';
 }
 
 function detailsSourceLabel(value) {
@@ -3504,6 +3526,26 @@ async function openCardDetails(record) {
       'details.openFailed',
     );
   }
+  // META-001. The sheet is where the user is already looking at the empty author, the
+  // missing source and the missing tags, so it is where the button to go and find them
+  // belongs. WHICH photos may be looked up is the registry's answer and not a second one
+  // written here: asking "is it already in the pool" hid the button for every photo
+  // inside a watched folder — precisely the population the action exists for, and the
+  // population the card menu one click away already serves. The owner reported it as
+  // "the button is missing when the photo has no tags", because tags can only live on a
+  // pool record, so "has tags" looked like the rule while pool membership was.
+  const lookupSubject = record
+    ? CardActions.localSubject({ ...record, removedView: inRemovedView() }, item)
+    : null;
+  if (lookupSubject && CardActions.actionsFor(lookupSubject,
+    { physicalDelete: FEATURES.physicalDelete, only: ['lookupMeta'] }).length) {
+    // No failureKey: runAction would toast on a falsy return, and CardMetadata.run
+    // answers null when a lookup for this photo is already running. "Could not check"
+    // for "already checking" would be a new lie.
+    addAction(t('details.lookupMeta'), () => runDetailsLookup(record, () => {
+      if (backdrop.isConnected) openCardDetails(record);
+    }));
+  }
 
   modal.append(head, body, foot);
   backdrop.appendChild(modal);
@@ -3550,6 +3592,11 @@ async function openCardDetails(record) {
   const modRow = detailsRow(t('details.modified'), unknown);
   rows.appendChild(modRow);
   if (item && item.author) rows.appendChild(detailsRow(t('details.author'), item.author));
+  // META-001. Shown, and nothing more: Znada never hides, filters or reorders a photo
+  // the user brought himself because a catalogue put a label on it. It is information
+  // about where the picture came from, not permission to act on his library.
+  const ratingLabel = detailsRatingLabel(item && item.rating);
+  if (ratingLabel) rows.appendChild(detailsRow(t('details.rating'), ratingLabel));
   if (item && item.source) {
     let sourceNode;
     if (sourceIsOpenable) {
@@ -3657,6 +3704,43 @@ function runCardTransfer(action, descriptor) {
 }
 
 // The one place an online card becomes a library record, whichever menu asked for it.
+// META-001. Ask an online catalogue about one photo the user already has. The whole
+// operation, including which ending deserves which words, lives in card-metadata.js so
+// that the viewer performs the identical action rather than a similar one.
+function runMetadataLookup(id, opts) {
+  const options = opts || {};
+  return CardMetadata.run({
+    bridge: window.api,
+    id,
+    t,
+    notify: (message) => { if (message) toast(message); },
+    onBusy: options.onBusy,
+    onApplied: options.onApplied,
+  });
+}
+
+// META-001 from the details sheet. The record is made only now, when the user has
+// actually asked — the same moment "change tags" makes one, and exactly what the card
+// menu does at `lookupMeta` below. Deliberately OUTSIDE openCardDetails: merely OPENING
+// the sheet must still write nothing to the pool, and test/item-details-integration
+// proves that by scanning that function's body for this very call.
+async function runDetailsLookup(record, redraw) {
+  const item = await ensurePoolItemForRecord(record);
+  if (!item) { toast(t('card.lookupFailed')); return false; }
+  const res = await runMetadataLookup(item.id, {
+    onApplied: async () => {
+      // Ask for the config the lookup just wrote instead of waiting on the broadcast.
+      // savePoolOnly -> broadcastConfig is COALESCED (leading edge, 120 ms), and the
+      // materialize immediately above stamps that window — so the arrival order this
+      // redraw would otherwise depend on is not guaranteed, and a redraw that lost the
+      // race would say "added N tags" over a sheet showing none.
+      try { config = await window.api.getConfig(); } catch { /* keep what we have */ }
+      if (typeof redraw === 'function') redraw();
+    },
+  });
+  return !!res;
+}
+
 async function addCardToLibrary(descriptor) {
   if (!descriptor || descriptor.kind === 'local') return null;
   let res;
@@ -3666,7 +3750,7 @@ async function addCardToLibrary(descriptor) {
       : await window.api.internetAdd(descriptor.item, INTERNET.q);
   } catch { res = { error: 'download' }; }
   if (res && res.config) config = res.config;
-  if (!res || res.error) { toast(t('online.error', { e: (res && res.error) || '?' })); return null; }
+  if (!res || res.error) { toast(CardTransfer.errorMessage(t, res && res.error)); return null; }
   toast(t('online.added'));
   refreshPoolDependentChrome();
   refreshOnlineAddedState();
@@ -3709,6 +3793,13 @@ function openCardMenu(subject, card, point = null) {
       assign: false, tags: true, remove: false, focusTags: true,
     }),
     details: () => openCardDetails(record),
+    // The record is made only now, when the user has actually asked — the same moment
+    // "change tags" makes one.
+    lookupMeta: async () => {
+      const item = await ensurePoolItemForRecord(record);
+      if (item) runMetadataLookup(item.id);
+      else toast(t('card.lookupFailed'));
+    },
     add: () => addCardToLibrary(descriptor),
     remove: () => (subject.kind === 'local'
       ? removeRecordFromLibrary(record)
@@ -4015,7 +4106,15 @@ function initLibrary() {
     });
   }
   const whSortEl = $('#whSort');
-  if (whSortEl) whSortEl.addEventListener('change', () => { INTERNET.sort = whSortEl.value; persistOnlineParams(); if (ONLINE.loaded) doOnlineSearch(true); });
+  if (whSortEl) whSortEl.addEventListener('change', () => {
+    INTERNET.sort = whSortEl.value;
+    // Changing the ordering with nothing typed is itself a request, so honour it —
+    // for this visit only.
+    const qEl = $('#whQuery');
+    INTERNET.sortTouched = OnlineBrowse.sortTouchedAfterChange(qEl && qEl.value, INTERNET.sortTouched);
+    persistOnlineParams();
+    if (ONLINE.loaded) doOnlineSearch(true);
+  });
   const whFilterToggle = $('#whFilterToggle');
   const whFiltersRow = $('#whFiltersRow');
   if (whFilterToggle && whFiltersRow) {
@@ -4058,12 +4157,21 @@ function initLibraryDragDrop() {
   ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((ev) => {
     view.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
   });
-  view.addEventListener('dragenter', () => { dc++; grid.classList.add('drag-over'); });
+  // The empty-library card is a SIBLING of the grid, so with nothing in the library the
+  // grid has no height and its outline collapsed into a hairline strip floating above the
+  // card the user is actually aiming at. Both get the class; the stylesheet decides which
+  // one is visible, because only it knows the grid is empty.
+  const empty = $('#libEmpty');
+  const setDragOver = (on) => {
+    grid.classList.toggle('drag-over', on);
+    if (empty) empty.classList.toggle('drag-over', on);
+  };
+  view.addEventListener('dragenter', () => { dc++; setDragOver(true); });
   view.addEventListener('dragover', (e) => { e.dataTransfer.dropEffect = 'copy'; });
-  view.addEventListener('dragleave', () => { dc--; if (dc <= 0) { dc = 0; grid.classList.remove('drag-over'); } });
+  view.addEventListener('dragleave', () => { dc--; if (dc <= 0) { dc = 0; setDragOver(false); } });
   view.addEventListener('drop', async (e) => {
     dc = 0;
-    grid.classList.remove('drag-over');
+    setDragOver(false);
     const files = e.dataTransfer.files;
     if (!files || !files.length) return;
     const paths = [];
@@ -4357,11 +4465,6 @@ async function ensureCloudSession(force) {
   return CLOUDAUTH.state;
 }
 
-// Explicit tier is offered only to a signed-in user who has opted in (backend gate).
-function explicitAllowed() {
-  const s = CLOUDAUTH.state;
-  return !!(s && s.signedIn && s.user && s.user.explicit_opt_in);
-}
 
 // Account strip atop the Znada Cloud panel: sign-in button / signing-in / profile + sign-out.
 function renderCloudAccount() {
@@ -4375,7 +4478,21 @@ function renderCloudAccount() {
     const msg = document.createElement('span');
     msg.className = 'lib-cloud-acc-msg';
     msg.textContent = t('online.signingIn');
-    host.appendChild(msg);
+    // The way out. Abandoning the browser tab sends nothing back, so without this the
+    // strip sat here for five minutes with no control on it at all, and the only cure
+    // was quitting the app.
+    const cancel = document.createElement('button');
+    cancel.className = 'pill ghost';
+    cancel.textContent = t('online.signinCancel');
+    cancel.addEventListener('click', async () => {
+      if (cancel.disabled) return;
+      cancel.disabled = true;
+      // Deliberately does NOT clear CLOUDAUTH.signingIn: the single await in
+      // doCloudSignin owns that flag, and clearing it here would let a code that is
+      // still in flight resolve into a window that already believes it is signed out.
+      try { await window.api.cloudSigninCancel(); } catch { /* the flag clears anyway */ }
+    });
+    host.append(msg, cancel);
     return;
   }
 
@@ -4435,7 +4552,22 @@ async function doCloudSignin() {
 
 async function doCloudSignout() {
   let res;
-  try { res = await window.api.cloudSignout(); } catch { res = { ok: true, state: { available: true, signedIn: false } }; }
+  try { res = await window.api.cloudSignout(); }
+  catch { res = { ok: false, error: 'network', state: CLOUDAUTH.state }; }
+  if (!res || res.ok === false) {
+    // Signing out no longer fails because a file could not be deleted — that stranded
+    // the account. What is left here is the honest failure: the request never reached
+    // main at all. The session state is then unknown, so nothing account-owned is
+    // cleared on a guess.
+    if (res && res.state) CLOUDAUTH.state = res.state;
+    CLOUDAUTH.fetched = true;
+    if (LIB.filter === 'online') {
+      renderCloudAccount();
+      applyFavToggleUI();
+    }
+    toast(CardTransfer.errorMessage(t, (res && res.error) || 'network'));
+    return;
+  }
   CLOUDAUTH.state = (res && res.state) || { available: true, signedIn: false, user: null, entitlements: [] };
   CLOUDAUTH.fetched = true;
   CLOUDFAV.ids = new Set(); CLOUDFAV.fetched = false;
@@ -4455,14 +4587,8 @@ function cloudAvailable() {
   return !!(c && c.available && (c.environment === 'staging' || c.environment === 'production'));
 }
 
-// The shared content filter (SFW/Sketchy/NSFW) maps to a Znada Cloud rating tier;
-// explicit only for a signed-in user who has opted in (backend gate).
-function znadaRatingFromPurity() {
-  const p = INTERNET.purity || {};
-  if (p.nsfw && explicitAllowed()) return 'explicit';
-  if (p.sketchy) return 'suggestive';
-  return 'general';
-}
+// ONL-014c. Translating the shared content filter into the catalogue’s own three ratings
+// moved into that site’s own file, along with everything else peculiar to it.
 
 // "Избранное" toggle in the search bar — only when Znada Cloud is on and signed in.
 function applyFavToggleUI() {
@@ -4577,7 +4703,10 @@ async function loadFavoritesFeed() {
   if (LIB.filter !== 'online' || generation !== ONLINE.generation || ONLINE.view !== 'favorites') return;
   ONLINE.loading = false;
   if (!res || res.error) {
-    if (note) note.textContent = res && res.error === 'network' ? t('online.offline') : t('online.error', { e: (res && res.error) || '?' });
+    // BUG-030. A server that never answered is not the same as having no connection —
+    // saying "no internet" while the browser plainly works sends the user to check the
+    // wrong thing. The client tells the two apart now, so this does too.
+    if (note) note.textContent = CardTransfer.errorMessage(t, res && res.error);
     setLibViewHeader(0);
     return;
   }
@@ -4588,22 +4717,9 @@ async function loadFavoritesFeed() {
   if (note) note.textContent = n ? '' : t('online.favEmpty');
 }
 
-// Append a page of Znada Cloud catalog results into the shared grid (#whGrid). The Znada Cloud
-// source is searched by the same tag and content filter as the Internet source.
-async function loadZnadaResults(reset, generation) {
-  let res;
-  try {
-    res = await window.api.cloudCatalog({
-      rating: znadaRatingFromPurity(),
-      tag: INTERNET.q || undefined,
-      cursor: reset ? null : ZNADA_FEED.cursor,
-    });
-  } catch { res = { error: 'network' }; }
-  if (LIB.filter !== 'online' || generation !== ONLINE.generation || ONLINE.view !== 'search') return [];
-  if (!res || res.error) { ZNADA_FEED.cursor = null; return []; }
-  ZNADA_FEED.cursor = res.nextCursor || null;
-  return (res.items || []).map((item) => onlineGridDescriptor('cloud', item));
-}
+// ONL-014c. The catalogue used to be fetched here, separately, with its own cursor and
+// its own idea of when there was more. It is a site in the same registry now, so its
+// cards arrive in the same answer as everyone else's and this loader is gone with it.
 
 // ONL-008. One control for BOTH kinds of online card: "+" downloads the photo into the
 // library, "✓" takes it back out. Which of the two it is comes from src/online-add.js
@@ -4662,7 +4778,7 @@ async function addOnlineToLibrary(addFn) {
   let res;
   try { res = await addFn(); } catch { res = { error: 'download' }; }
   if (res && res.config) config = res.config;
-  if (!res || res.error) { toast(t('online.error', { e: (res && res.error) || '?' })); return false; }
+  if (!res || res.error) { toast(CardTransfer.errorMessage(t, res && res.error)); return false; }
   toast(t('online.added'));
   refreshPoolDependentChrome();
   return true;
@@ -4707,7 +4823,8 @@ function buildCloudCard(item) {
   makeLibCardFocusable(card);
   setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
   card.__galleryItem = galleryItemFromCloud(item);
-  if (item.thumb_url) card.style.backgroundImage = `url("${item.thumb_url}")`;
+  const thumb = cloudThumbUrl(item);
+  if (thumb) card.style.backgroundImage = `url("${thumb}")`;
   const label = [item.width && item.height ? `${item.width}×${item.height}` : '', item.title].filter(Boolean).join(' · ');
   card.title = item.title || '';
   attachOnlineAddButton(card, 'cloud', item, () => window.api.cloudAdd(item));
@@ -4743,7 +4860,7 @@ function buildCloudCard(item) {
           return;
         }
         setFavUi();
-      } else { toast(t('online.error', { e: (res && res.error) || '?' })); }
+      } else { toast(CardTransfer.errorMessage(t, res && res.error)); }
     });
     card.appendChild(fav);
   }
@@ -4820,44 +4937,66 @@ async function doOnlineSearch(reset) {
   const generation = ++ONLINE.generation;
   ONLINE.view = 'search';
   applyFavToggleUI();
-  const sources = onlineSources();
   const qEl = $('#whQuery'); INTERNET.q = (qEl && qEl.value || '').trim();
+  INTERNET.sortTouched = OnlineBrowse.sortTouchedAfterSearch(INTERNET.q, INTERNET.sortTouched);
   const note = $('#whNote'); const more = $('#whMore');
   if (reset) {
-    INTERNET.page = 1;
-    ZNADA_FEED.cursor = null;
+    // ONL-014b. One bookmark object for every site at once, and a fresh search drops
+    // it: the bookmarks belong to the question that was asked.
+    INTERNET.resume = null;
     ONLINE.loaded = true;
     replaceOnlineEntries([], { fresh: true });
   }
   ONLINE.loading = true; if (more) more.disabled = true;
   if (note) note.textContent = t('online.loading');
 
-  const internetTask = sources.internet ? loadInternetResults(generation) : Promise.resolve([]);
-  const znadaTask = sources.lumina && cloudAvailable()
-    ? loadZnadaResults(reset, generation) : Promise.resolve([]);
-  // Publish each provider as soon as it answers. A slow cloud or Internet source
-  // must not keep the other source's already-ready thumbnails behind a blank grid.
-  await Promise.all([
-    publishOnlineBatch(internetTask, generation),
-    publishOnlineBatch(znadaTask, generation),
-  ]);
+  // ONL-014c. One request for every source at once. Which of them are asked is decided
+  // in main from what each site declared and which switches are on.
+  // The release below is the ONLY thing that lets this tab work again, and it used to sit
+  // behind a bare `await`. Anything thrown while publishing a page — the grid, the header,
+  // the note — skipped it, and then `ONLINE.loading` stayed true forever: "Show more"
+  // refuses while it is set, and `ONLINE.loaded` is already true so coming back to the tab
+  // does not search again. Only switching to a local rail cleared it, because that path
+  // resets the flag by hand. Caught here rather than wrapped in `finally`, because a
+  // failure the user cannot see is the other half of the same problem.
+  let failed = null;
+  try {
+    await publishOnlineBatch(loadInternetResults(generation), generation);
+  } catch (err) { failed = err; }
+  // Still not ours to release if a newer search or the favorites view took over: whoever
+  // owns the flag now will clear it.
   if (!onlineSearchIsCurrent(generation)) return;
 
   ONLINE.loading = false; if (more) more.disabled = false;
+  if (failed) {
+    console.error('online search:', failed);
+    if (note) note.textContent = t('online.error', { e: 'render' });
+    return;
+  }
   finalizeOnlineFeed();
 }
 
 // Append one Internet page (Wallhaven + Gelbooru/Danbooru, merged in main) into #whGrid.
 async function loadInternetResults(generation) {
   let res;
-  try { res = await window.api.internetSearch({ q: INTERNET.q, sort: INTERNET.sort, purity: INTERNET.purity, page: INTERNET.page }); }
+  const browse = OnlineBrowse.isBrowse(INTERNET);
+  try { res = await window.api.internetSearch({ q: INTERNET.q, sort: INTERNET.sort, purity: INTERNET.purity, resume: INTERNET.resume, browse }); }
   catch { res = { error: 'network' }; }
   if (!onlineSearchIsCurrent(generation)) return [];
   INTERNET.searched = true;
   if (res && typeof res.nsfwAvailable !== 'undefined') { INTERNET.nsfwAvailable = !!res.nsfwAvailable; updatePurityToggle(); }
-  if (!res || res.error) { INTERNET.lastPage = INTERNET.page; return []; }
-  INTERNET.lastPage = (res.meta && res.meta.lastPage) || INTERNET.page;
-  return (res.items || []).map((item) => onlineGridDescriptor('internet', item));
+  // Main records one strike per failed provider even when the merged round is an error.
+  // Carry that replacement token before returning: otherwise every click sends the old
+  // zero-strike token and a dead source keeps “Show more” alive forever. A transport
+  // exception has no `resume` field, so it still keeps the old place.
+  // The token is carried, never read: what is inside belongs to main.
+  if (res && Object.prototype.hasOwnProperty.call(res, 'resume')) {
+    INTERNET.resume = res.resume || null;
+  }
+  if (!res || res.error) return [];
+  // ONL-014c. The kind comes from the CARD, not from which call fetched it — the same
+  // reason it already carries whether a window may load its picture directly.
+  return (res.items || []).map((item) => onlineGridDescriptor(item.cardKind === 'cloud' ? 'cloud' : 'internet', item));
 }
 
 function onlineSearchIsCurrent(generation) {
@@ -4882,44 +5021,41 @@ async function publishOnlineBatch(task, generation) {
 
 // Note + "more" button + header for the current shared grid.
 function finalizeOnlineFeed() {
-  const sources = onlineSources();
   const note = $('#whNote'); const more = $('#whMore');
   const n = ONLINE.entries.length;
   setLibViewHeader(n);
   if (note) note.textContent = n ? '' : t('online.noResults');
-  const hasMore = (sources.internet && INTERNET.page < INTERNET.lastPage)
-    || (sources.lumina && cloudAvailable() && !!ZNADA_FEED.cursor);
+  const hasMore = !!INTERNET.resume;
   if (more) more.hidden = !hasMore;
 }
 
 // "Показать ещё" advances every active source that still has a next page.
 async function loadMoreOnline() {
   if (LIB.filter !== 'online' || ONLINE.loading || ONLINE.view === 'favorites') return;
-  const sources = onlineSources();
   const more = $('#whMore'); if (more) more.disabled = true;
   ONLINE.loading = true;
   const generation = ONLINE.generation;
-  let internetTask = Promise.resolve([]);
-  let znadaTask = Promise.resolve([]);
-  if (sources.internet && INTERNET.page < INTERNET.lastPage) {
-    INTERNET.page += 1;
-    internetTask = loadInternetResults(generation);
-  }
-  if (sources.lumina && cloudAvailable() && ZNADA_FEED.cursor) {
-    znadaTask = loadZnadaResults(false, generation);
-  }
-  await Promise.all([
-    publishOnlineBatch(internetTask, generation),
-    publishOnlineBatch(znadaTask, generation),
-  ]);
+  // Same reason as in doOnlineSearch: a throw here would leave the button disabled and
+  // the flag set, and this is the very button that would have to clear them.
+  let failed = null;
+  try {
+    if (INTERNET.resume) await publishOnlineBatch(loadInternetResults(generation), generation);
+  } catch (err) { failed = err; }
   if (!onlineSearchIsCurrent(generation)) return;
   ONLINE.loading = false; if (more) more.disabled = false;
+  if (failed) {
+    console.error('online more:', failed);
+    const note = $('#whNote');
+    if (note) note.textContent = t('online.error', { e: 'render' });
+    return;
+  }
   finalizeOnlineFeed();
 }
 
 function setInternetCardThumbnail(card, item) {
   if (!item.thumb) return;
-  if (item.provider === 'wallhaven') {
+  // ONL-012: the card says whether its site can be loaded straight from here.
+  if (item.loadsDirectly) {
     card.style.backgroundImage = `url("${item.thumb}")`;
     return;
   }

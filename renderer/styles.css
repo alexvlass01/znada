@@ -1556,6 +1556,16 @@ html.dark .lib-rail { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
   gap: 10px;
 }
 .lib-grid.drag-over { outline: 2px dashed var(--accent); outline-offset: 5px; border-radius: 12px; }
+/* With nothing in the library the grid has no height, and the outline above collapsed
+   into a hairline strip floating over the placeholder card. Light up the card instead —
+   it is what the user is aiming at, and it already has the dashed border to colour. */
+.lib-grid.drag-over:empty { outline: none; }
+.lib-empty.drag-over {
+  border-color: var(--accent);
+  background: rgba(53, 132, 228, 0.07);
+  color: var(--accent);
+}
+.lib-empty.drag-over .lib-empty-icon { color: var(--accent); opacity: 1; }
 /* Virtualization spacers: stand in for the rows above/below the materialized window.
    flex-basis 100% forces a full flex row; height is set inline from the row geometry.
    Removed from the DOM entirely when zero (an empty flex row would add a stray gap). */

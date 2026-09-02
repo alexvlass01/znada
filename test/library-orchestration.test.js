@@ -462,6 +462,69 @@ console.log('\nmain.js orchestration\n');
       'the returning stale store discarded derived metadata with an unadvanced revision');
   });
 
+  // Owner QA 2026-08-30. Removing a photo in the fullscreen viewer left it on screen in
+  // the Library grid behind, until the user switched rails and came back. A photo that
+  // only lives inside a watched folder is removed by HIDING its path — the pool never
+  // changes — and the grid rebuilds itself off a signature of the pool. So nothing told
+  // it. No window exists in these tests, which is why this reads the decision main made
+  // rather than the send it makes with it; the send is one line shared with the
+  // live-folder broadcast.
+  await test('a hide made in another window tells the main window its grid is stale', async (dir) => {
+    const watched = path.join(dir, 'watched');
+    const inside = H.writeImage(path.join(watched, 'inside.png'));
+    const pooled = H.writeImage(path.join(dir, 'wallpapers', 'pooled.png'));
+    const watchedId = library.idFor(watched);
+    const pooledId = library.idFor(pooled);
+    H.writeJson(cfgFile(dir), baseConfig({}));
+    H.writeJson(storeFile(dir), {
+      version: 1,
+      library: {
+        [watchedId]: { id: watchedId, type: 'folder', path: watched, addedAt: 1, favorite: false, tags: [] },
+        [pooledId]: { id: pooledId, type: 'image', path: pooled, addedAt: 1, favorite: false, tags: [] },
+      },
+      trash: [],
+    });
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    // The folder has to be INDEXED, or hiding a photo inside it is a no-op and this case
+    // would pass by measuring nothing. The precondition below is what catches that.
+    m.__test.setLiveFolderState(indexFolder(watched, [inside]));
+
+    const before = m.__test.libraryViewStale().count;
+    const hide = await m.invokeAs('viewer', 'library-remove-many', [{ id: '', path: inside, type: 'image' }]);
+    assert.strictEqual(hide.hidden, 1, 'precondition: the photo was not actually hidden');
+    assert.strictEqual(m.__test.libraryViewStale().count, before + 1,
+      'a folder photo hidden from the viewer left the grid with no way to notice');
+
+    // A pool removal needs no help: the ordinary config broadcast already carries it, and
+    // saying so twice rebuilds the grid twice and drops the scroll position.
+    const afterHide = m.__test.libraryViewStale().count;
+    await m.invokeAs('viewer', 'library-remove-many', [{ id: pooledId, path: pooled, type: 'image' }]);
+    assert.strictEqual(m.__test.libraryViewStale().count, afterHide,
+      'a pool removal sent a second, redundant notice');
+  });
+
+  await test('the main window is not told about its own removals', async (dir) => {
+    const watched = path.join(dir, 'watched');
+    const inside = H.writeImage(path.join(watched, 'inside.png'));
+    const watchedId = library.idFor(watched);
+    H.writeJson(cfgFile(dir), baseConfig({}));
+    H.writeJson(storeFile(dir), {
+      version: 1,
+      library: { [watchedId]: { id: watchedId, type: 'folder', path: watched, addedAt: 1, favorite: false, tags: [] } },
+      trash: [],
+    });
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    m.__test.setLiveFolderState(indexFolder(watched, [inside]));
+
+    const before = m.__test.libraryViewStale().count;
+    const hide = await m.invokeAs('main', 'library-remove-many', [{ id: '', path: inside, type: 'image' }]);
+    assert.strictEqual(m.__test.libraryViewStale().count, before,
+      'the window that did the removing was told to rebuild, which loses its scroll position');
+    assert.strictEqual(hide.hidden, 1, 'precondition: nothing was hidden, so the case measured nothing');
+  });
+
   await test('Undo makes the restored record newer than the removal after a degraded restart', async (dir) => {
     const photo = H.writeImage(path.join(dir, 'wallpapers', 'undo-revision.png'));
     const id = library.idFor(photo);

@@ -37,7 +37,10 @@ ok('main validates details paths and stored source URLs',
   && main.includes('? readItemDetails(p) : itemDetails.emptyDetails()')
   && main.includes("ipcMain.handle('item-copy-path'")
   && main.includes('itemDetails.isValidAbsolutePath(p)')
-  && main.includes('isTrustedMainWindowSender(e)')
+  // SEC-002 removed the hand-written sender guard here: the registrar in
+  // src/ipc-authority.js now answers that question for every channel, and asks three
+  // more besides. Naming the old helper again would pin a mechanism that is gone.
+  && main.includes("IPC_ROLES[channel] = ['main']")
   && main.includes('isAuthorizedItemPath(p)')
   && main.includes('itemDetails.normalizeHttpUrl(raw)')
   && main.includes('config.library[id]'));
@@ -55,6 +58,34 @@ ok('opening read-only details never materializes a transient card',
   detailsBlock.includes('poolItemForRecord(record)')
   && !detailsBlock.includes('ensurePoolItemForRecord')
   && !detailsBlock.includes('libraryMaterialize'));
+
+// META-001, owner QA 2026-08-28. The sheet and the card menu must answer "can this photo
+// be looked up" with the SAME rule. The sheet asked its own question — "is it already in
+// the pool" — which hid the button for every photo inside a watched folder: exactly the
+// population the action exists for. It read as "the button needs tags", because tags can
+// only live on a pool record.
+ok('the lookup button is drawn from the shared registry, not from pool membership',
+  detailsBlock.includes("only: ['lookupMeta']")
+  && detailsBlock.includes('CardActions.localSubject')
+  && detailsBlock.includes('removedView: inRemovedView()')
+  && !detailsBlock.includes("if (item && item.type === 'image') {"));
+
+// The record is created on commit, not on draw — the same call the card menu makes, and
+// deliberately outside the block the assertion above scans. Scoped to this function's
+// own body: the identical call also sits in the card-menu handler, so an unscoped search
+// would keep passing over a sheet that had quietly stopped making one.
+const detailsLookupStart = renderer.indexOf('async function runDetailsLookup(record, redraw)');
+const detailsLookupBlock = detailsLookupStart >= 0
+  ? renderer.slice(detailsLookupStart, renderer.indexOf('\n}\n', detailsLookupStart))
+  : '';
+ok('the sheet materializes on click, through the same helper the card menu uses',
+  detailsLookupBlock.includes('const item = await ensurePoolItemForRecord(record);'));
+
+// The redraw must not depend on a broadcast arriving before the reply: config-changed is
+// coalesced, and the materialize this path performs stamps that window immediately
+// before the lookup. Losing that race would say "added N tags" over a sheet showing none.
+ok('the post-lookup redraw reads the config instead of racing the broadcast',
+  detailsLookupBlock.includes('config = await window.api.getConfig()'));
 
 ok('async thumbnail and metadata results are discarded after the sheet closes',
   (detailsBlock.match(/!backdrop\.isConnected/g) || []).length >= 2);

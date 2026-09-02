@@ -39,7 +39,7 @@ ok('package command keeps production-safe diagnostics gate',
 // both git and the packager, so anything dropped there would have ridden into app.asar. It
 // was empty at the time, which is exactly why nobody noticed — the v1.4.6 leak started the
 // same way.
-for (const leak of ['/plans/index.md', '/STATUS.md', '/ROADMAP.md', '/CLAUDE.md', '/AGENTS.md', '/.tmp/x', '/.tmp-stealth-ui.err.log', '/scratch/x', '/.agents', '/.codex', '/test/config.test.js', '/Znada-DEV.bat', '/Znada-DIAG.bat']) {
+for (const leak of ['/plans/index.md', '/STATUS.md', '/ROADMAP.md', '/CLAUDE.md', '/AGENTS.md', '/.tmp/x', '/.tmp-stealth-ui.err.log', '/scratch/x', '/.agents', '/.codex', '/test/config.test.js', '/Znada-DEV.bat', '/Znada-DIAG.bat', '/Znada-Review.bat']) {
   ok(`package command excludes ${leak}`,
     ignorePatterns.some((pattern) => pattern.test(leak)));
 }

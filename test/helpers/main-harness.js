@@ -17,6 +17,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const Module = require('module');
+const { pathToFileURL } = require('url');
 
 const ROOT = path.join(__dirname, '..', '..');
 
@@ -41,6 +42,7 @@ function makeElectronStub(userData, options = {}) {
     hotkeys: [],
     hotkeyRegistered: new Set(),
     hotkeysSuspended: false,
+    opened: [],
   };
   const listeners = new Map();
   const on = (map) => (event, fn) => {
@@ -50,6 +52,10 @@ function makeElectronStub(userData, options = {}) {
 
   const app = {
     isQuitting: false,
+    // Tests run from source, never from a packaged build, and some gates ask. Left
+    // undefined it defaulted to "packaged", which quietly closed the diagnostics gate
+    // and made a test about diagnostics measure the ordinary path instead.
+    isPackaged: false,
     getPath: (key) => (key === 'userData' ? userData : path.join(userData, key)),
     setPath: () => {},
     getAppPath: () => ROOT,
@@ -108,7 +114,10 @@ function makeElectronStub(userData, options = {}) {
         showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
       },
       shell: {
-        openExternal: () => {},
+        // A promise, because main chains .catch() onto it. Returning undefined threw a
+        // TypeError inside a listen callback, which took the whole process down rather
+        // than failing the call - so nothing had ever driven sign-in here.
+        openExternal: async (url) => { calls.opened.push(url); },
         openPath: () => {},
         // Writes a real placeholder file inside the temp profile and records what it
         // was pointed at. Leaving this out of the stub made every shortcut test pass
@@ -153,7 +162,8 @@ function makeElectronStub(userData, options = {}) {
         },
       },
       powerMonitor: { on: () => {} },
-      safeStorage: { isEncryptionAvailable: () => false, encryptString: () => Buffer.alloc(0), decryptString: () => '' },
+      safeStorage: options.safeStorage
+        || { isEncryptionAvailable: () => false, encryptString: () => Buffer.alloc(0), decryptString: () => '' },
       Notification: class { constructor() {} show() {} on() {} static isSupported() { return false; } },
       clipboard: { writeText: () => {} },
       webContents: { getAllWebContents: () => [] },
@@ -222,17 +232,60 @@ function loadMain(userData, options = {}) {
   let api;
   try {
     delete require.cache[require.resolve(path.join(ROOT, 'main.js'))];
+    // Only main.js is dropped from the cache, so a provider module keeps whatever it
+    // learned in the previous test — Gelbooru caches tag kinds process-wide on purpose.
+    // `resetState` is the hook a site declares for exactly this, and until now nothing
+    // called it, so the protection its comment describes did not actually exist.
+    for (const descriptor of require(path.join(ROOT, 'src', 'provider-registry')).PROVIDERS) {
+      if (typeof descriptor.resetState === 'function') descriptor.resetState();
+    }
     api = require(path.join(ROOT, 'main.js'));
   } finally {
     Module._load = originalLoad;
     process.argv = originalArgv;
   }
-  const invoke = (channel, ...args) => {
+  // SEC-002. Handlers now refuse anything that is not one of Znada's own windows, on its
+  // own page, in its top frame. The harness therefore has to BE one: stand-in webContents
+  // are registered through the real authority and events are shaped the way Electron
+  // shapes them. Nothing here bypasses the guard — a seam that did would make every test
+  // above it meaningless.
+  const roleFiles = {
+    main: path.join(ROOT, 'renderer', 'index.html'),
+    viewer: path.join(ROOT, 'renderer', 'viewer.html'),
+    diagnostics: path.join(ROOT, 'diagnostics', 'ui', 'control.html'),
+  };
+  const senders = {};
+  const authority = api && api.__test && api.__test.ipcAuthority;
+  if (authority) {
+    for (const [role, file] of Object.entries(roleFiles)) {
+      const frame = { url: pathToFileURL(file).href };
+      const contents = { mainFrame: frame };
+      authority.register(contents, role, frame.url);
+      senders[role] = { sender: contents, senderFrame: frame };
+    }
+  }
+  const roles = authority ? authority.roles() : {};
+  // Whichever window really owns the channel, so a test does not have to know. Explicit
+  // cases use invokeAs / invokeRaw.
+  const roleFor = (channel) => (Array.isArray(roles[channel]) && roles[channel][0]) || 'main';
+  const eventFor = (role) => senders[role] || {};
+  const invokeRaw = (event, channel, ...args) => {
     const fn = stub.handlers.get(channel);
     if (!fn) throw new Error(`no IPC handler registered for '${channel}'`);
-    return fn({}, ...args);
+    return fn(event, ...args);
   };
-  return { ...api, invoke, handlers: stub.handlers, calls: stub.calls, userData };
+  const invoke = (channel, ...args) => invokeRaw(eventFor(roleFor(channel)), channel, ...args);
+  const invokeAs = (role, channel, ...args) => invokeRaw(eventFor(role), channel, ...args);
+  return {
+    ...api,
+    invoke,
+    invokeAs,
+    invokeRaw,
+    senders,
+    handlers: stub.handlers,
+    calls: stub.calls,
+    userData,
+  };
 }
 
 // main.js is a singleton (module-level `config`, one writer, one lock). Tests therefore

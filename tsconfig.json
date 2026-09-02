@@ -1,0 +1,51 @@
+{
+  "//": [
+    "CODE-002. Type checking for JavaScript, through JSDoc - not a TypeScript rewrite.",
+    "",
+    "`checkJs` makes the compiler read the .js files that are already here and report what",
+    "it can prove wrong: a property that does not exist on the object, a call with the",
+    "wrong number of arguments, a value used as the wrong kind of thing. `noEmit` means it",
+    "never writes a file; it only answers questions.",
+    "",
+    "`include` is deliberately short. Turning this on over two hundred files at once would",
+    "produce a wall of findings, and a wall gets silenced rather than read. It starts with",
+    "modules where a wrong shape costs the most - the ones that decide what is written to",
+    "disk and who may call what - and grows one module at a time, each addition being its",
+    "own small piece of work.",
+    "",
+    "The provider adapters (wallhaven, gelbooru, danbooru, and provider-registry which",
+    "pulls them in) are NOT in scope yet, for a specific reason rather than convenience:",
+    "they `require` the bundled key files, which are gitignored. With JSON resolution on,",
+    "the compiler infers those files' shape from whatever happens to sit on this machine;",
+    "with it off, it cannot find them at all. Either way the answer would depend on an",
+    "untracked file, and a gate whose result depends on that is not a gate. Bringing them",
+    "in means giving those two requires a declared shape first - a small job of its own.",
+    "",
+    "`strict` stays off for now on purpose. With it on, the first run would be thousands of",
+    "'this might be undefined' notes about code that has been working for a year, and the",
+    "real findings would be lost among them. What is on already catches the class this task",
+    "exists for. Tightening is the next step, per module, not a flag flipped in one go.",
+    "Adding `any` to silence a finding is not an acceptable way to pass this."
+  ],
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "src/config.js",
+    "src/ipc-authority.js",
+    "src/path-grants.js",
+    "src/media-type.js",
+    "src/fingerprint.js",
+    "src/request-budget.js"
+  ]
+}

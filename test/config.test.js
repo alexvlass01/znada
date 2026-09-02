@@ -139,12 +139,14 @@ ok('missing triggers → defaults (events off, stealth disabled object)',
 // ---- A real user's config survives an update unchanged (no settings "wiped") ----
 // Mirrors a populated installed config (legacy boolean stealth) to guard against migration
 // data loss: loading it must preserve every user setting and only migrate the shape.
+const realUserId1 = L.idFor('C:/a.jpg');
+const realUserId2 = L.idFor('C:/b.jpg');
 const realUser = {
   singleWallpaper: false, separateThemes: true,
-  monitors: { 'DISPLAY#A': { light: { itemIds: ['id1'] }, dark: { itemIds: ['id2'] } } },
+  monitors: { 'DISPLAY#A': { light: { itemIds: [realUserId1] }, dark: { itemIds: [realUserId2] } } },
   library: {
-    id1: { id: 'id1', type: 'image', path: 'C:/a.jpg', addedAt: 111, favorite: true, tags: ['x'] },
-    id2: { id: 'id2', type: 'image', path: 'C:/b.jpg', addedAt: 222, favorite: false, tags: [] },
+    [realUserId1]: { id: realUserId1, type: 'image', path: 'C:/a.jpg', addedAt: 111, favorite: true, tags: ['x'] },
+    [realUserId2]: { id: realUserId2, type: 'image', path: 'C:/b.jpg', addedAt: 222, favorite: false, tags: [] },
   },
   style: 'fit', autostart: true, startMinimized: false, language: 'ru', gameModeBlock: true,
   slideshow: { enabled: true, intervalEnabled: true, intervalMin: 120, order: 'shuffle' },
@@ -160,8 +162,10 @@ const realUser = {
 fs.writeFileSync(p('real_user.json'), JSON.stringify(realUser));
 const ru = C.load(p('real_user.json'));
 ok('update keeps slideshow settings', ru.slideshow.enabled === true && ru.slideshow.intervalMin === 120 && ru.slideshow.order === 'shuffle');
-ok('update keeps library + monitor slots', Object.keys(ru.library).length === 2 && ru.library.id1.favorite === true
-  && ru.library.id1.tags[0] === 'x' && ru.monitors['DISPLAY#A'].light.itemIds[0] === 'id1' && ru.monitors['DISPLAY#A'].dark.itemIds[0] === 'id2');
+ok('update keeps library + monitor slots', Object.keys(ru.library).length === 2
+  && ru.library[realUserId1].favorite === true && ru.library[realUserId1].tags[0] === 'x'
+  && ru.monitors['DISPLAY#A'].light.itemIds[0] === realUserId1
+  && ru.monitors['DISPLAY#A'].dark.itemIds[0] === realUserId2);
 ok('update keeps slideshow position', ru.slideshowIndex['DISPLAY#A'].light === 3 && ru.slideshowCurrentPath['DISPLAY#A'].dark === 'C:/b.jpg');
 ok('update keeps misc settings', ru.style === 'fit' && ru.autostart === true && ru.startMinimized === false && ru.language === 'ru'
   && ru.gameModeBlock === true && ru.hotkeys.nextWallpaper.shortcut === 'Ctrl+Alt+N' && ru.viewerBackground === 'charcoal');
@@ -242,8 +246,10 @@ ok('lumina-only selection survives', (() => {
 })());
 
 // onlineSort / onlinePurity (persisted Online search params)
-ok('fresh defaults: onlineSort date_added, purity sfw+sketchy',
-  fresh.onlineSort === 'date_added' && fresh.onlinePurity.sfw === true && fresh.onlinePurity.sketchy === true && fresh.onlinePurity.nsfw === false);
+// BUG-020 turned the middle rating OFF by default; the fuller reasoning and the one-time
+// migration are checked at the end of this file.
+ok('fresh defaults: onlineSort date_added, safe rating only',
+  fresh.onlineSort === 'date_added' && fresh.onlinePurity.sfw === true && fresh.onlinePurity.sketchy === false && fresh.onlinePurity.nsfw === false);
 fs.writeFileSync(p('online_params.json'), JSON.stringify({ onlineSort: 'toplist', onlinePurity: { sfw: false, sketchy: 0, nsfw: 'yes' } }));
 ok('valid onlineSort survives; purity coerced to booleans', (() => {
   const c = C.load(p('online_params.json'));
@@ -269,5 +275,25 @@ ok('valid anonId passes through', C.load(p('anon_ok.json')).anonId === '01234567
 fs.writeFileSync(p('anon_bad.json'), JSON.stringify({ anonId: 'short!!' }));
 ok('garbage anonId → empty', C.load(p('anon_bad.json')).anonId === '');
 
-fs.rmSync(tmp, { recursive: true, force: true });
+// BUG-020: the content-rating default changes once, and only once.
+fs.writeFileSync(p('purity_old.json'), JSON.stringify({ onlinePurity: { sfw: true, sketchy: true, nsfw: false } }));
+const migrated = C.load(p('purity_old.json'));
+ok('an existing profile has the middle rating turned off once', migrated.onlinePurity.sketchy === false);
+ok('and is marked so it is never reached into again', migrated.onlineDefaultsV2 === true);
+
+fs.writeFileSync(p('purity_chosen.json'), JSON.stringify({ onlineDefaultsV2: true, onlinePurity: { sfw: true, sketchy: true, nsfw: false } }));
+ok('a user who turns it back on afterwards keeps it', C.load(p('purity_chosen.json')).onlinePurity.sketchy === true);
+
+ok('a fresh profile starts on the safe default',
+  C.freshDefaults().onlinePurity.sketchy === false && C.freshDefaults().onlinePurity.sfw === true);
+fs.writeFileSync(p('purity_new.json'), JSON.stringify({}));
+ok('and a brand new file is marked without changing anything', (() => {
+  const fresh = C.load(p('purity_new.json'));
+  return fresh.onlineDefaultsV2 === true && fresh.onlinePurity.sketchy === false;
+})());
+ok('the migration never leaves the user with no rating at all',
+  C.normalize({ onlinePurity: { sfw: false, sketchy: true, nsfw: false } }).onlinePurity.sfw === true);
+
 console.log('\nAll ' + passed + ' config tests passed.');
+
+fs.rmSync(tmp, { recursive: true, force: true });
