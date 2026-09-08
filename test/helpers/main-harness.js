@@ -112,6 +112,10 @@ function makeElectronStub(userData, options = {}) {
           return { response: answer };
         },
         showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+        // Cancelled, deliberately: a test asking "was this file allowed through" wants to
+        // see the handler REACH the dialog, not to write a file. A cancel is reported
+        // differently from a refusal, so the two are easy to tell apart.
+        showSaveDialog: async () => ({ canceled: true, filePath: '' }),
       },
       shell: {
         // A promise, because main chains .catch() onto it. Returning undefined threw a

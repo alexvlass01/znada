@@ -77,6 +77,54 @@ function setStageAlt(text) {
   if (STAGE.back) STAGE.back.alt = text || '';
 }
 
+// BUG-039. Пропорции фотографии, известные ДО загрузки: карточки сайтов несут ширину и
+// высоту, а если их нет — разрешение обычно записано текстом в заголовке или подписи
+// («2560x1280»), тем же шаблоном, который читает updateResolutionInSubtitle.
+function knownAspect(entry) {
+  if (!entry) return 0;
+  const raw = entry.raw && typeof entry.raw === 'object' ? entry.raw : {};
+  const w = Number(raw.width) || 0;
+  const h = Number(raw.height) || 0;
+  if (w > 0 && h > 0) return w / h;
+  const text = `${entry.title || ''} ${entry.subtitle || ''}`;
+  const m = text.match(/(\d{2,6})x(\d{2,6})/);
+  if (!m) return 0;
+  const tw = Number(m[1]);
+  const th = Number(m[2]);
+  return tw > 0 && th > 0 ? tw / th : 0;
+}
+
+// Изменится ли прямоугольник сцены при переходе от прежних пропорций к новым.
+// Отдельно от DOM, потому что от этого ответа зависит, можно ли плавно уводить старый
+// слой: если коробка меняет форму, плавный уход показывает, как старое фото в ней
+// сплющивается. Именно это я и сделал первой попыткой — замер поймал расхождение до 400%.
+function stageAspectChanged(had, before, next) {
+  if (!had) return next > 0;
+  if (!(next > 0)) return true;
+  // Округление размеров у провайдеров даёт микроразличия, при которых коробка стоит.
+  return Math.abs(before - next) / next > 0.001;
+}
+
+// Возвращает true, если прямоугольник сцены ИЗМЕНИЛСЯ.
+function applyStageAspect(entry) {
+  const stage = $('#viewerStage');
+  if (!stage) return false;
+  const aspect = knownAspect(entry);
+  const changed = stageAspectChanged(
+    stage.classList.contains('has-aspect'),
+    Number(stage.style.getPropertyValue('--photo-aspect')) || 0,
+    aspect,
+  );
+  if (aspect > 0) {
+    stage.style.setProperty('--photo-aspect', String(aspect));
+    stage.classList.add('has-aspect');
+  } else {
+    stage.style.removeProperty('--photo-aspect');
+    stage.classList.remove('has-aspect');
+  }
+  return changed;
+}
+
 // Crossfade a {front, back} layer pair to a new (already-decoded) src. The NEW
 // image is placed at the bottom at full opacity instantly; the OLD one fades OUT
 // on top to reveal it. So coverage is always 100% (no mid-fade dim), AND the old
@@ -84,7 +132,7 @@ function setStageAlt(text) {
 // image's letterbox margins. (The earlier "fade the new in on top" approach left
 // the old fully opaque underneath, showing through the margins until it was
 // hidden/reused — that was the lingering-previous-image bug.)
-function crossfadeTo(pair, src) {
+function crossfadeTo(pair, src, hardSwap) {
   const incoming = pair.back;   // new image — revealed instantly at the bottom
   const outgoing = pair.front;  // current image — fades out on top to uncover the new
   if (!incoming) return;
@@ -93,10 +141,20 @@ function crossfadeTo(pair, src) {
   incoming.src = src;
   incoming.style.opacity = '1';
   if (outgoing) {
-    outgoing.style.transition = ''; // CSS opacity transition drives the fade-out
-    outgoing.style.zIndex = '2';
-    void outgoing.offsetWidth;      // commit current opacity/transition before fading
-    outgoing.style.opacity = '0';
+    if (hardSwap) {
+      // Прямоугольник сцены меняется вместе с картинкой, а уходящий слой живёт в той же
+      // сцене — за 70 мс плавного ухода его успевало сплющить в новую коробку, и это
+      // читалось как рывок. Новый слой к этому моменту уже полностью виден под старым,
+      // поэтому снять старый можно мгновенно: провала в яркости не будет.
+      outgoing.style.transition = 'none';
+      outgoing.style.zIndex = '0';
+      outgoing.style.opacity = '0';
+    } else {
+      outgoing.style.transition = ''; // CSS opacity transition drives the fade-out
+      outgoing.style.zIndex = '2';
+      void outgoing.offsetWidth;      // commit current opacity/transition before fading
+      outgoing.style.opacity = '0';
+    }
   }
   pair.front = incoming;
   pair.back = outgoing;
@@ -148,10 +206,28 @@ function zoomAt(clientX, clientY, factor) {
   applyZoom();
 }
 
-function showImage(src) {
-  crossfadeTo(STAGE, src);
+function showImage(src, fit, hardSwap) {
+  crossfadeTo(STAGE, src, fit, hardSwap);
   applyZoom(); // carry the current zoom/pan onto the freshly shown layer
   updateBackgroundFromSrc(src);
+}
+
+// Совпадает ли форма этого кадра с формой самой фотографии.
+//
+// Предварительный кадр имеет смысл только если он — уменьшенная копия. Wallhaven же
+// отдаёт ВСЕМ фотографиям превью 300x200, обрезанное под фиксированную рамку: у высокой
+// картинки это середина крупным планом, а не она сама. Замер 2026-09-02: у Wallhaven не
+// совпало 21 из 21, расхождение до 144%; у Gelbooru миниатюра уменьшена без обрезки и
+// совпадает всегда. Отсюда и «некоторые фото дёргаются, некоторые нет».
+//
+// Показать такой кадр честно нельзя ничем: вписать — прыгнет размер, заполнить — прыгнет
+// содержимое. Поэтому его не показывают вовсе и ждут кадр правильной формы; полная
+// картинка всегда правильной формы, так что ждать есть чего.
+function frameShapeMatches(loadedWidth, loadedHeight, aspect) {
+  if (!(aspect > 0) || !(loadedWidth > 0) || !(loadedHeight > 0)) return true; // не с чем сравнивать
+  const own = loadedWidth / loadedHeight;
+  // Допуск: округление размеров у провайдеров даёт расхождение в доли процента.
+  return Math.abs(own - aspect) / aspect <= 0.02;
 }
 
 function clearStage() {
@@ -379,11 +455,20 @@ function loadImage(src) {
 
 // Decode then crossfade a resolved src onto the stage. Returns false on failure
 // or if the render was superseded (token changed), so callers can react.
-async function present(src, token, entry) {
+// `requireShape` — не показывать кадр, если его форма расходится с формой фотографии.
+// Ставится на предварительные кадры: правильный по форме всё равно придёт следом.
+async function present(src, token, entry, requireShape) {
   try {
     const loaded = await loadImage(src);
     if (token !== VIEWER.token) return false;
-    showImage(loaded.src);
+    if (requireShape && !frameShapeMatches(loaded.width, loaded.height, knownAspect(entry))) return false;
+    // BUG-039. Прямоугольник меняется РОВНО ТОГДА, когда меняется картинка, и ни секундой
+    // раньше. Первая попытка ставила его в начале отрисовки — и при переходе к следующему
+    // фото коробка успевала принять новые пропорции, пока на экране ещё висело старое:
+    // оно на мгновение сплющивалось. Замер показал расхождение до 400%, то есть я починил
+    // редкий случай (обрезанное превью) и создал частый.
+    const reshaped = applyStageAspect(entry);
+    showImage(loaded.src, reshaped);
     if (renderFirstFrameEnd) { renderFirstFrameEnd(); renderFirstFrameEnd = null; } // budget span #13
     clearLoadingTimer();
     setState('', true);
@@ -632,6 +717,18 @@ async function openViewerAssign(entry, descriptor, point) {
     slotLabel: (slot) => (slot.themeIcon
       ? t(slot.theme === 'dark' ? 'design.darkTheme' : 'design.lightTheme')
       : t('library.assignAction')),
+    // BUG-037. The same truth the main window shows: how many pictures are already in
+    // each spot, and whether this one is among them. A picture that has not been
+    // downloaded yet has no pool id, so only the counts apply to it — which is correct,
+    // it cannot already be in a slot.
+    occupancy: {
+      slots: (targets && targets.slots) || {},
+      itemId: (entry && entry.added && entry.pooled && entry.pooled.id) || '',
+    },
+    slotHint: (slot) => {
+      if (slot.hasThis) return t('library.slotHasThis');
+      return slot.count > 0 ? t('library.slotFilled', { n: slot.count }) : '';
+    },
     onPick: async (monitorId, theme) => {
       // Close FIRST. The picture may still have to be downloaded, and a chooser that
       // lingers for seconds while that happens reads as a frozen app — the exact
@@ -925,20 +1022,21 @@ async function renderCore() {
     let preview = '';
     try { preview = await previewSource(entry); } catch {}
     if (token !== VIEWER.token) return;
-    if (!preview || !(await present(preview, token, entry))) {
-      if (token !== VIEWER.token) return;
-      clearLoadingTimer();
-      clearStage();
-      setState(t('viewer.loadError'));
-      return;
-    }
+    // BUG-039. Предварительный кадр показывается, только если его форма совпадает с
+    // формой фотографии. Пропущенный кадр — не ошибка: следом придёт правильный, и
+    // «показать нечего» проверяется в самом конце, когда испробованы все источники.
+    const previewShown = preview ? await present(preview, token, entry, true) : false;
+    if (token !== VIEWER.token) return;
+    // Обрезанную миниатюру нельзя выдавать за фотографию, но размытым фоном она годится:
+    // формы там нет, а экран не остаётся пустым, пока едет кадр правильной формы.
+    if (preview && !previewShown) updateBackgroundFromSrc(preview);
     // Badge only while we're still on the low-res thumbnail; hide it once the
     // sample (already good quality) is up — no badge during the sample->full swap.
     if (entry.kind === 'internet') setHd(true);
     let sample = '';
     try { sample = await sampleSource(entry); } catch {}
     if (token !== VIEWER.token) return;
-    if (sample && await present(sample, token, entry)) {
+    if (sample && await present(sample, token, entry, true)) {
       cacheTier(idx, 'sample', sample);
       shown = true;
       if (token === VIEWER.token) setHd(false);
@@ -956,6 +1054,15 @@ async function renderCore() {
     if (renderFullEnd) { renderFullEnd({ status: 'upgraded' }); renderFullEnd = null; } // budget span #14
   }
   if (token === VIEWER.token) setHd(false);
+  // Все источники испробованы. Если на сцене так ничего и нет — это настоящая ошибка,
+  // и о ней надо сказать. Раньше об этом сообщал провал показа миниатюры, но теперь
+  // пропуск миниатюры законен, и единственный честный признак — пустая сцена.
+  if (token === VIEWER.token && !stageHasImage()) {
+    clearLoadingTimer();
+    clearStage();
+    setState(t('viewer.loadError'));
+    return;
+  }
   prefetchNeighbors(idx);
 }
 

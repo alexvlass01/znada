@@ -50,8 +50,28 @@
       stableFileUrl: false,
       freshFileUrl: false,
       removedView: !!source.removedView,
+      // DESIGN-004. Where this card is PLACED, when it is placed anywhere: a monitor,
+      // a theme, and which pool item fills that spot. The same photo in the library grid
+      // has no placement and the same photo shown as a tile in Appearance has one, so it
+      // belongs on the subject rather than being inferred from which tab we are in.
+      slot: placement(source.slot),
       raw: pooled || source,
     };
+  }
+
+  // A placement is only real if it names all three things. A half-filled one would offer
+  // "remove from this spot" without knowing which spot, which is how the wrong picture
+  // gets removed.
+  function placement(value) {
+    if (!value || typeof value !== 'object') return null;
+    const monitorId = str(value.monitorId);
+    const theme = value.theme === 'dark' ? 'dark' : (value.theme === 'light' ? 'light' : '');
+    const itemId = str(value.itemId);
+    if (!monitorId || !theme || !itemId) return null;
+    const index = Number.isInteger(value.index) && value.index >= 0 ? value.index : -1;
+    // The index is a HINT for the common case, never the identity — this app has already
+    // shipped a bug where a strip index was used as if it were one.
+    return { monitorId, theme, itemId, index };
   }
 
   // A card from Wallhaven or a booru: it carries a permanent page and a permanent
@@ -68,6 +88,9 @@
       stableFileUrl: !!str(source.full),
       freshFileUrl: false,
       removedView: false,
+      // Declared, not omitted: an online card is not placed anywhere until it has been
+      // downloaded, and an absent field would read as 'nobody looked into it'.
+      slot: null,
       raw: source,
     };
   }
@@ -90,8 +113,27 @@
       // be produced” is a property of the card, not of which catalogue it came from.
       freshFileUrl: true,
       removedView: false,
+      slot: null,
       raw: source,
     };
+  }
+
+  // DESIGN-004. WHICH entry of the slot a placement refers to, resolved against the slot
+  // as it is NOW rather than as it was when the strip was drawn.
+  //
+  // The captured index is tried first and only accepted if the item still sitting there
+  // is the same one; otherwise the item is looked up by id. That order matters both ways:
+  // trusting the index alone removes the wrong picture after anything shifted the slot
+  // (v1.2.0 already shipped that bug once, from the same strip), while looking up by id
+  // alone would always find the FIRST copy — wrong when the same picture is in the slot
+  // twice and the person right-clicked the second tile.
+  function resolveSlotIndex(items, slot) {
+    const list = Array.isArray(items) ? items : [];
+    const spot = placement(slot);
+    if (!spot) return -1;
+    const at = spot.index;
+    if (at >= 0 && list[at] && list[at].id === spot.itemId) return at;
+    return list.findIndex((item) => item && item.id === spot.itemId);
   }
 
   function isSubject(subject) {
@@ -195,9 +237,12 @@
       group: 'primary',
       multi: false,
       needsFile: false,
-      // The details sheet reads metadata from a file on disk, so it stays local-only
-      // in this slice. Making it work without a file is its own task.
-      applies: (s) => s.kind === 'local',
+      // ONL-016. The sheet used to read its facts from a file on disk, so it was offered
+      // to local photos only. It no longer does: an online card already carries what it
+      // knows about itself (see renderer/card-details.js), so every card can be
+      // described, and the owner's rule that a photo behaves the same whatever it came
+      // from holds here too.
+      applies: () => true,
     },
 
     {
@@ -235,6 +280,21 @@
       applies: (s) => !s.removedView && !!s.page,
     },
 
+    {
+      // DESIGN-004. Narrower than the one below and therefore above it: this takes the
+      // picture out of ONE monitor-and-theme spot and leaves the library untouched. It is
+      // the menu equivalent of the × already drawn on the tile. The owner's decision on
+      // 2026-09-03 was to have BOTH, rather than to drop the library one: two commands
+      // whose names differ by three words sit next to each other, and the protection
+      // against confusing them is a confirmation (LIB-012), not a shorter menu.
+      id: 'removeFromSlot',
+      labelKey: 'card.removeFromSlot',
+      group: 'danger',
+      danger: true,
+      multi: false,
+      needsFile: false,
+      applies: (s) => s.kind === 'local' && !s.removedView && !!s.slot,
+    },
     {
       id: 'remove',
       labelKey: 'library.remove',
@@ -302,6 +362,17 @@
     return {
       kind: subject.kind,
       id: subject.id || '',
+      // BUG-029. A photo shown from a watched folder has no pool record and therefore no
+      // id, so "save as" and "copy picture" had nothing to look it up by and answered
+      // "file is not available" — for the commonest kind of local photo there is, since
+      // people add folders rather than single files.
+      //
+      // The path is an ASSERTION by the window and is treated as one: main looks it up
+      // against what the library already vouches for (a record, or a folder the user
+      // added) and refuses anything else. That is the same question `item-details`,
+      // `item-reveal` and the thumbnails have always asked; only these two actions were
+      // left out of it.
+      path: subject.kind === 'local' ? str(subject.path) : '',
       item: subject.kind === 'local' ? null : (subject.raw || null),
     };
   }
@@ -313,6 +384,8 @@
     menuGroupsFor,
     canProduceFile,
     descriptorFor,
+    placement,
+    resolveSlotIndex,
     localSubject,
     internetSubject,
     cloudSubject,

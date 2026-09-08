@@ -34,7 +34,11 @@ const sample = {
       id: 'abc123', url: 'https://wallhaven.cc/w/abc123', short_url: 'https://whvn.cc/abc123',
       purity: 'sfw', category: 'general', resolution: '1920x1080', file_type: 'image/jpeg',
       source: 'https://example.com/art', path: 'https://w.wallhaven.cc/full/ab/wallhaven-abc123.jpg',
-      thumbs: { small: 'https://th.wallhaven.cc/small/ab/abc123.jpg', large: 'https://th.wallhaven.cc/lg/ab/abc123.jpg' },
+      thumbs: {
+        small: 'https://th.wallhaven.cc/small/ab/abc123.jpg',
+        original: 'https://th.wallhaven.cc/orig/ab/abc123.jpg',
+        large: 'https://th.wallhaven.cc/lg/ab/abc123.jpg',
+      },
     },
     { id: 'noPath' }, // missing path -> dropped
   ],
@@ -46,10 +50,37 @@ ok('parseSearch: maps full + thumb + page', (() => {
   const it = parsed.items[0];
   return it.provider === 'wallhaven'
     && it.full === 'https://w.wallhaven.cc/full/ab/wallhaven-abc123.jpg'
-    && it.thumb === 'https://th.wallhaven.cc/small/ab/abc123.jpg'
+    // BUG-039. Именно `original`, а не `small`: у второго фиксированные 300x200, то есть
+    // обрезка, и просмотрщик такой кадр отбраковывает как чужой по форме.
+    && it.thumb === 'https://th.wallhaven.cc/orig/ab/abc123.jpg'
     && it.page === 'https://wallhaven.cc/w/abc123'
     && it.resolution === '1920x1080' && it.width === 1920 && it.height === 1080
     && it.source === 'https://example.com/art';
+})());
+// BUG-039. Порядок запасных вариантов важен: обрезанный `small` допустим только чтобы
+// не тянуть ПОЛНУЮ картинку ради миниатюры в сетке.
+ok('thumb: original предпочтительнее large', (() => {
+  const one = W.parseSearch({ data: [{ id: 'x', path: 'https://w/full.jpg', resolution: '100x50', thumbs: { large: 'https://th/lg.jpg', small: 'https://th/sm.jpg' } }], meta: {} }).items[0];
+  return one.thumb === 'https://th/lg.jpg';
+})());
+ok('thumb: обрезанный small берётся только когда правильных нет', (() => {
+  const one = W.parseSearch({ data: [{ id: 'x', path: 'https://w/full.jpg', resolution: '100x50', thumbs: { small: 'https://th/sm.jpg' } }], meta: {} }).items[0];
+  return one.thumb === 'https://th/sm.jpg';
+})());
+ok('thumb: без превью — полная картинка, а не пустота', (() => {
+  const one = W.parseSearch({ data: [{ id: 'x', path: 'https://w/full.jpg', resolution: '100x50', thumbs: {} }], meta: {} }).items[0];
+  return one.thumb === 'https://w/full.jpg';
+})());
+// ONL-016. "Details" cannot show a weight the card never carried, so the mapping itself
+// is checked here — not only the sheet that reads it. Measured against the live API on
+// 2026-09-03: this site does report `file_size` in bytes.
+ok('parseSearch: carries the file size this site reports', (() => {
+  const one = W.parseSearch({ data: [{ id: 'x', path: 'https://w/full.jpg', resolution: '100x50', file_size: 7649356, thumbs: {} }], meta: {} }).items[0];
+  return one.fileSize === 7649356;
+})());
+ok('parseSearch: a missing file size is 0, never NaN', (() => {
+  const one = W.parseSearch({ data: [{ id: 'x', path: 'https://w/full.jpg', resolution: '100x50', thumbs: {} }], meta: {} }).items[0];
+  return one.fileSize === 0;
 })());
 ok('parseSearch: meta parsed', parsed.meta.currentPage === 1 && parsed.meta.lastPage === 5 && parsed.meta.total === 120);
 ok('parseSearch: junk -> empty', (() => {

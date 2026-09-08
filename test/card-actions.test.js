@@ -64,8 +64,13 @@ const cloudCard = (over = {}) => ({ id: 42, title: 'Sample', width: 1920, height
   ok('once it is in the library the offer flips to removing it',
     added.includes('remove') && !added.includes('add'));
 
-  ok('online cards get no tags, favourites or details in this slice',
-    !fresh.includes('tags') && !fresh.includes('favorite') && !fresh.includes('details'));
+  // ONL-016 removed one third of this: the details sheet no longer needs a file, so an
+  // online card is described like any other. Tags and favourites still do need a pool
+  // record, and a card that has not been added does not have one.
+  ok('online cards get no tags and no favourites until they are in the library',
+    !fresh.includes('tags') && !fresh.includes('favorite'));
+  ok('but they ARE describable — the sheet reads the card, not a file',
+    fresh.includes('details'));
 
   // A provider that returned no usable file URL cannot promise a file.
   const brokenList = ids(CardActions.internetSubject(wallhaven({ full: '' })));
@@ -175,17 +180,67 @@ const cloudCard = (over = {}) => ({ id: 42, title: 'Sample', width: 1920, height
     wh.kind === 'internet' && wh.id === 'p1' && wh.item.page === 'https://wallhaven.cc/w/abc');
 
   const local = CardActions.descriptorFor(CardActions.localSubject({ path: 'C:/a.jpg', type: 'image', id: 'p9' }));
-  ok('a local descriptor sends no item at all — main has the record already',
+  ok('a local descriptor sends no provider item — main has the record already',
     local.kind === 'local' && local.id === 'p9' && local.item === null);
+  // BUG-029. A photo shown out of a watched folder has no record and therefore no id, so
+  // the path travels too. It is a CLAIM by the window: main honours it only if the
+  // library already vouches for it, which is checked in test/media-path-authority.
+  ok('a local descriptor also states the path, because a folder photo has no id',
+    local.path === 'C:/a.jpg'
+    && CardActions.descriptorFor(CardActions.localSubject({ path: 'C:/b.jpg', type: 'image' })).path === 'C:/b.jpg');
+  ok('an online descriptor states no local path — it has none', wh.path === '');
 
   // The descriptor must not become a place where the renderer decides addresses:
-  // main looks up or validates every URL. Keeping it to these three fields is the
-  // enforcement.
-  ok('a descriptor has exactly three fields and no URL of its own',
-    JSON.stringify(Object.keys(wh).sort()) === JSON.stringify(['id', 'item', 'kind']));
+  // main looks up or validates every URL. Keeping it to these four fields is the
+  // enforcement — a path is not an address, and is checked before it is used.
+  ok('a descriptor has exactly four fields and no URL of its own',
+    JSON.stringify(Object.keys(wh).sort()) === JSON.stringify(['id', 'item', 'kind', 'path']));
 
   ok('rubbish produces no descriptor rather than a half-built one',
     CardActions.descriptorFor(null) === null && CardActions.descriptorFor({}) === null);
+}
+
+// --- DESIGN-004: a card that is PLACED in a monitor-and-theme spot -----------
+{
+  const spot = { monitorId: '\\\\?\\DISPLAY#1', theme: 'light', itemId: 'p1', index: 0 };
+  const placed = CardActions.localSubject(
+    { path: poolItem().path, type: 'image', id: 'p1', slot: spot }, poolItem(),
+  );
+  const loose = CardActions.localSubject({ path: poolItem().path, type: 'image', id: 'p1' }, poolItem());
+
+  ok('a placed card can be taken out of its spot', ids(placed).includes('removeFromSlot'));
+  ok('the same card in the library cannot — it is not placed anywhere',
+    !ids(loose).includes('removeFromSlot'));
+  // The owner's decision on 2026-09-03: keep both, do not shorten the menu.
+  ok('taking it out of the spot does NOT replace removing it from the library',
+    ids(placed).includes('remove') && ids(placed).includes('removeFromSlot'));
+  ok('the narrower command is offered first, so the bigger one is never the default',
+    ids(placed).indexOf('removeFromSlot') < ids(placed).indexOf('remove'));
+  ok('a placed card keeps everything an ordinary local card has',
+    ['assign', 'favorite', 'tags', 'details', 'saveAs', 'copyFile'].every((id) => ids(placed).includes(id)));
+  // In the trash a card is not placed anywhere, and offering to unplace it would be a
+  // second door back into the library — the class of bug LIB-006 already was.
+  ok('a removed card is never offered it, placement or not', !ids(CardActions.localSubject(
+    { path: poolItem().path, type: 'image', id: 'p1', slot: spot, removedView: true }, poolItem(),
+  )).includes('removeFromSlot'));
+  // One spot at a time: the strip has no multi-select, and "which of these spots"
+  // would have no answer.
+  ok('it is not offered for a selection of several cards',
+    !ids([placed, placed]).includes('removeFromSlot'));
+
+  // A half-filled placement is worse than none: it would offer to remove a picture from
+  // a spot it cannot name, which is how the wrong one goes.
+  ok('a placement missing the monitor, the theme or the item is refused',
+    CardActions.placement({ theme: 'light', itemId: 'p1' }) === null
+    && CardActions.placement({ monitorId: 'm', itemId: 'p1' }) === null
+    && CardActions.placement({ monitorId: 'm', theme: 'light' }) === null
+    && CardActions.placement({ monitorId: 'm', theme: 'sideways', itemId: 'p1' }) === null
+    && CardActions.placement(null) === null && CardActions.placement('light') === null);
+  ok('a placement without a usable index still stands — the index is only a hint',
+    CardActions.placement({ monitorId: 'm', theme: 'dark', itemId: 'p1' }).index === -1
+    && CardActions.placement({ monitorId: 'm', theme: 'dark', itemId: 'p1', index: 2.5 }).index === -1
+    && CardActions.placement({ monitorId: 'm', theme: 'dark', itemId: 'p1', index: 3 }).index === 3);
+  ok('an online card is never placed', CardActions.internetSubject(wallhaven()).slot === null);
 }
 
 // --- malformed input --------------------------------------------------------

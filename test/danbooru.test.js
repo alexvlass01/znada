@@ -78,6 +78,13 @@ ok('mapItem: fallback full URL reports the format of the file actually selected'
     && fallback.format === 'jpg' && fallback.fileType === 'image/jpeg';
 })());
 ok('mapItem: missing downloadable URL is skipped', D.mapItem({ ...sample, file_url: '', large_file_url: '' }) === null);
+// ONL-016. Measured against the live API on 2026-09-03: this site reports `file_size`
+// in bytes and Gelbooru reports no size at all. "Details" can only show what the card
+// carried, so the mapping is checked here rather than only where it is displayed.
+ok('mapItem: carries the file size this site reports',
+  D.mapItem({ ...sample, file_size: 4484352 }).fileSize === 4484352);
+ok('mapItem: a missing file size is 0, never NaN',
+  D.mapItem({ ...sample, file_size: undefined }).fileSize === 0);
 
 const parsed = D.parseSearch([sample], { page: 3, limit: 1 });
 ok('parseSearch: page metadata and optimistic next page', parsed.items.length === 1 && parsed.meta.currentPage === 3 && parsed.meta.lastPage === 4 && parsed.meta.hasMore === true);

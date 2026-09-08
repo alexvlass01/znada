@@ -1,4 +1,9 @@
-'use strict';
+(function initGalleryPayload(root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.ZnadaGalleryPayload = api;
+}(typeof self !== 'undefined' ? self : globalThis, function galleryPayloadFactory() {
+  'use strict';
 
 const DEFAULT_MAX_GALLERY_ITEMS = 500;
 
@@ -21,6 +26,31 @@ function windowItemsAroundIndex(items, index, maxItems = DEFAULT_MAX_GALLERY_ITE
     items: list.slice(start, start + max),
     index: safeIndex - start,
     start,
+  };
+}
+
+/*
+ * Окно берётся ДО поэлементной работы, а не после.
+ *
+ * Ограничение в 500 элементов существует, чтобы через границу окон не ехал огромный
+ * список. Но окно применялось ПОСЛЕ того, как вызывающий уже прошёлся по всему списку:
+ * для каждого элемента искалась запись в пуле, копировался объект. У владельца вкладка
+ * «Усі» разворачивает живые папки в тысячи фотографий, и клик по любой из них замораживал
+ * приложение на две-три секунды ещё ДО открытия просмотрщика. Из «Обране» и «Онлайн»
+ * списки короткие, поэтому там задержки не было — и в пустом dev-профиле её тоже не видно,
+ * из-за чего дефект дожил до выпуска.
+ *
+ * Здесь дорогая работа выполняется ровно над теми элементами, которые реально уедут.
+ * Преобразование поэлементное и независимое, поэтому результат тот же — меняется только
+ * цена.
+ */
+function windowThenMap(items, index, mapItem, maxItems = DEFAULT_MAX_GALLERY_ITEMS) {
+  const windowed = windowItemsAroundIndex(items, index, maxItems);
+  const mapped = typeof mapItem === 'function' ? windowed.items.map(mapItem) : windowed.items;
+  return {
+    items: mapped,
+    index: clampIndex(mapped.length, windowed.index),
+    start: windowed.start,
   };
 }
 
@@ -64,10 +94,12 @@ function sanitizeGalleryPayload(payload, options = {}) {
   };
 }
 
-module.exports = {
+return {
   DEFAULT_MAX_GALLERY_ITEMS,
   clampIndex,
   windowItemsAroundIndex,
+  windowThenMap,
   sanitizePooled,
   sanitizeGalleryPayload,
-};
+  };
+}));

@@ -359,6 +359,75 @@ function outsideFile(name = 'private.png') {
     } finally { fs.rmSync(away.dir, { recursive: true, force: true }); }
   });
 
+  // ---- BUG-029: handing over the actual file --------------------------------
+  // "Save as" and "Copy picture" asked the library for a record by id and gave up when
+  // there was none — which is every photo shown out of a watched folder, and people add
+  // folders rather than single files. The path now travels with the card and is put
+  // through the same question as everything else here: does the library vouch for it.
+  //
+  // A refusal answers `missing`; an allowed file reaches the save dialog, which this
+  // harness cancels. So `canceled` means "allowed" and is impossible to confuse with it.
+  const saveAs = (m, descriptor) => m.invoke('card-save-as', descriptor);
+
+  await test('a photo inside a watched folder can now be saved, though it has no record', async (dir) => {
+    const { inside } = seedProfile(dir);
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    const res = await saveAs(m, { kind: 'local', id: '', path: inside });
+    assert.strictEqual(res.error, null, 'a folder photo was still refused its own file');
+    assert.strictEqual(res.canceled, true, 'it should have reached the save dialog');
+  });
+
+  await test('a pool photo still works, by its record as before', async (dir) => {
+    const { own } = seedProfile(dir);
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    const id = library.idFor(own);
+    assert.strictEqual((await saveAs(m, { kind: 'local', id, path: '' })).canceled, true,
+      'a pool photo must not need the window to name its path');
+  });
+
+  await test('a path nothing vouches for is still refused', async (dir) => {
+    seedProfile(dir);
+    const away = outsideFile();
+    try {
+      const m = H.loadMain(dir);
+      m.__test.loadConfig();
+      const res = await saveAs(m, { kind: 'local', id: '', path: away.file });
+      assert.strictEqual(res.error, 'missing', 'the window handed itself somebody else’s file');
+    } finally { fs.rmSync(away.dir, { recursive: true, force: true }); }
+  });
+
+  // "Add a folder of wallpapers" is not permission to hand over anything that happens to
+  // be in it. A watched folder legitimately holds other things.
+  await test('a non-picture inside a watched folder is refused', async (dir) => {
+    const { watched } = seedProfile(dir);
+    const notes = path.join(watched, 'notes.txt');
+    fs.writeFileSync(notes, 'private');
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    assert.strictEqual((await saveAs(m, { kind: 'local', id: '', path: notes })).error, 'missing',
+      'a text file inside a watched folder was handed over as a picture');
+  });
+
+  // A folder is live: the file may be gone by the time the menu is used.
+  await test('a photo that has since left the folder is reported gone, not copied', async (dir) => {
+    const { inside } = seedProfile(dir);
+    fs.rmSync(inside);
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    assert.strictEqual((await saveAs(m, { kind: 'local', id: '', path: inside })).error, 'missing',
+      'a vanished file must be reported, not attempted');
+  });
+
+  await test('a directory is never handed over as if it were a picture', async (dir) => {
+    const { watched } = seedProfile(dir);
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    assert.strictEqual((await saveAs(m, { kind: 'local', id: '', path: watched })).error, 'missing',
+      'a folder was treated as a file');
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
   if (failures.length) {
     for (const f of failures) {

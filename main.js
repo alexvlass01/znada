@@ -19,6 +19,7 @@ const liveFolderWatch = require('./src/live-folder-watch'); // lightweight fs.wa
 // ONL-013: ни поиск, ни поиск по отпечатку больше не называют сайтов — оба ходят через
 // реестр, поэтому прямые require адаптеров здесь не нужны.
 const online = require('./src/online');
+const sizeFilter = require('./src/size-filter'); // ONL-010: подходит ли картинка под экран
 const onlineResume = require('./src/online-resume'); // ONL-014b: где какой сайт остановился // смешивание и дедуп результатов внешних провайдеров
 const providerRegistry = require('./src/provider-registry'); // ONL-011/012: единый список сайтов и их объявления
 const mediaFormats = require('./src/media-type'); // ONL-015: единый список форматов картинок
@@ -3117,6 +3118,19 @@ const SETTINGS_FIELDS = {
   onlineSort: asOneOf('date_added', 'toplist', 'random', 'views'),
   onlineSources: asMergedObject({ lumina: asBool, internet: asBool }),
   onlinePurity: asMergedObject({ sfw: asBool, sketchy: asBool, nsfw: asBool }),
+  // ONL-010. The target list is validated by the module that also matches against it —
+  // a second spelling of "what a target is" is where the two would drift apart. A list
+  // that normalizes to nothing is refused rather than silently stored as empty, which
+  // would look like the filter had been switched off by itself.
+  onlineSizeFilter: asMergedObject({
+    enabled: asBool,
+    mode: asOneOf('auto', 'manual'),
+    targets: (v) => {
+      if (!Array.isArray(v)) return REJECT_SETTING;
+      const targets = sizeFilter.normalizeTargets(v);
+      return targets.length === v.length ? targets : REJECT_SETTING;
+    },
+  }),
   // Times and coordinates stay plain strings, exactly as config.normalize() treats them:
   // a stored value the window spreads back must not become unchangeable because a
   // stricter pattern was introduced under it.
@@ -4417,14 +4431,41 @@ function normalizeCardDescriptor(raw) {
   const card = raw && typeof raw === 'object' ? raw : {};
   const kind = ['local', 'internet', 'cloud'].includes(card.kind) ? card.kind : 'local';
   const id = typeof card.id === 'string' ? card.id : '';
+  const path = typeof card.path === 'string' ? card.path : '';
   const item = card.item && typeof card.item === 'object' ? card.item : null;
-  return { kind, id, item };
+  return { kind, id, path, item };
 }
 
 function pooledImageFor(descriptor) {
   const item = descriptor.id && config.library ? config.library[descriptor.id] : null;
   if (!item || item.type !== 'image' || !item.path) return null;
   return fs.existsSync(item.path) ? item : null;
+}
+
+// BUG-029. The file behind a local card that has no pool record of its own — a photo
+// shown straight out of a watched folder. That is the commonest local photo there is,
+// because people add folders, not single files.
+//
+// Everything here treats the window's path as a CLAIM. It is honoured only when the
+// library already vouches for it (a record, or a folder the user added), which is the
+// same rule the details sheet and the thumbnails go through — see isAuthorizedMediaPath.
+// Two further conditions, because this path hands over an actual file:
+//
+//   * it must be a picture of a kind Znada works with. A watched folder legitimately
+//     contains other things — a text file, an archive — and "add a folder of wallpapers"
+//     is not permission to hand any file in it to the clipboard or a save dialog;
+//   * it must still be there. A folder is live, and the answer must be "gone", not a
+//     copy attempt that fails halfway.
+function authorizedLocalFile(descriptor) {
+  const p = descriptor && descriptor.path;
+  if (!p || !isAuthorizedMediaPath(p)) return '';
+  // The same one list of formats the folder scanner and the online boundary use, so a
+  // photo Znada can show is exactly a photo Znada can hand over (ONL-015).
+  const ext = path.extname(p).replace('.', '');
+  if (!mediaFormats.isWallpaperFormat(mediaFormats.normalizeFormat(ext))) return '';
+  try {
+    return fs.statSync(p).isFile() ? p : '';
+  } catch { return ''; }
 }
 
 // The page a card came from. For a downloaded photo that is the source we stored; for
@@ -4487,7 +4528,13 @@ async function ensureCardFile(descriptor, opts = {}) {
       return { path: stored, error: null };
     }
 
-    // Local, but the record's file is gone. Saying so beats a silent no-op.
+    // BUG-029. No pool record — the ordinary case for a photo shown out of a watched
+    // folder. The window's path is honoured only if the library vouches for it.
+    const vouched = authorizedLocalFile(descriptor);
+    if (vouched) return { path: vouched, error: null };
+
+    // Local, and nothing stands behind it: the record's file is gone, or the window named
+    // something nobody added. Saying so beats a silent no-op.
     return { path: '', error: 'missing' };
   } catch (err) {
     console.error('card file:', err);
@@ -4499,9 +4546,21 @@ async function ensureCardFile(descriptor, opts = {}) {
 // window already has both; the fullscreen viewer has neither, and giving it the two
 // values is cheaper and safer than giving it the whole config.
 ipcMain.handle('card-assign-targets', () => {
+  // BUG-037. What each spot already holds, so the fullscreen viewer's chooser can say the
+  // same thing the main window's does. Ids rather than counts: the window also has to
+  // answer "is the picture I am looking at one of them", and a count cannot.
+  const slots = {};
+  for (const [id, monitor] of Object.entries(config.monitors || {})) {
+    const ids = (theme) => {
+      const slot = monitor && monitor[theme];
+      return slot && Array.isArray(slot.itemIds) ? slot.itemIds.slice() : [];
+    };
+    slots[id] = { light: ids('light'), dark: ids('dark') };
+  }
   return {
     monitors: (monitorsCache || []).map((m) => ({ id: m.id, primary: !!m.primary })),
     separateThemes: config.separateThemes !== false,
+    slots,
   };
 });
 
@@ -4688,6 +4747,11 @@ ipcMain.handle('internet-status', () => ({
   // reasoning about which sites cover it, and that reasoning silently stopped being
   // true whenever a site was removed or shipped without its key.
   nsfwAvailable: explicitContentReachableIn(providerRegistry.active()),
+  // ONL-016. "Details" has to name the site a picture came from, and the registry is
+  // the one place that knows what a site is called. Sent as a list rather than copied
+  // onto every card, and taken from ALL providers rather than the active ones: a card
+  // saved from a site Znada no longer asks must still be able to say where it is from.
+  providers: providerRegistry.PROVIDERS.map((p) => ({ id: p.id, name: p.name })),
 }));
 
 async function fetchInternetTagSuggestions(opts) {
@@ -5068,6 +5132,14 @@ async function searchRound(token, sorting, extra, list) {
     const at = positionFor(token, descriptor, sorting);
     return {
       ...extra,
+      // ONL-017. Ask for MORE, not more often. A site that cannot narrow by shape sends a
+      // page that is mostly discarded here, so while the filter is on it is asked for its
+      // biggest page — one request instead of several. Which sites those are is read from
+      // their own declarations, never from their names; a site that narrows properly gets
+      // the ordinary page it always got.
+      limit: extra && extra.sizeHints
+        ? sizeFilter.pageSizeFor(extra.limit, (descriptor.capabilities || {}).sizeFilter)
+        : extra && extra.limit,
       sort: sorting,
       // ONL-014c. A bookmark is whatever the site said it was. Sites that count pages
       // read `page`; the one that hands back an opaque marker reads `cursor`. Which of
@@ -5123,6 +5195,49 @@ function nobodyLeft() {
   return { items: [], meta: {}, error: null, providerErrors: {} };
 }
 
+// ONL-010. How many cards are worth one press before we stop trying to top the page up.
+// Deliberately modest: on an anime board a strict 16:9 leaves four cards in a hundred
+// (measured 2026-09-03), so "fill the page" is not a promise anybody can keep, and
+// chasing it would be the request storm BUG-020 had just finished limiting.
+const SIZE_FILTER_MIN_CARDS = 12;
+const SIZE_FILTER_EXTRA_ROUNDS = 2;
+
+// The filter, applied. Sites are asked to narrow what they can — measured per site, in
+// their own declarations — and then EVERY card is judged here, because a server given
+// the loosest bound that covers several targets cannot decide the exact one, and one
+// site (Gelbooru) cannot judge shape at all.
+async function searchFiltered(o, token, browsing) {
+  const targets = sizeFilter.effectiveTargets(config.onlineSizeFilter, monitorsCache);
+  const run = (extra) => (browsing
+    ? searchBrowseFeed({ ...o, ...extra }, token)
+    : searchQueryFeed({ ...o, ...extra }, token));
+  if (!targets.length) return run({});
+
+  const hints = sizeFilter.serverHints(targets);
+  const keep = (items) => (Array.isArray(items) ? items : [])
+    .filter((item) => sizeFilter.matches(item, targets));
+
+  const first = await run({ sizeHints: hints });
+  let merged = { ...first, items: keep(first.items) };
+  // Ask for more of the same rather than more often: a wider page is one request, and a
+  // site that filters on its own side will simply return a full one.
+  for (let round = 0; round < SIZE_FILTER_EXTRA_ROUNDS; round++) {
+    if (merged.items.length >= SIZE_FILTER_MIN_CARDS) break;
+    const next = await run({ sizeHints: hints });
+    const gained = keep(next.items);
+    // Nobody left to ask, or nobody has anything that fits. Stop quietly and show the
+    // shorter page — the owner's instruction was that the user must not be shown a
+    // problem, not that the page must always be full.
+    if (!gained.length && !(next.items || []).length) break;
+    merged = {
+      ...merged,
+      items: online.mergeSearchResults([{ items: merged.items }, { items: gained }]).items,
+      providerErrors: { ...(merged.providerErrors || {}), ...(next.providerErrors || {}) },
+    };
+  }
+  return merged;
+}
+
 ipcMain.handle('internet-search', async (e, opts) => {
   const o = opts || {};
   // Both conditions, not just the renderer's flag: curation must never be able to
@@ -5132,7 +5247,7 @@ ipcMain.handle('internet-search', async (e, opts) => {
   // nobody's to read — including the window's, which passes them back untouched. A token
   // that does not belong to this exact question is discarded rather than repaired.
   const token = onlineResume.parse(o.resume, onlineResume.signatureOf({ ...o, browse: browsing }));
-  const merged = browsing ? await searchBrowseFeed(o, token) : await searchQueryFeed(o, token);
+  const merged = await searchFiltered(o, token, browsing);
   return {
     ...merged,
     browsing,

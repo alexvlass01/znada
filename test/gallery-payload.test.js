@@ -6,6 +6,7 @@ const {
   sanitizeGalleryPayload,
   sanitizePooled,
   windowItemsAroundIndex,
+  windowThenMap,
 } = require('../src/gallery-payload');
 
 function item(n) {
@@ -135,9 +136,10 @@ function item(n) {
     p1: { id: 'p1', type: 'image', path: 'C:\\pics\\a.jpg' },
     f1: { id: 'f1', type: 'folder', path: 'C:\\pics' },
   };
+  const cardInteraction = require('../renderer/card-interaction');
   const ctx = {
     config: { library: pool },
-    window: { ZnadaPathKey: pathKeyMod },
+    window: { ZnadaPathKey: pathKeyMod, CardInteraction: cardInteraction },
     OnlineAdd: { pooledItem: () => ({ id: 'online1', type: 'image', path: 'C:\\dl\\1.jpg' }) },
   };
   vm.createContext(ctx);
@@ -170,6 +172,71 @@ function item(n) {
   );
   assert.strictEqual(galleryPoolRecord({ kind: 'pool-folder', path: 'C:\\pics', raw: pool.f1 }), null,
     'a folder card was handed an image record');
+}
+
+// ---------------------------------------------------------------------------
+// Открытие просмотрщика не должно стоить пропорционально размеру списка.
+//
+// Владелец нашёл это в выпущенной сборке: клик по фото на вкладках «Усі» и «Папки»
+// замораживал приложение на две-три секунды ДО появления просмотрщика, а из «Обране» и
+// «Онлайн» открывалось мгновенно. Разница в том, что первые две вкладки разворачивают
+// живые папки в тысячи записей. Ограничение payload применялось ПОСЛЕ обхода всего
+// списка, и на каждый элемент шёл поиск по всему пулу свежим `Object.values`.
+//
+// В dev-профиле библиотека пустая, поэтому ни один прогон этого не показывал.
+// ---------------------------------------------------------------------------
+{
+  const big = Array.from({ length: 5000 }, (_, i) => ({ id: i }));
+  let mapped = 0;
+  const out = windowThenMap(big, 2500, (entry) => { mapped += 1; return entry; }, 500);
+
+  assert.strictEqual(mapped, 500,
+    'дорогая работа выполнена сверх окна — окно взято после обхода списка, а не до');
+  assert.strictEqual(out.items.length, 500, 'окно отдало не столько элементов, сколько просили');
+  assert.strictEqual(out.items[out.index].id, 2500,
+    'после обрезки под курсором оказалось не то фото, по которому кликнули');
+
+  // Короткий список не режется и не смещается: обычный случай не должен пострадать.
+  const small = Array.from({ length: 7 }, (_, i) => ({ id: i }));
+  const smallOut = windowThenMap(small, 3, (e) => e, 500);
+  assert.strictEqual(smallOut.items.length, 7, 'короткий список зачем-то обрезали');
+  assert.strictEqual(smallOut.items[smallOut.index].id, 3, 'в коротком списке сместился индекс');
+}
+
+// Готовая карта должна ИСПОЛЬЗОВАТЬСЯ, а не игнорироваться. Запись кладётся только в
+// карту и отсутствует в `config.library`: если поиск снова начнёт перебирать пул, он
+// ничего не найдёт и тест покраснеет.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const vm = require('vm');
+  const pathKeyMod = require('../src/path-key');
+  const cardInteraction = require('../renderer/card-interaction');
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8')
+    .split('\r\n').join('\n');
+  const rendererFn = (name) => {
+    const m = rendererSrc.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(m, `${name} must remain an explicit renderer boundary`);
+    return m[0];
+  };
+
+  const ctx = {
+    config: { library: {} },
+    window: { ZnadaPathKey: pathKeyMod, CardInteraction: cardInteraction },
+    OnlineAdd: { pooledItem: () => null },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(rendererFn('normPathKey'), ctx);
+  vm.runInContext(rendererFn('poolItemForRecord'), ctx);
+  const galleryPoolRecord = vm.runInContext(`(${rendererFn('galleryPoolRecord')})`, ctx);
+
+  const record = { id: 'only-in-map', type: 'image', path: 'C:\\pics\\a.jpg' };
+  const map = new Map([[cardInteraction.localKey(record.path, 'image'), record]]);
+  const found = galleryPoolRecord(
+    { kind: 'library', path: record.path, raw: { path: record.path } }, map,
+  );
+  assert.ok(found && found.id === 'only-in-map',
+    'готовая карта записей проигнорирована — поиск снова перебирает весь пул на каждое фото');
 }
 
 console.log('gallery-payload.test.js ok');

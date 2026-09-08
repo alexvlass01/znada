@@ -48,10 +48,30 @@ function orderTag(sort) {
   return '';
 }
 
+// ONL-010. This site understands `width:` and `height:` and has no `ratio:` at all —
+// measured against the live API on 2026-09-03, where every spelling of a ratio metatag
+// came back empty. So the shape is left to our own check and only the floor is asked for
+// here. A narrowing, never the decision.
+//
+// Written here rather than passed through `q`: `queryTags` deliberately throws away
+// anything containing a colon, so that a person typing "rating:explicit" into the search
+// box cannot walk around their own content setting. That guard stays; this is the app
+// speaking, not the user.
+function sizeTags(hints) {
+  if (!hints || typeof hints !== 'object') return [];
+  const out = [];
+  const width = Number(hints.minWidth);
+  const height = Number(hints.minHeight);
+  if (Number.isFinite(width) && width > 0) out.push(`width:>=${Math.floor(width)}`);
+  if (Number.isFinite(height) && height > 0) out.push(`height:>=${Math.floor(height)}`);
+  return out;
+}
+
 function buildSearchTags(opts = {}) {
   return [
     ...queryTags(opts.q),
     ...ratingTags(opts.purity),
+    ...sizeTags(opts.sizeHints),
     orderTag(opts.sorting),
   ].filter(Boolean).join(' ');
 }
@@ -125,6 +145,10 @@ function mapItem(post) {
     resolution: width > 0 && height > 0 ? `${width}x${height}` : '',
     width,
     height,
+    // ONL-016. Deliberately 0, and deliberately present: checked against the live API on
+    // 2026-09-03, a Gelbooru post carries no size field of any kind. Declaring the fact
+    // is worth more than omitting it — the next person does not have to go and look.
+    fileSize: 0,
     fileType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
     format: media.normalizeFormat(ext),
     purity: purityName(post.rating),
@@ -407,6 +431,17 @@ const PROVIDER = Object.freeze({
     tagSuggest: true,
     // ONL-015. Cards from here carry their format — see the note in src/wallhaven.js.
     cardFormat: true,
+    // ONL-010. Measured on the live API 2026-09-03, and the odd one out: `width:>=` and
+    // `height:>=` work, while `ratio:` does not exist here at all — every spelling tried
+    // (`ratio:16:9`, `ratio:>=1.7`, `ratio:1.77`, `aspect_ratio:>=1.3`) returned an empty
+    // page, which is how this site answers an unknown tag. So it narrows by size and the
+    // shape is decided on our side.
+    sizeFilter: Object.freeze({
+      resolution: true, ratio: false, ratioList: false,
+      // ONL-017. Its biggest page. Asked for only while the size filter is on, because
+      // this site cannot narrow by shape and most of a normal page is thrown away here.
+      maxPageSize: 100,
+    }),
   }),
   // The image hosts refuse a request that does not say it came from the site.
   requestHeaders: Object.freeze({ Referer: 'https://gelbooru.com/' }),
@@ -428,6 +463,7 @@ async function search(params, ctx) {
     sorting: o.sort || o.sorting || 'date_added',
     page,
     limit,
+    sizeHints: o.sizeHints,
     ...credentials,
   });
   const res = await ctx.fetchJson(url, { timeoutMs: 15000 });

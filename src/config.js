@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const library = require('./library');
 const libraryStore = require('./library-store');
+const sizeFilter = require('./size-filter');
 
 const DEFAULT_CONFIG = {
   lightWallpaper: '',     // legacy global fallback (unless a slot was explicitly emptied)
@@ -76,6 +77,12 @@ const DEFAULT_CONFIG = {
   // A profile that has already been migrated carries `true` and is never touched again,
   // so a user who deliberately turns `sketchy` back on keeps it.
   onlineDefaultsV2: false,
+  // ONL-010. Show only pictures that would fit a screen. Off until asked for: a filter
+  // nobody switched on that hides most of a feed reads as a broken application, and on
+  // an anime board a strict 16:9 hides almost everything (measured 2026-09-03: four
+  // cards in a hundred). `auto` reads the monitors that exist, `manual` uses the list
+  // the user typed; both go through the same check.
+  onlineSizeFilter: { enabled: false, mode: 'auto', targets: [] },
   // ONL-009. Folder the "Save as…" dialog opens in, remembered between runs at the
   // owner's request. Never used as storage the app relies on: an export leaves no
   // library record, so a folder that disappears (a removed drive) costs nothing —
@@ -224,6 +231,10 @@ function normalize(cfg) {
   }
   // Keep at least one purity on (the UI enforces the same).
   if (!cfg.onlinePurity.sfw && !cfg.onlinePurity.sketchy && !cfg.onlinePurity.nsfw) cfg.onlinePurity.sfw = true;
+
+  // ONL-010. One normalizer, in the module that also does the matching — a second
+  // spelling of "what a target is" would be the first place the two drift apart.
+  cfg.onlineSizeFilter = sizeFilter.normalizeFilter(cfg.onlineSizeFilter);
 
   if (!['ambient', 'charcoal', 'aurora', 'color'].includes(cfg.viewerBackground)) cfg.viewerBackground = 'ambient';
 

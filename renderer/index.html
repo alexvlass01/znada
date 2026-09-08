@@ -586,6 +586,17 @@
               <label class="lib-filter-label"><input type="checkbox" class="wh-purity-cb" data-purity="sketchy"> Sketchy</label>
               <label class="lib-filter-label" id="lblPurityNsfw" data-i18n-title="online.nsfwNeedsKey" title="18+ (нужен ключ)"><input type="checkbox" class="wh-purity-cb" data-purity="nsfw"> NSFW</label>
             </div>
+            <div class="lib-filters-row" id="whSizeRow" hidden>
+              <label class="lib-filter-label"><input type="checkbox" id="whSizeOn"> <span data-i18n="online.sizeFilter">Только подходящие экрану</span></label>
+              <div class="select-wrap size-mode" id="whSizeModeWrap" hidden>
+                <select id="whSizeMode">
+                  <option value="auto" data-i18n="online.sizeAuto">По моим мониторам</option>
+                  <option value="manual" data-i18n="online.sizeManual">Вручную</option>
+                </select>
+              </div>
+              <input type="text" id="whSizeTargets" class="lib-size-input" hidden data-i18n-ph="online.sizePlaceholder" placeholder="3840x2160, 1920x1080" />
+              <span class="lib-size-note" id="whSizeNote"></span>
+            </div>
             <div class="lib-online-note" id="whNote"></div>
             <div class="lib-grid" id="whGrid"></div>
             <div class="lib-online-more">
@@ -775,6 +786,7 @@
 
   <script src="../src/next-change.js"></script>
   <script src="../src/path-key.js"></script>
+  <script src="../src/gallery-payload.js"></script>
   <script src="../src/hotkey.js"></script>
   <script src="justified-layout.js"></script>
   <script src="virtual-window.js"></script>
@@ -783,7 +795,11 @@
   <script src="card-interaction.js"></script>
   <script src="../src/online-add.js"></script>
   <script src="select-popup.js"></script>
+  <script src="../src/size-filter.js"></script>
+  <script src="view-scroll.js"></script>
+  <script src="auto-load.js"></script>
   <script src="card-actions.js"></script>
+  <script src="card-details.js"></script>
   <script src="card-menu.js"></script>
   <script src="card-transfer.js"></script>
   <script src="card-metadata.js"></script>

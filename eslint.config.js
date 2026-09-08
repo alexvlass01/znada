@@ -63,6 +63,8 @@ const DUAL_MODE_FILES = [
   'src/next-change.js',
   'src/online-add.js',
   'src/path-key.js',
+  'src/gallery-payload.js',
+  'src/size-filter.js',
   'renderer/*.js',
 ];
 
@@ -70,10 +72,10 @@ const DUAL_MODE_FILES = [
 // actually wired: index.html loads them with <script> tags and they find one another by
 // name. Declared here so a MISSPELLED one is still reported - which is the whole point.
 const RENDERER_SHARED = [
-  'AssignRows', 'CardActions', 'CardInteraction', 'CardMenu', 'CardMetadata',
+  'AssignRows', 'AutoLoad', 'CardActions', 'CardDetails', 'CardInteraction', 'CardMenu', 'CardMetadata', 'ViewScroll',
   'CardTransfer', 'DeferredRefresh', 'JustifiedLayout', 'NextChange', 'OnlineAdd',
-  'OnlineBrowse', 'ResizeAnchor', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
-  'VirtualWindow', 'ZnadaHotkey', 'ZnadaPathKey',
+  'OnlineBrowse', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
+  'VirtualWindow', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaPathKey',
 ].reduce((all, name) => Object.assign(all, { [name]: 'readonly' }), {});
 
 // Pages that are only ever a page.

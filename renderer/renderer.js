@@ -194,7 +194,7 @@ if (!window.api) {
     onCloudSession: () => {},
     cloudFavorites: async () => { const favs = mockCloud.favs || {}; const items = Object.keys(favs).map((id) => favs[id]); return { items, error: null }; },
     cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
-    internetStatus: async () => ({ nsfwAvailable: true }),
+    internetStatus: async () => ({ nsfwAvailable: true, providers: [{ id: 'wallhaven', name: 'Wallhaven' }, { id: 'gelbooru', name: 'Gelbooru' }] }),
     internetSearch: async (opts) => {
       const page = (opts && opts.page) || 1;
       const mk = (i, color) => ({ id: 'net' + page + '_' + i, provider: 'wallhaven', page: 'https://wh/' + page + '-' + i, full: 'data:', thumb: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="${color}"/></svg>`), resolution: '1920x1080', category: 'general', width: 1920, height: 1080 });
@@ -750,19 +750,74 @@ function renderStrip(theme) {
     rm.className = 'thumb-remove';
     rm.textContent = '×';
     rm.title = t('design.removeItem');
-    rm.addEventListener('click', async (ev) => {
+    rm.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      config = await window.api.removeSlotItem(editTargetId(), theme, idx);
-      renderSlot(theme);
-      renderHome();
-      // Re-apply after removal; an emptied slot ('no-wallpaper') is expected silence
-      // (LF-QA7), only a real apply failure deserves a toast.
-      if (theme === currentTheme) {
-        window.api.applyNow().then((r) => toastApplyError(r, { ignoreNoWallpaper: true })).catch(() => {});
-      }
+      takeOutOfSlot(theme, { monitorId: editTargetId(), theme, itemId: it.id, index: idx });
     });
     el.appendChild(rm);
+    // DESIGN-004. These tiles are photographs too, and until now they were the only ones
+    // in the app with no menu at all — no star, no tags, no details, no "save as". The
+    // owner asked for the same menu the library has, and it costs an adapter rather than
+    // a second interface: a tile IS a pool record, so it becomes an ordinary subject that
+    // additionally knows where it is placed.
+    bindSlotCardContextMenu(el, it, theme, idx);
     strip.appendChild(el);
+  });
+}
+
+// The one implementation of "take this out of this monitor-and-theme spot", used by the
+// × on the tile and by the menu entry beside it. The pool is not touched: the picture
+// stays in the library, it just stops being shown here.
+//
+// The index is re-resolved from the CURRENT slot before use. It was captured when the
+// strip was drawn, and this app has already shipped one bug from treating a strip index
+// as an identity (v1.2.0, "applied the wrong photo"): anything that changes the slot in
+// between — another window, an undo, a folder going away — shifts every index after it.
+async function takeOutOfSlot(theme, placement) {
+  const at = CardActions.resolveSlotIndex(slotItems(theme), placement);
+  if (at < 0) return;
+  config = await window.api.removeSlotItem(editTargetId(), theme, at);
+  renderSlot(theme);
+  renderHome();
+  // Re-apply after removal; an emptied slot ('no-wallpaper') is expected silence
+  // (LF-QA7), only a real apply failure deserves a toast.
+  if (theme === currentTheme) {
+    window.api.applyNow().then((r) => toastApplyError(r, { ignoreNoWallpaper: true })).catch(() => {});
+  }
+}
+
+// DESIGN-004. A tile in the Appearance strip, as an ordinary card that also knows its
+// placement. `slot` is what makes "remove from this spot" appear in the menu.
+function bindSlotCardContextMenu(el, item, theme, index) {
+  if (!item || !item.id) return;
+  CardMenu.bind(el, (point) => {
+    const record = localSelectionRecord(item.path, item.type, item.id);
+    record.slot = { monitorId: editTargetId(), theme, itemId: item.id, index };
+    openCardMenu(CardActions.localSubject(record, poolItemForRecord(record)), el, point);
+  });
+}
+
+// SLIDE-001, first slice. The big preview is the only surface that honestly knows which
+// picture is on the desktop RIGHT NOW: the strip lists what the slot CONTAINS, and a
+// watched folder is a single tile there, so the photo actually showing is often not in
+// the strip at all. Here it is, by its real path.
+//
+// "Remove from this spot" is offered only when that photo is itself an item of the slot.
+// When it came from a folder, taking it out would mean removing the whole folder — far
+// more than the person meant — and a per-photo skip list does not exist yet (SLIDE-001).
+function bindPreviewContextMenu(el, theme) {
+  if (!el) return;
+  CardMenu.bind(el, (point) => {
+    const path = el.dataset.bgPath || '';
+    if (!path) return;
+    const record = localSelectionRecord(path, 'image');
+    const pooled = poolItemForRecord(record);
+    if (pooled) record.id = pooled.id;
+    const items = slotItems(theme);
+    const key = normPathKey(path);
+    const at = items.findIndex((item) => item && item.type === 'image' && normPathKey(item.path) === key);
+    if (at >= 0) record.slot = { monitorId: editTargetId(), theme, itemId: items[at].id, index: at };
+    openCardMenu(CardActions.localSubject(record, pooled), el, point);
   });
 }
 
@@ -992,7 +1047,67 @@ const deferredLiveRefresh = window.DeferredRefresh.create(['home', 'library']);
 let lastLibRenderKey = '';     // view+content the grid was last rendered for; skip rebuild when unchanged
 let lastLibViewKey = '';       // view IDENTITY only (filter/folder/query/sort); scroll resets to top only when THIS changes
 let activePage = 'home';       // current top-level tab; used to save/restore per-tab scroll
+
+// BUG-041. Куда вернуться, если настройки закрывают той же шестернёй, которой открыли.
+// Запоминается вкладка, с которой ушли, а не «главная по умолчанию»: человек нажал
+// шестерню из библиотеки и ожидает вернуться в библиотеку, а не в начало.
+let pageBeforePrefs = 'home';
+
+// Решение «что делает клик по шестерне» отделено от обработчика, чтобы его можно было
+// проверить тестом: сам обработчик трогает DOM, а это — чистый выбор страницы.
+function gearTargetPage(current, previous) {
+  if (current !== 'prefs') return 'prefs';
+  // Возврат в prefs зациклил бы кнопку: она перестала бы закрывать что-либо.
+  return previous && previous !== 'prefs' ? previous : 'home';
+}
 const pageScroll = { home: 0, library: 0, design: 0, prefs: 0 }; // remembered scrollTop per tab
+// BUG-040. One position per LIST inside the Library tab — see renderer/view-scroll.js.
+const libViewScroll = window.ViewScroll.createViewScrollMemory();
+// Where the list being opened should end up once its grid exists. Carried rather than
+// applied at once, because a grid that has not been built yet is as tall as the previous
+// one and would clamp the number away. `until` bounds the attempt: a list whose content
+// never grows back that far must not keep grabbing the scrollbar minutes later.
+let pendingLibraryScroll = null;
+
+// What counts as "the same list". The Online feed's own sub-view is part of it: search
+// results and cloud favourites are two lists behind one rail button.
+function libViewKey() {
+  const parts = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || ''];
+  if (LIB.filter === 'online') parts.push(ONLINE.view || 'search');
+  return parts.join('|');
+}
+
+// Put the list back where it was, once there is something to scroll. Called after every
+// grid mount: the first one may still be short (folders expand asynchronously), so the
+// attempt survives until it lands or the window closes.
+function applyPendingLibraryScroll() {
+  if (!pendingLibraryScroll) return;
+  if (Date.now() > pendingLibraryScroll.until) { pendingLibraryScroll = null; return; }
+  const root = libScrollRoot();
+  if (!root) return;
+  const want = pendingLibraryScroll.top;
+  root.scrollTop = want;
+  pageScroll.library = root.scrollTop;
+  // Landed (or as close as this content allows right now) — stop trying.
+  if (root.scrollTop >= want - 2) pendingLibraryScroll = null;
+}
+
+// The user has taken over. Whatever we were still trying to restore is now wrong.
+function cancelPendingLibraryScroll() {
+  pendingLibraryScroll = null;
+}
+
+// Where the list is scrolled RIGHT NOW, asked of the page itself.
+//
+// `pageScroll.library` looks like the same fact and is not: the grid only reports into it
+// when it restores an anchor, and `showPage` only samples it while switching tabs. Between
+// those it can sit at 0 through a thousand points of scrolling — which it did, and the
+// first version of this fix duly remembered every list's position as "the top". Measured
+// on the live app, not reasoned about; every unit test passed over it.
+function currentLibraryScrollTop() {
+  const root = libScrollRoot();
+  return root ? root.scrollTop : pageScroll.library;
+}
 let justifiedFrame = 0;
 const justifiedPending = new Set();
 let aspectLayoutTimer = 0;
@@ -1012,7 +1127,7 @@ const LIB_RESIZE_SETTLE_MS = 120;
 // deliberately NOT persisted and NOT remembered past a real search. So the front page
 // always comes back curated on the next visit; the ordering the user keeps is the one
 // that applies to their searches.
-const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: false, nsfw: false }, resume: null, nsfwAvailable: false, searched: false, statusFetched: false, sortTouched: false };
+const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: false, nsfw: false }, resume: null, nsfwAvailable: false, searched: false, statusFetched: false, sortTouched: false, providerNames: {} };
 const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
 const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
 const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
@@ -1029,6 +1144,9 @@ const CLOUD = { cap: null, fetched: false };
 const ONLINE = {
   view: 'search', loaded: false, loading: false, generation: 0, renderEpoch: 0, entries: [],
 };
+// ONL-003. Whether reaching the end of the feed may ask for another page — see
+// renderer/auto-load.js for why this is suspicious by design.
+const onlineAutoLoad = window.AutoLoad.createAutoLoader();
 // Cloud C4: account/session state (renderer-safe; the token never leaves main).
 const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
 // Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
@@ -1359,13 +1477,22 @@ function renderLibraryCore() {
   // sort) — NOT when content/assignment changes within the same view. Otherwise assigning
   // or favoriting an item in place would yank the window to the top (it changes the
   // signature inside libRenderKey, which is why we key the scroll on view identity only).
-  const viewKey = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || ''].join('|');
+  const viewKey = libViewKey();
   const viewChanged = viewKey !== lastLibViewKey;
+  const leavingKey = lastLibViewKey;
   lastLibViewKey = viewKey;
   if (viewChanged && activePage === 'library') {
+    // BUG-040. The position belongs to the LIST, not to the tab. Put the outgoing list's
+    // position away and take out the incoming one's; a list nobody has scrolled yet
+    // still opens at the top, exactly as every list did before.
+    libViewScroll.remember(leavingKey, currentLibraryScrollTop());
+    const resumeAt = libViewScroll.recall(viewKey);
     const page = document.querySelector('.page');
+    // Still zero for the moment: the new grid has not been built, so its height is the
+    // old one's and any larger number would be clamped away.
     if (page) page.scrollTop = 0;
-    pageScroll.library = 0;
+    pageScroll.library = resumeAt;
+    pendingLibraryScroll = resumeAt > 0 ? { top: resumeAt, until: Date.now() + 4000 } : null;
     libraryViewAnchor = null;
     libraryResizeSession.cancel();
     libraryResizeActive = false;
@@ -1403,9 +1530,26 @@ function renderLibraryCore() {
   setGridGallerySource($('#whGrid'), []);
   ONLINE.generation += 1;
   ONLINE.renderEpoch += 1;
-  ONLINE.entries = [];
   ONLINE.loading = false;
-  ONLINE.loaded = false; // re-fetch fresh signed URLs next time Online opens
+  // BUG-040. Leaving the Online rail used to THROW THE FEED AWAY, not merely forget where
+  // the user was — so coming back re-fetched page one and there was nothing to return to.
+  // The cards themselves are worth keeping: a Wallhaven or booru card carries a permanent
+  // address. A card from our own catalogue does not — its preview is a signed link that
+  // expires, and this window does not know when — so THOSE cards leave and the rest stay.
+  //
+  // Dropping the whole feed whenever one was present was the first attempt, and on the
+  // owner's own bench it meant "always": the staging catalogue puts two cards in every
+  // feed. Measured, not assumed.
+  const keepable = ONLINE.entries.filter((entry) => entry && entry.kind !== 'cloud');
+  if (keepable.length !== ONLINE.entries.length) ONLINE.entries = keepable;
+  // Nothing left worth coming back to — a feed made only of catalogue cards has to be
+  // asked for again, and its old position points at results that will not return.
+  // `leavingKey` is the feed's own key, captured before the switch; one computed here
+  // would be built from the list we have just arrived at.
+  if (!ONLINE.entries.length) {
+    ONLINE.loaded = false;
+    libViewScroll.forget(leavingKey);
+  }
   renderBreadcrumbs();
   const tok = ++allViewToken; // invalidate any in-flight async render
 
@@ -1805,6 +1949,10 @@ function scheduleLibraryResizeFinish(grid) {
   }, wait);
 }
 function cancelLibraryResizeAnchorForUserInput() {
+  // BUG-040. The user has taken hold of the list, so a position we were still trying to
+  // restore is no longer wanted — pulling the view out from under a wheel or a keypress
+  // would be worse than opening at the top.
+  cancelPendingLibraryScroll();
   if (!libraryResizeActive && !currentLibraryResizeAnchor()) return;
   libraryResizeSession.cancel();
   libraryResizeActive = false;
@@ -2145,12 +2293,19 @@ function scheduleDeferredJustifiedLayout(grid) {
   aspectLayoutTimer = setTimeout(flush, 240);
 }
 
-function poolRecordMap() {
+// Чистая сборка карты «путь → запись пула». Отделена от `poolRecordMap`, потому что тот
+// ещё и обновляет общий кеш `LIB`: просмотрщику нужна карта, а не побочный эффект.
+function buildPoolRecordMap() {
   const map = new Map();
   for (const item of Object.values((config && config.library) || {})) {
     if (!item || !item.path) continue;
     map.set(window.CardInteraction.localKey(item.path, item.type), item);
   }
+  return map;
+}
+
+function poolRecordMap() {
+  const map = buildPoolRecordMap();
   LIB.poolBySelectionKey = map;
   return map;
 }
@@ -2306,6 +2461,11 @@ function mountUnifiedGrid(grid, entries, adapter, opts = {}) {
   virtual.assigned = grid.__gridContext.assigned;
   const kick = () => virtual.updateWindow(true);
   libLazyKick = kick;
+  // BUG-040. There is finally something to scroll, so this is where a remembered
+  // position can be honoured. Every mount tries: the first one after switching lists is
+  // often still short, and a later one — folders finish expanding, a page is appended —
+  // is what finally makes room.
+  applyPendingLibraryScroll();
   rememberLibraryScrollAnchor(grid);
   return virtual;
 }
@@ -2383,18 +2543,6 @@ function bindCardGalleryItem(card, item, index) {
   else delete card.dataset.galleryIndex;
 }
 
-
-function galleryPayloadWindow(items, index) {
-  const list = (items || []).filter(Boolean);
-  if (list.length <= GALLERY_MAX_PAYLOAD_ITEMS) return { items: list, index };
-  const safeIndex = Math.max(0, Math.min(list.length - 1, Number.isFinite(index) ? Math.floor(index) : 0));
-  const half = Math.floor(GALLERY_MAX_PAYLOAD_ITEMS / 2);
-  const start = Math.max(0, Math.min(safeIndex - half, list.length - GALLERY_MAX_PAYLOAD_ITEMS));
-  return {
-    items: list.slice(start, start + GALLERY_MAX_PAYLOAD_ITEMS),
-    index: safeIndex - start,
-  };
-}
 
 function galleryItemFromLibrary(it) {
   return {
@@ -2489,8 +2637,13 @@ function openGalleryViewer(items, index = 0) {
   if (!list.length) return;
   closeLibPopup();
   hideOnlineTagSuggest();
-  const payloadItems = list.map((entry) => {
-    const pooled = galleryPoolRecord(entry);
+  // Окно берётся ДО поиска записей в пуле, а не после. Ограничение в 500 элементов
+  // существует ради размера payload, но раньше весь список сначала обходился целиком:
+  // на вкладках «Усі» и «Папки» живые папки разворачиваются в тысячи фотографий, и клик
+  // по любой из них замораживал окно на секунды ещё до открытия просмотрщика.
+  const pooledByPath = buildPoolRecordMap();
+  const payload = window.ZnadaGalleryPayload.windowThenMap(list, index, (entry) => {
+    const pooled = galleryPoolRecord(entry, pooledByPath);
     return {
       ...entry,
       added: entry.added || !!pooled,
@@ -2498,15 +2651,14 @@ function openGalleryViewer(items, index = 0) {
       // has no pool of its own, so without this it could only ever add (ONL-008).
       pooled: pooled ? { id: pooled.id || '', path: pooled.path || '', type: pooled.type || 'image' } : null,
     };
-  });
-  const payload = galleryPayloadWindow(payloadItems, index);
+  }, GALLERY_MAX_PAYLOAD_ITEMS);
   window.api.openGalleryViewer({
     items: payload.items,
-    index: Math.max(0, Math.min(payload.items.length - 1, payload.index || 0)),
+    index: payload.index,
   }).catch(() => toast(t('viewer.loadError')));
 }
 
-function galleryPoolRecord(entry) {
+function galleryPoolRecord(entry, pooledByPath = null) {
   if (!entry || !entry.raw) return null;
   if (entry.kind === 'cloud' || entry.kind === 'internet') {
     return OnlineAdd.pooledItem((config && config.library) || {}, entry.kind, entry.raw);
@@ -2517,11 +2669,15 @@ function galleryPoolRecord(entry) {
   // un-added online card: "find tags" and "remove" did nothing and said nothing, and
   // assign asked main to download a file already sitting on the disk.
   if (entry.kind !== 'library' && entry.kind !== 'path') return null;
+  // `key` даёт поиску готовую карту вместо перебора всего пула. Без него каждый элемент
+  // строил свежий `Object.values(library)` и сканировал его целиком — терпимо однажды,
+  // разорительно в цикле по списку фотографий.
   return poolItemForRecord({
     id: (entry.raw && entry.raw.id) || null,
+    key: entry.path ? window.CardInteraction.localKey(entry.path, 'image') : '',
     path: entry.path,
     type: 'image',
-  });
+  }, pooledByPath);
 }
 
 // ---- Multi-selection helpers ----
@@ -2976,7 +3132,30 @@ async function assignLibraryRecords(records, monitorId, th) {
 // The rows themselves now live in renderer/assign-rows.js so the fullscreen viewer
 // draws exactly the same chooser. This supplies the wording and this window's data.
 // Единый режим (separateThemes off): у монитора один слот — одна кнопка «Назначить».
-function appendAssignRows(pop, onPick) {
+// BUG-037. What each monitor×theme slot currently holds, in the one shape both the
+// count and the "is this picture already here" question are answered from.
+function slotOccupancy(itemId) {
+  const slots = {};
+  for (const [id, monitor] of Object.entries((config && config.monitors) || {})) {
+    slots[id] = {
+      light: slotItemIds(monitor, 'light'),
+      dark: slotItemIds(monitor, 'dark'),
+    };
+  }
+  return { slots, itemId: itemId || '' };
+}
+
+function slotItemIds(monitor, theme) {
+  const slot = monitor && monitor[theme];
+  return slot && Array.isArray(slot.itemIds) ? slot.itemIds.slice() : [];
+}
+
+function slotCountFor(monitorId, theme) {
+  const monitor = (config && config.monitors && config.monitors[monitorId]) || null;
+  return slotItemIds(monitor, theme === 'dark' ? 'dark' : 'light').length;
+}
+
+function appendAssignRows(pop, onPick, options = {}) {
   const title = document.createElement('div');
   title.className = 'lib-popup-title';
   title.textContent = t('library.assignTo');
@@ -2989,8 +3168,30 @@ function appendAssignRows(pop, onPick) {
     slotLabel: (slot) => (slot.themeIcon
       ? t(slot.theme === 'dark' ? 'design.darkTheme' : 'design.lightTheme')
       : t('library.assignAction')),
+    // A bulk assignment has no single picture, so "this one is already here" has no
+    // meaning there and `itemId` is left empty; the counts still apply.
+    occupancy: slotOccupancy(options.itemId),
+    slotHint: (slot) => {
+      if (slot.hasThis) return t('library.slotHasThis');
+      return slot.count > 0 ? t('library.slotFilled', { n: slot.count }) : '';
+    },
     onPick,
   });
+}
+
+// The owner's decision, 2026-09-03. Assigning ADDS to a slot rather than replacing it,
+// and that is the right default — a slot is a playlist. But the common wish is "and show
+// it now", which previously meant assigning, then going to Appearance and clicking the
+// thumbnail. One tick does both, and leaves the meaning of the buttons alone.
+function appendApplyNowToggle(pop) {
+  const label = document.createElement('label');
+  label.className = 'lib-popup-check';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.addEventListener('click', (e) => e.stopPropagation());
+  label.append(input, document.createTextNode(t('library.applyNow')));
+  pop.appendChild(label);
+  return input;
 }
 
 // Bulk assign: apply the chosen monitor×theme to every selected item. Anchored above the
@@ -3248,8 +3449,14 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
     sep.className = 'lib-popup-sep';
     pop.appendChild(sep);
   };
+  let applyNowInput = null;
   if (options.assign !== false) {
     appendAssignRows(pop, async (monitorId, th) => {
+      // Read the tick BEFORE the popup goes away, and remember what was in the slot
+      // before we touch it — afterwards there is no way to tell "added a second one"
+      // from "it was already there and nothing happened".
+      const setNow = !!(applyNowInput && applyNowInput.checked);
+      const idsBefore = slotItemIds((config.monitors || {})[monitorId], th);
       // Close BEFORE doing the work, not after. For a photo that is already on disk
       // everything below is instant, so this never showed; for an online one the
       // picture still has to be downloaded, and the menu sat on screen for seconds
@@ -3273,11 +3480,34 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
         }
         res = await assignLibraryItem(item.id, monitorId, th);
       }
+      if (!res.ok) {
+        refreshAssignedHighlights();
+        renderPreviews();
+        renderHome();
+        toast(t('library.assignMissingToast'));
+        return;
+      }
+      // "Set it now" is the SAME operation the Appearance strip performs when a
+      // thumbnail is clicked — move the slideshow to this frame — so the two cannot
+      // mean different things. For a theme that is not showing, it is stored and takes
+      // effect when that theme comes round.
+      let appliedNow = false;
+      if (setNow && state.item && state.item.path) {
+        const moved = await window.api.setSlideshowToPath(monitorId, th, state.item.path);
+        config = (moved && moved.config) || config;
+        appliedNow = !!(moved && moved.apply && moved.apply.ok !== false);
+      }
       refreshAssignedHighlights();
       renderPreviews();
       renderHome();
-      toast(res.ok ? t('library.assignedToast') : t('library.assignMissingToast'));
-    });
+      const outcome = AssignRows.outcomeKey({
+        appliedNow,
+        alreadyThere: !!(state.item && idsBefore.indexOf(state.item.id) !== -1),
+        countAfter: slotCountFor(monitorId, th),
+      });
+      toast(t(outcome.key, outcome.params || undefined));
+    }, { itemId: state.item && state.item.id });
+    applyNowInput = appendApplyNowToggle(pop);
     sections++;
   }
 
@@ -3312,8 +3542,14 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
   const r = anchor.getBoundingClientRect();
   let left = r.right - pop.offsetWidth;
   if (left < 8) left = 8;
+  // BUG-038. SLIDE the window up until it fits, do not flip it to the other side of the
+  // card. Flipping is what turned a small height difference into a large one: measured on
+  // the owner's profile, a photo with no tags and one with 25 put the red "remove from
+  // library" button 264 points apart on screen, because the taller window jumped above
+  // the card. Sliding keeps that difference down to the height difference itself.
   let top = r.bottom + 6;
-  if (top + pop.offsetHeight > window.innerHeight - 8) top = r.top - pop.offsetHeight - 6;
+  const lowest = window.innerHeight - 8 - pop.offsetHeight;
+  if (top > lowest) top = lowest;
   pop.style.left = `${left}px`;
   pop.style.top = `${Math.max(8, top)}px`;
   armLibPopupDismiss(anchor);
@@ -3381,35 +3617,36 @@ function formatDetailsDate(value) {
   }
 }
 
-function isOpenableDetailsSource(value) {
-  if (typeof value !== 'string' || !value) return false;
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch { return false; }
+// ONL-016. Which sites exist and what they are called is the registry's answer, sent
+// once by `internet-status`. A malformed entry is dropped rather than shown, so a bad
+// answer costs a missing row and not a broken sheet.
+function providerNameMap(list) {
+  const out = {};
+  for (const entry of Array.isArray(list) ? list : []) {
+    const id = entry && typeof entry.id === 'string' ? entry.id : '';
+    const name = entry && typeof entry.name === 'string' ? entry.name : '';
+    if (id && name) out[id] = name;
+  }
+  return out;
 }
 
-// Catalogue ratings, spelled for a person. `safe` is the older name some providers
-// still use for `general`; an unknown word is shown as nothing rather than raw, so a
-// provider inventing a new one cannot leak a bare English token into the interface.
-const DETAILS_RATING_KEYS = {
-  general: 'details.ratingGeneral',
-  safe: 'details.ratingGeneral',
-  sensitive: 'details.ratingSensitive',
-  questionable: 'details.ratingQuestionable',
-  explicit: 'details.ratingExplicit',
-};
+// ONL-016. Rating vocabulary, source-marker spelling and every "does this card have a
+// fact worth a row" decision now live in renderer/card-details.js, where they are pure
+// and tested. What is left here is the drawing.
 
-function detailsRatingLabel(value) {
-  const key = DETAILS_RATING_KEYS[String(value || '').trim().toLowerCase()];
-  return key ? t(key) : '';
-}
-
-function detailsSourceLabel(value) {
-  const raw = String(value || '');
-  const low = raw.toLowerCase();
-  // 'lumina:' — метка, оставшаяся от прежнего имени; записи с ней не переписываются.
-  return low.startsWith('znada:') || low.startsWith('lumina:') ? 'Znada' : raw;
+// ONL-016. The sheet's picture, fetched the way that card's kind requires. A local file
+// goes to the thumbnail helper; an online card either loads straight from the window or
+// has to come through main, and the card itself says which — the same single question
+// the grid asks when it draws that card, answered by the same field.
+async function detailsPreviewUrl(preview) {
+  if (!preview) return '';
+  if (preview.kind === 'local') {
+    const info = await window.api.thumbInfo(preview.path, 360, 360);
+    return (info && info.url) || '';
+  }
+  if (preview.loadsDirectly) return String(preview.item.thumb || '');
+  const result = await window.api.internetThumbnail(preview.item);
+  return (result && result.dataUrl) || '';
 }
 
 function closeCardDetails() {
@@ -3439,14 +3676,20 @@ function detailsRow(label, value, opts = {}) {
   return row;
 }
 
-async function openCardDetails(record) {
+async function openCardDetails(subject, record = null) {
   closeCardDetails();
-  const item = poolItemForRecord(record);
-  const filePath = String((item && item.path) || (record && record.path) || '');
-  if (!filePath) return;
-  const isFolder = (item && item.type === 'folder') || (record && record.type === 'folder');
-  const displayName = baseName(filePath) || filePath;
-  const sourceIsOpenable = !!(item && isOpenableDetailsSource(item.source));
+  const item = subject && subject.kind === 'local' ? poolItemForRecord(record) : null;
+  // ONL-016. WHAT this sheet contains is decided in one pure, tested place; this
+  // function only draws it. A local card must still have a file — its half of the sheet
+  // IS the file — while an online card has none by definition and is complete without.
+  const model = CardDetails.buildDetailsModel(subject, {
+    item,
+    providerNames: INTERNET.providerNames,
+  });
+  if (!model) return;
+  if (model.readsDisk && !model.path) return;
+  const filePath = model.path;
+  const descriptor = CardActions.descriptorFor(subject);
 
   const backdrop = document.createElement('div');
   backdrop.className = 'lib-modal-backdrop';
@@ -3464,8 +3707,8 @@ async function openCardDetails(record) {
   head.className = 'lib-modal-head';
   const title = document.createElement('strong');
   title.id = 'detailsTitle';
-  title.textContent = displayName;
-  title.title = displayName;
+  title.textContent = model.title;
+  title.title = model.title;
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'lib-modal-close';
@@ -3479,8 +3722,8 @@ async function openCardDetails(record) {
 
   const preview = document.createElement('div');
   preview.className = 'details-preview';
-  preview.hidden = isFolder;
-  if (!isFolder) {
+  preview.hidden = !model.preview;
+  if (model.preview) {
     preview.classList.add('loading');
     preview.setAttribute('aria-busy', 'true');
   }
@@ -3509,22 +3752,34 @@ async function openCardDetails(record) {
     foot.appendChild(b);
     return b;
   };
-  addAction(
-    t('details.openFolder'),
-    () => window.api.itemReveal(filePath),
-    'details.revealFailed',
-  );
-  addAction(t('details.copyPath'), async () => {
-    const ok = await window.api.itemCopyPath(filePath);
-    if (ok) toast(t('details.copied'));
-    return ok;
-  }, 'details.copyFailed');
-  if (sourceIsOpenable) {
-    addAction(
-      t('details.openSource'),
-      () => window.api.itemOpenSource(item.id),
-      'details.openFailed',
-    );
+  // What each footer button MEANS, wired here; WHICH of them a card deserves was decided
+  // by the model. An action it did not list is never drawn — a catalogue card has no
+  // page and only a signed link that expires, so it ends up with no footer at all rather
+  // than with buttons leading nowhere.
+  const DETAILS_ACTIONS = {
+    openFolder: { failureKey: 'details.revealFailed', run: () => window.api.itemReveal(filePath) },
+    copyPath: {
+      failureKey: 'details.copyFailed',
+      run: async () => {
+        const ok = await window.api.itemCopyPath(filePath);
+        if (ok) toast(t('details.copied'));
+        return ok;
+      },
+    },
+    // A local record opens the source stored ON the record; an online card goes through
+    // the shared card transfer, which is exactly what its own menu does.
+    openSource: model.kind === 'local'
+      ? { failureKey: 'details.openFailed', run: () => (item ? window.api.itemOpenSource(item.id) : false) }
+      : { run: () => runCardTransfer('openSource', descriptor) },
+    copyLink: { run: () => runCardTransfer('copyLink', descriptor) },
+  };
+  const runDetailsAction = (button, id) => {
+    const wired = DETAILS_ACTIONS[id];
+    if (wired) runAction(button, wired.run, wired.failureKey);
+  };
+  for (const action of model.actions) {
+    if (!DETAILS_ACTIONS[action.id]) continue;
+    addAction(t(action.labelKey), DETAILS_ACTIONS[action.id].run, DETAILS_ACTIONS[action.id].failureKey);
   }
   // META-001. The sheet is where the user is already looking at the empty author, the
   // missing source and the missing tags, so it is where the button to go and find them
@@ -3543,9 +3798,12 @@ async function openCardDetails(record) {
     // answers null when a lookup for this photo is already running. "Could not check"
     // for "already checking" would be a new lie.
     addAction(t('details.lookupMeta'), () => runDetailsLookup(record, () => {
-      if (backdrop.isConnected) openCardDetails(record);
+      if (backdrop.isConnected) openCardDetails(subject, record);
     }));
   }
+
+  // An empty bar reads as a broken sheet, so it is not drawn at all.
+  foot.hidden = !foot.childElementCount;
 
   modal.append(head, body, foot);
   backdrop.appendChild(modal);
@@ -3581,68 +3839,65 @@ async function openCardDetails(record) {
   document.addEventListener('keydown', detailsCloseHandler, true);
   requestAnimationFrame(() => close.focus({ preventScroll: true }));
 
-  // Static rows first so the sheet never appears empty, then fill in disk metadata.
+  // Every row the model asked for, drawn. An online card's rows are complete the moment
+  // the sheet opens — everything in them was already in the card the feed drew. Only a
+  // local card has `pending` rows, because only a local card has a disk to read.
   const unknown = t('details.unknown');
-  rows.appendChild(detailsRow(t('details.type'), isFolder ? t('details.typeFolder') : t('details.typeImage')));
-  const resRow = detailsRow(t('details.resolution'), unknown);
-  const sizeRow = detailsRow(t('details.size'), unknown);
-  if (!isFolder) rows.append(resRow, sizeRow);
-  const added = item ? formatDetailsDate(item.addedAt) : '';
-  if (added) rows.appendChild(detailsRow(t('details.added'), added));
-  const modRow = detailsRow(t('details.modified'), unknown);
-  rows.appendChild(modRow);
-  if (item && item.author) rows.appendChild(detailsRow(t('details.author'), item.author));
-  // META-001. Shown, and nothing more: Znada never hides, filters or reorders a photo
-  // the user brought himself because a catalogue put a label on it. It is information
-  // about where the picture came from, not permission to act on his library.
-  const ratingLabel = detailsRatingLabel(item && item.rating);
-  if (ratingLabel) rows.appendChild(detailsRow(t('details.rating'), ratingLabel));
-  if (item && item.source) {
-    let sourceNode;
-    if (sourceIsOpenable) {
-      sourceNode = document.createElement('button');
-      sourceNode.type = 'button';
-      sourceNode.className = 'details-link';
-      sourceNode.textContent = detailsSourceLabel(item.source);
-      sourceNode.addEventListener('click', () => runAction(
-        sourceNode,
-        () => window.api.itemOpenSource(item.id),
-        'details.openFailed',
-      ));
-    } else {
-      sourceNode = document.createElement('span');
-      sourceNode.textContent = detailsSourceLabel(item.source);
+  const pendingRows = {};
+  for (const row of model.rows) {
+    const label = t(row.labelKey);
+    if (row.kind === 'pending') {
+      const node = detailsRow(label, unknown);
+      pendingRows[row.fill] = node;
+      rows.appendChild(node);
+      continue;
     }
-    rows.appendChild(detailsRow(t('details.source'), '', { node: sourceNode, wide: true }));
-  }
-  rows.appendChild(detailsRow(t('details.path'), filePath, { mono: true, wide: true }));
-  if (item && Array.isArray(item.tags) && item.tags.length) {
-    const chips = document.createElement('div');
-    chips.className = 'details-tags';
-    const maxVisibleTags = 80;
-    item.tags.slice(0, maxVisibleTags).forEach((tag) => {
-      const chip = document.createElement('span');
-      chip.className = 'details-tag';
-      chip.textContent = tag;
-      chips.appendChild(chip);
-    });
-    if (item.tags.length > maxVisibleTags) {
-      const more = document.createElement('span');
-      more.className = 'details-tag more';
-      more.textContent = t('library.moreTags', { n: item.tags.length - maxVisibleTags });
-      chips.appendChild(more);
+    if (row.kind === 'link') {
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'details-link';
+      link.textContent = row.value;
+      link.addEventListener('click', () => runDetailsAction(link, row.action));
+      rows.appendChild(detailsRow(label, '', { node: link, wide: row.wide }));
+      continue;
     }
-    rows.appendChild(detailsRow(t('details.tags'), '', { node: chips, wide: true }));
+    if (row.kind === 'tags') {
+      const chips = document.createElement('div');
+      chips.className = 'details-tags';
+      for (const tag of row.values) {
+        const chip = document.createElement('span');
+        chip.className = 'details-tag';
+        chip.textContent = tag;
+        chips.appendChild(chip);
+      }
+      if (row.hidden > 0) {
+        const more = document.createElement('span');
+        more.className = 'details-tag more';
+        more.textContent = t('library.moreTags', { n: row.hidden });
+        chips.appendChild(more);
+      }
+      rows.appendChild(detailsRow(label, '', { node: chips, wide: true }));
+      continue;
+    }
+    // META-001. The content rating is SHOWN and nothing more: Znada never hides, filters
+    // or reorders a photo because a catalogue put a label on it. It says where the
+    // picture came from; it is not permission to act on the user's library.
+    let value = '';
+    if (row.kind === 'i18n') value = t(row.valueKey);
+    else if (row.kind === 'bytes') value = formatFileSize(row.value);
+    else if (row.kind === 'date') value = formatDetailsDate(row.value);
+    else value = row.value;
+    rows.appendChild(detailsRow(label, value, { mono: row.kind === 'mono', wide: row.wide }));
   }
 
-  if (!isFolder) {
+  if (model.preview) {
     const finishPreview = () => {
       preview.setAttribute('aria-busy', 'false');
       preview.classList.remove('loading');
     };
-    window.api.thumbInfo(filePath, 360, 360).then((info) => {
+    detailsPreviewUrl(model.preview).then((url) => {
       if (!backdrop.isConnected) return;
-      if (!info || !info.url) {
+      if (!url) {
         finishPreview();
         return;
       }
@@ -3651,7 +3906,7 @@ async function openCardDetails(record) {
       img.decoding = 'async';
       img.addEventListener('load', finishPreview, { once: true });
       img.addEventListener('error', finishPreview, { once: true });
-      img.src = info.url;
+      img.src = url;
       preview.appendChild(img);
     }).catch(() => {
       if (!backdrop.isConnected) return;
@@ -3659,20 +3914,24 @@ async function openCardDetails(record) {
     });
   }
 
+  // Only a local card has anything left to learn; an online sheet is already finished.
+  if (!model.readsDisk) return;
   try {
     const meta = await window.api.itemDetails(filePath);
     if (!backdrop.isConnected) return;
+    const fill = (name, text) => {
+      const node = pendingRows[name];
+      if (node && text) node.querySelector('dd').textContent = text;
+    };
     if (!meta || !meta.exists) {
-      modRow.querySelector('dd').textContent = t('details.missing');
+      fill('modified', t('details.missing'));
       return;
     }
     if (meta.width > 0 && meta.height > 0) {
-      resRow.querySelector('dd').textContent = `${meta.width} × ${meta.height}`;
+      fill('resolution', CardDetails.resolutionText(meta.width, meta.height));
     }
-    const size = formatFileSize(meta.size);
-    if (size) sizeRow.querySelector('dd').textContent = size;
-    const modified = formatDetailsDate(meta.modifiedAt);
-    if (modified) modRow.querySelector('dd').textContent = modified;
+    fill('size', formatFileSize(meta.size));
+    fill('modified', formatDetailsDate(meta.modifiedAt));
   } catch { /* metadata is optional; the sheet stays usable without it */ }
 }
 
@@ -3792,7 +4051,7 @@ function openCardMenu(subject, card, point = null) {
     tags: () => openAssignMenu(current, card, () => ensurePoolItemForRecord(record), {
       assign: false, tags: true, remove: false, focusTags: true,
     }),
-    details: () => openCardDetails(record),
+    details: () => openCardDetails(subject, record),
     // The record is made only now, when the user has actually asked — the same moment
     // "change tags" makes one.
     lookupMeta: async () => {
@@ -3801,6 +4060,11 @@ function openCardMenu(subject, card, point = null) {
       else toast(t('card.lookupFailed'));
     },
     add: () => addCardToLibrary(descriptor),
+    // DESIGN-004. Takes the picture out of one monitor-and-theme spot; the library keeps
+    // it. The same call the × on the tile makes, so the two cannot drift apart.
+    removeFromSlot: () => (subject.slot
+      ? takeOutOfSlot(subject.slot.theme, subject.slot)
+      : undefined),
     remove: () => (subject.kind === 'local'
       ? removeRecordFromLibrary(record)
       : removeOnlineFromLibrary(config.library ? config.library[subject.id] : null)),
@@ -4117,12 +4381,20 @@ function initLibrary() {
   });
   const whFilterToggle = $('#whFilterToggle');
   const whFiltersRow = $('#whFiltersRow');
+  const whSizeRow = $('#whSizeRow');
   if (whFilterToggle && whFiltersRow) {
     whFilterToggle.addEventListener('click', () => {
       whFiltersRow.hidden = !whFiltersRow.hidden;
+      // ONL-010. The size filter lives behind the same button: it is the same kind of
+      // thing — the user's own answer to "what am I willing to see" — and a second
+      // disclosure control for one more row would be clutter.
+      if (whSizeRow) whSizeRow.hidden = whFiltersRow.hidden;
       whFilterToggle.classList.toggle('suggested', !whFiltersRow.hidden);
     });
   }
+
+  // ONL-010. Switch, mode, and — in manual mode — the list of screen sizes to accept.
+  bindSizeFilterControls();
 
   document.querySelectorAll('.wh-purity-cb').forEach(cb => {
     cb.addEventListener('change', () => {
@@ -4145,6 +4417,8 @@ function initLibrary() {
   });
   const whMoreBtn = $('#whMore');
   if (whMoreBtn) whMoreBtn.addEventListener('click', loadMoreOnline);
+  // ONL-003. Reaching the end of the feed asks for the next page by itself.
+  setupOnlineAutoLoad();
 
   initLibraryDragDrop();
 }
@@ -4188,6 +4462,68 @@ function initLibraryDragDrop() {
 }
 
 // ---- External online providers ----
+// ONL-010. The user's own answer to "only show me what would fit my screen".
+//
+// `auto` needs nothing typed: the targets are the monitors that exist, so plugging in a
+// second screen changes what the feed shows without anybody editing a list. `manual` is
+// for the case automatic cannot cover — wanting wallpapers for a screen you do not have
+// in front of you right now.
+function sizeFilterState() {
+  const raw = (config && config.onlineSizeFilter) || {};
+  return SizeFilter.normalizeFilter(raw);
+}
+
+function renderSizeFilterControls() {
+  const on = $('#whSizeOn');
+  const modeWrap = $('#whSizeModeWrap');
+  const mode = $('#whSizeMode');
+  const targets = $('#whSizeTargets');
+  const note = $('#whSizeNote');
+  if (!on) return;
+  const state = sizeFilterState();
+  on.checked = state.enabled;
+  if (modeWrap) modeWrap.hidden = !state.enabled;
+  if (mode) mode.value = state.mode;
+  if (targets) {
+    targets.hidden = !state.enabled || state.mode !== 'manual';
+    if (document.activeElement !== targets) targets.value = SizeFilter.formatTargets(state.targets);
+  }
+  if (note) {
+    // Say what is actually being asked for. In automatic mode that is the monitors, and
+    // naming them is the difference between a switch you trust and one you guess at.
+    const list = SizeFilter.effectiveTargets(state, monitorList);
+    note.textContent = state.enabled && list.length
+      ? SizeFilter.formatTargets(list)
+      : (state.enabled ? t('online.sizeNoTargets') : '');
+  }
+}
+
+async function saveSizeFilter(patch) {
+  const next = SizeFilter.normalizeFilter({ ...sizeFilterState(), ...patch });
+  config = await window.api.setConfig({ onlineSizeFilter: next });
+  renderSizeFilterControls();
+  // The feed already on screen was chosen under the old rule, so it has to be asked for
+  // again — this is the user's setting, and it applies to a search exactly as it applies
+  // to the front page.
+  if (LIB.filter === 'online' && ONLINE.view === 'search') doOnlineSearch(true);
+}
+
+function bindSizeFilterControls() {
+  const on = $('#whSizeOn');
+  const mode = $('#whSizeMode');
+  const targets = $('#whSizeTargets');
+  if (on) on.addEventListener('change', () => saveSizeFilter({ enabled: on.checked }));
+  if (mode) mode.addEventListener('change', () => saveSizeFilter({ mode: mode.value }));
+  if (targets) {
+    // On commit rather than on every keystroke: a half-typed "384" is a target too, and
+    // re-running the search for it would be a request per character.
+    const commit = () => saveSizeFilter({ targets: SizeFilter.parseTargets(targets.value) });
+    targets.addEventListener('change', commit);
+    targets.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); });
+  }
+  renderSizeFilterControls();
+}
+
 function updatePurityToggle() {
   document.querySelectorAll('.wh-purity-cb').forEach(cb => {
     const p = cb.dataset.purity;
@@ -4885,9 +5221,16 @@ async function renderOnline() {
   applyOnlineSourceUI(sources);
   await refreshOnlineAccount(sources, isCurrent);
   if (!isCurrent()) return;
-  if (sources.internet && !INTERNET.statusFetched) {
-    try { const st = await window.api.internetStatus(); INTERNET.nsfwAvailable = !!st.nsfwAvailable; }
-    catch { INTERNET.nsfwAvailable = false; }
+  // ONL-016. Asked whichever source is switched on, not only for the public sites: this
+  // answer also carries what each site is CALLED, and "Details" has to name the site
+  // even for a card from our own catalogue. Nothing here goes out to the network — main
+  // computes both fields from the provider registry it already holds.
+  if (!INTERNET.statusFetched) {
+    try {
+      const st = await window.api.internetStatus();
+      INTERNET.nsfwAvailable = !!st.nsfwAvailable;
+      INTERNET.providerNames = providerNameMap(st.providers);
+    } catch { INTERNET.nsfwAvailable = false; }
     if (!isCurrent()) return;
     INTERNET.statusFetched = true;
   }
@@ -4895,7 +5238,11 @@ async function renderOnline() {
   const sortEl = $('#whSort'); if (sortEl && sortEl.value !== INTERNET.sort) sortEl.value = INTERNET.sort;
   if (ONLINE.view === 'favorites') { loadFavoritesFeed(); return; }
   if (!ONLINE.loaded) { doOnlineSearch(true); return; }
-  setLibViewHeader(ONLINE.entries.length);
+  // BUG-040. The feed survived the trip to another rail, but its grid did not — the DOM
+  // is torn down on the way out. Rebuild it from the cards we kept, then the remembered
+  // position has somewhere to land.
+  renderOnlineEntries({ fresh: true });
+  finalizeOnlineFeed();
 }
 
 // Account chip + favorites toggle reflect the session (only when Znada Cloud is reachable).
@@ -4945,6 +5292,9 @@ async function doOnlineSearch(reset) {
     // it: the bookmarks belong to the question that was asked.
     INTERNET.resume = null;
     ONLINE.loaded = true;
+    // ONL-003. A different question deserves a fresh benefit of the doubt: whatever made
+    // the previous feed give up says nothing about this one.
+    onlineAutoLoad.reset();
     replaceOnlineEntries([], { fresh: true });
   }
   ONLINE.loading = true; if (more) more.disabled = true;
@@ -5026,14 +5376,24 @@ function finalizeOnlineFeed() {
   setLibViewHeader(n);
   if (note) note.textContent = n ? '' : t('online.noResults');
   const hasMore = !!INTERNET.resume;
-  if (more) more.hidden = !hasMore;
+  // ONL-003. The button is now the FALLBACK, not the way. It stays out of sight while
+  // scrolling keeps the feed filling itself, and comes back the moment the feed stops
+  // moving — which is sooner than "gave up", and measuring the real app is what showed
+  // why: a round that adds nothing leaves the page the same height, the end of the feed
+  // never leaves the viewport, and the watcher has nothing new to report. The feed would
+  // just stop, with no button and no explanation.
+  if (more) more.hidden = !hasMore || !onlineAutoLoad.stalled();
 }
 
-// "Показать ещё" advances every active source that still has a next page.
+// "Показать ещё" advances every active source that still has a next page. Reaching the
+// end of the feed calls this same function — ONL-003 adds a caller, not a second way of
+// loading, so the one place that owns the busy flag and the generation check stays one.
 async function loadMoreOnline() {
   if (LIB.filter !== 'online' || ONLINE.loading || ONLINE.view === 'favorites') return;
   const more = $('#whMore'); if (more) more.disabled = true;
   ONLINE.loading = true;
+  const before = ONLINE.entries.length;
+  onlineAutoLoad.started(Date.now());
   const generation = ONLINE.generation;
   // Same reason as in doOnlineSearch: a throw here would leave the button disabled and
   // the flag set, and this is the very button that would have to clear them.
@@ -5045,11 +5405,47 @@ async function loadMoreOnline() {
   ONLINE.loading = false; if (more) more.disabled = false;
   if (failed) {
     console.error('online more:', failed);
+    // Stop loading on scroll at once. Retrying something that just threw, every time the
+    // end of the feed comes back into view, is the storm this feature must not become.
+    onlineAutoLoad.failed();
+    finalizeOnlineFeed();
     const note = $('#whNote');
     if (note) note.textContent = t('online.error', { e: 'render' });
     return;
   }
+  // How many cards actually reached the feed — not how many the sites returned. A page
+  // of things we already had changes nothing on screen and has to count as a round that
+  // went nowhere, or the bottom of the list would ask again for ever.
+  onlineAutoLoad.finished(ONLINE.entries.length - before);
   finalizeOnlineFeed();
+}
+
+// ONL-003. Watches the strip below the grid. When it comes into view — with a margin, so
+// the next page is on its way before the user hits the very bottom — one more round is
+// asked for, under every condition `onlineAutoLoad` insists on.
+//
+// Deliberately anchored to the element AFTER the grid rather than to any card: the grid
+// is virtualized, its cards come and go, and its height is a spacer. This strip is real,
+// it is always at the end, and it is the same element that holds the button.
+function setupOnlineAutoLoad() {
+  const anchor = document.querySelector('.lib-online-more');
+  const root = libScrollRoot();
+  if (!anchor || !root || typeof IntersectionObserver !== 'function') return;
+  const observer = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    maybeAutoLoadOnline();
+  }, { root, rootMargin: '600px 0px' });
+  observer.observe(anchor);
+}
+
+function maybeAutoLoadOnline() {
+  if (!onlineAutoLoad.shouldLoad({
+    active: LIB.filter === 'online' && ONLINE.view === 'search' && activePage === 'library',
+    hasMore: !!INTERNET.resume,
+    loading: ONLINE.loading,
+    now: Date.now(),
+  })) return;
+  loadMoreOnline();
 }
 
 function setInternetCardThumbnail(card, item) {
@@ -5763,7 +6159,13 @@ async function init() {
     // modifier (e.g. Shift for range-select) would light up its focus ring out of nowhere.
     b.addEventListener('click', () => { showPage(b.dataset.page); b.blur(); });
   });
-  $('#btnPrefs').addEventListener('click', (e) => { showPage('prefs'); e.currentTarget.blur(); });
+  $('#btnPrefs').addEventListener('click', (e) => {
+    // BUG-041. Та же кнопка закрывает. Запоминаем вкладку ДО перехода — после
+    // showPage('prefs') activePage уже 'prefs', и возвращаться будет некуда.
+    if (activePage !== 'prefs') pageBeforePrefs = activePage;
+    showPage(gearTargetPage(activePage, pageBeforePrefs));
+    e.currentTarget.blur();
+  });
 
   // ---- home: switch to the next wallpaper now ----
   const btnNextWall = $('#btnNextWall');
@@ -5925,6 +6327,10 @@ async function init() {
   ['#previewLight', '#previewDark'].forEach((sel) => {
     const el = $(sel);
     if (el) {
+      // SLIDE-001. Bound once, here, rather than on every redraw: the element survives
+      // redraws and only its `data-bg-path` changes, so the menu reads the current
+      // picture at the moment it opens instead of one captured earlier.
+      bindPreviewContextMenu(el, sel === '#previewDark' ? 'dark' : 'light');
       el.addEventListener('click', () => {
         if (el.classList.contains('empty')) {
           showPage('library');

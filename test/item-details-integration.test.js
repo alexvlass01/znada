@@ -9,6 +9,7 @@ const main = read('main.js');
 const preload = read('preload.js');
 const renderer = read('renderer', 'renderer.js');
 const styles = read('renderer', 'styles.css');
+const cardDetails = read('renderer', 'card-details.js');
 const locales = ['en', 'ru', 'uk'].map((locale) => JSON.parse(read('locales', `${locale}.json`)));
 
 let passed = 0;
@@ -18,7 +19,7 @@ function ok(name, condition) {
   console.log('  OK ' + name);
 }
 
-const detailsStart = renderer.indexOf('async function openCardDetails(record)');
+const detailsStart = renderer.indexOf('async function openCardDetails(subject, record = null)');
 // ONL-009 replaced openLocalCardContextMenu with the shared card menu, so the block
 // now ends at the first thing after the details sheet.
 const detailsEnd = renderer.indexOf('// ONL-009. One menu for every card in this window', detailsStart);
@@ -105,14 +106,18 @@ ok('source and clipboard actions surface failures instead of rejecting silently'
   && !detailsBlock.includes("b.className = 'btn'")
   && detailsBlock.includes('try { ok = (await handler()) !== false; } catch { ok = false; }'));
 
+// ONL-016 moved both of these decisions into renderer/card-details.js, where they are
+// pure and tested. They are still checked here, because this file is what proves the
+// sheet is WIRED to them: a rule that moved into a module nobody calls has not moved.
 ok('non-HTTP Cloud provenance stays readable without a broken open-source action',
-  detailsBlock.includes('const sourceIsOpenable')
-  && renderer.includes("low.startsWith('znada:') || low.startsWith('lumina:') ? 'Znada' : raw")
-  && detailsBlock.includes('if (sourceIsOpenable)'));
+  cardDetails.includes("low.startsWith('znada:') || low.startsWith('lumina:') ? 'Znada' : raw")
+  // The row falls back to plain text, and the footer button is simply not offered.
+  && cardDetails.includes("kind: isOpenableUrl(item.source) ? 'link' : 'text'")
+  && detailsBlock.includes("if (row.kind === 'link')"));
 
 ok('very large tag sets stay bounded and report the hidden count',
-  detailsBlock.includes('const maxVisibleTags = 80')
-  && detailsBlock.includes("t('library.moreTags', { n: item.tags.length - maxVisibleTags })")
+  cardDetails.includes('function tagList(value, max = 80)')
+  && detailsBlock.includes("t('library.moreTags', { n: row.hidden })")
   && locales.every((locale) => typeof locale.library.moreTags === 'string'
     && locale.library.moreTags.includes('{n}')));
 
@@ -127,12 +132,19 @@ ok('very large tag sets stay bounded and report the hidden count',
   ok('details appear in the local context menu without replacing existing actions',
     offered.includes('details')
     && ['assign', 'favorite', 'tags', 'remove'].every((id) => offered.includes(id))
-    && renderer.includes('details: () => openCardDetails(record),'));
-  // The sheet reads metadata from a file on disk, so it stays local-only for now;
-  // making it work for a card with no file is its own task.
-  ok('details are not offered for an online card that has no file yet',
-    !CardActions.actionsFor(CardActions.internetSubject({ page: 'https://x/1', full: 'https://x/1.jpg' }))
+    && renderer.includes('details: () => openCardDetails(subject, record),'));
+  // ONL-016. The sheet no longer reads a file to describe a card, so a picture on a site
+  // is described like any other. This was the owner's complaint on 2026-09-02: he wanted
+  // to know where an online picture is from and how big it is, before downloading it.
+  ok('details ARE offered for an online card that has no file yet',
+    CardActions.actionsFor(CardActions.internetSubject({ page: 'https://x/1', full: 'https://x/1.jpg' }))
       .map((a) => a.id).includes('details'));
+  // And the sheet must stop before the disk read for such a card, or it would ask about
+  // a file that does not exist and report the picture as missing.
+  ok('an online sheet is finished without touching the disk',
+    detailsBlock.includes('if (!model.readsDisk) return;')
+    && detailsBlock.indexOf('if (!model.readsDisk) return;')
+      < detailsBlock.indexOf('await window.api.itemDetails(filePath)'));
 }
 
 ok('the modal stays above app popovers while toasts stay visible above it',

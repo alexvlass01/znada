@@ -31,6 +31,7 @@ const PRIVATE_SENTINELS = Object.freeze([
   'Znada-DEV.bat',
   'Znada-DIAG.bat',
   'Znada-Review.bat',
+  'Znada-Check.bat',
   path.join('scripts', 'migrate-profile.js'),
 ]);
 

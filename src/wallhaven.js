@@ -37,6 +37,11 @@ function buildSearchUrl(opts = {}) {
   p.set('sorting', opts.sorting || 'date_added');
   p.set('order', opts.order || 'desc');
   p.set('page', String(opts.page && opts.page > 0 ? opts.page : 1));
+  // ONL-010. Narrowing, not deciding: `atleast` is the smallest floor that still covers
+  // every target, and `ratios` the list of shapes. The exact judgement happens on our
+  // side afterwards, so a loose bound here can only cost bandwidth, never correctness.
+  if (opts.atleast) p.set('atleast', String(opts.atleast));
+  if (opts.ratios) p.set('ratios', String(opts.ratios));
   if (opts.apikey) p.set('apikey', String(opts.apikey));
   return `${API_BASE}?${p.toString()}`;
 }
@@ -53,10 +58,23 @@ function mapItem(w) {
     provider: 'wallhaven',
     page: w.url || '',                       // wallhaven.cc page (attribution)
     full: w.path,                            // full-resolution image URL (download this)
-    thumb: thumbs.small || thumbs.large || w.path,
+    // BUG-039. `original` — превью В ПРОПОРЦИЯХ ФОТОГРАФИИ, а `small` обрезан под
+    // фиксированные 300x200: у высокой картинки это её середина крупным планом, и
+    // просмотрщик такой кадр показать честно не может — он его отбраковывает и ждёт
+    // полную. Замер 2026-09-03 по живой ленте: `original` 300x169 и 5–19 КБ, `large`
+    // 432x243 и 7–22 КБ, оба совпадают по форме; `small` расходится на 16% и весит
+    // столько же. То есть обрезанный вариант не давал ни скорости, ни правды.
+    // Обрезанный `small` остаётся ПОСЛЕДНИМ запасным перед полной картинкой: для сетки
+    // он дёшев, а просмотрщик его отбракует по форме и дождётся полной — то есть хуже,
+    // чем `original`, но много лучше, чем тянуть оригинал ради миниатюры.
+    thumb: thumbs.original || thumbs.large || thumbs.small || w.path,
     resolution: w.resolution || '',
     width,
     height,
+    // ONL-016. Reported by this site in bytes, so "Details" can answer "how big is it"
+    // before anything is downloaded. Not every site can: Gelbooru has no size field at
+    // all, and a card that cannot say leaves this at 0 rather than guessing.
+    fileSize: Number(w.file_size) || 0,
     fileType: w.file_type || '',
     // Measured 2026-08-25 over 96 cards: this site serves only jpeg and png. Reported
     // anyway, so the handler — not this file — decides what Znada can use.
@@ -152,6 +170,16 @@ const PROVIDER = Object.freeze({
     // ONL-015. Every card from here states its own format, so the handler can judge it
     // against the one list. A site that cannot say must vouch for its content instead.
     cardFormat: true,
+    // ONL-010. What this site can NARROW on its own, measured against the live API on
+    // 2026-09-03: `atleast` and `ratios` both work, and `ratios` takes a list. It is an
+    // optimisation and never the guarantee — every card is still checked here, because a
+    // server told the loosest bound covering several targets cannot decide the exact one.
+    sizeFilter: Object.freeze({
+      resolution: true, ratio: true, ratioList: true,
+      // Deliberately zero: this API has no page-size parameter at all — a page is
+      // whatever the site decides to send — so there is nothing to widen.
+      maxPageSize: 0,
+    }),
   }),
   requestHeaders: Object.freeze({}),
   // The window may load these images itself: no Referer is required, so nothing has to
@@ -168,6 +196,41 @@ const PROVIDER = Object.freeze({
 //
 // `params.limit` is ignored on purpose: this API has no page-size parameter at all, and
 // a page is whatever the site decides to send.
+// ONL-010. This site's own spelling of the loosest bound covering every target. It takes
+// a LIST of shapes, so several monitors cost nothing extra; `atleast` is a single floor,
+// so the smallest one is sent and the exact judgement is made against the card.
+// Ratios are given as `WxH` — the site's own notation — from the ratio itself, so an
+// unusual screen still produces something it understands.
+function sizeParams(hints) {
+  if (!hints || typeof hints !== 'object') return {};
+  const out = {};
+  const width = Math.floor(Number(hints.minWidth) || 0);
+  const height = Math.floor(Number(hints.minHeight) || 0);
+  if (width > 0 && height > 0) out.atleast = `${width}x${height}`;
+  const ratios = Array.isArray(hints.ratios) ? hints.ratios : [];
+  if (hints.everyTargetHasRatio && ratios.length) {
+    const spelled = ratios.map(ratioToPair).filter(Boolean);
+    if (spelled.length) out.ratios = spelled.join(',');
+  }
+  return out;
+}
+
+// 1.7777… → "16x9". Approximated over small denominators, because the site wants whole
+// numbers and a screen's ratio is always close to one of these.
+function ratioToPair(ratio) {
+  const value = Number(ratio);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  let best = null;
+  for (let h = 1; h <= 20; h++) {
+    const w = Math.round(value * h);
+    if (w < 1) continue;
+    const off = Math.abs((w / h) - value) / value;
+    if (!best || off < best.off) best = { w, h, off };
+    if (off === 0) break;
+  }
+  return best && best.off <= 0.02 ? `${best.w}x${best.h}` : '';
+}
+
 async function search(params, ctx) {
   const o = params || {};
   const key = (ctx && ctx.credentials && ctx.credentials.key) || '';
@@ -183,6 +246,7 @@ async function search(params, ctx) {
     categories: o.categories || '111',
     sorting: o.sort || o.sorting || 'date_added',
     page: o.page || 1,
+    ...sizeParams(o.sizeHints),
     apikey: wantNsfw ? key : '',
   });
   const res = await ctx.fetchJson(url, { timeoutMs: 15000 });
@@ -222,6 +286,8 @@ module.exports = {
   purityMask,
   categoryMask,
   buildSearchUrl,
+  sizeParams,
+  ratioToPair,
   buildWallpaperUrl,
   tagsFromWallpaper,
   mapItem,

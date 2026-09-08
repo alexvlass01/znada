@@ -223,6 +223,33 @@ function settingKeysUsedByRenderer() {
     await m.invoke('set-config', { onlinePurity: { sfw: true, sketchy: true, nsfw: false } });
     live = m.__test.getConfig();
     assert.deepStrictEqual(live.onlinePurity, { sfw: true, sketchy: true, nsfw: false });
+
+    // ONL-010. A real target list is accepted and stored in the one canonical shape.
+    await m.invoke('set-config', {
+      onlineSizeFilter: { enabled: true, mode: 'manual', targets: [{ minWidth: 1920, minHeight: 1080 }] },
+    });
+    live = m.__test.getConfig();
+    assert.strictEqual(live.onlineSizeFilter.enabled, true);
+    assert.strictEqual(live.onlineSizeFilter.targets.length, 1);
+    assert.strictEqual(live.onlineSizeFilter.targets[0].minWidth, 1920);
+
+    // And a list that does not survive validation is refused OUTRIGHT rather than
+    // quietly stored as fewer targets — silently dropping one would filter by a rule the
+    // user never asked for, on a setting whose whole job is to decide what is hidden.
+    for (const bad of [{}, 'wide', { minWidth: 0 }, null]) {
+      await assert.rejects(
+        () => m.invoke('set-config', { onlineSizeFilter: { enabled: true, targets: [bad] } }),
+        REJECTED,
+        `a target of ${JSON.stringify(bad)} was accepted`,
+      );
+    }
+    await assert.rejects(
+      () => m.invoke('set-config', { onlineSizeFilter: { targets: 'everything' } }), REJECTED);
+    await assert.rejects(
+      () => m.invoke('set-config', { onlineSizeFilter: { mode: 'sideways' } }), REJECTED);
+    // Nothing above may have changed what was stored by the accepted call.
+    live = m.__test.getConfig();
+    assert.strictEqual(live.onlineSizeFilter.targets.length, 1);
   });
 
   await test('wallpaperSchedule keeps its normalisation and its autoSwitch mirror', async (dir) => {

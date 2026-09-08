@@ -62,6 +62,12 @@ ok('mapItem: a still picture is reported as one', (() => {
   return ['jpg', 'jpeg', 'png'].includes(still.format);
 })());
 ok('mapItem: missing downloadable URL is skipped', G.mapItem({ ...sample, file_url: '' }) === null);
+// ONL-016. Checked against the live API on 2026-09-03: a Gelbooru post carries no size
+// field of any kind, so the card states 0 and "Details" shows no size row rather than an
+// empty one. Pinned so that a later "let's just read post.file_size" is caught: the field
+// does not exist, and inventing it would put a wrong weight next to a real picture.
+ok('mapItem: states 0 for a size this site does not report',
+  mapped.fileSize === 0 && G.mapItem({ ...sample, file_size: 999 }).fileSize === 0);
 
 const response = { '@attributes': { limit: 1, offset: 2, count: 5 }, post: [sample] };
 const parsed = G.parseSearch(response, { page: 3, limit: 1 });

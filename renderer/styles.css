@@ -1688,6 +1688,11 @@ html.dark .lib-folder-front { fill: #d99a34; }
   background: var(--card); border: 1px solid var(--card-border);
   border-radius: 10px; box-shadow: var(--shadow);
   padding: 6px; min-width: 224px;
+  /* BUG-038. Without a ceiling the tag chips set the width: measured on a real profile,
+     the same window was 309px wide on a photo with no tags and 932px — almost the whole
+     app — on one with 25. Two windows that far apart do not read as the same window, and
+     the destructive command at the bottom landed somewhere new every time. */
+  max-width: 380px;
 }
 .lib-popup-title { font-size: 12px; color: var(--text-dim); padding: 4px 8px 6px; }
 .lib-popup-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; }
@@ -1697,6 +1702,9 @@ html.dark .lib-folder-front { fill: #d99a34; }
   border: none; background: var(--btn-bg); color: var(--text);
   font-family: inherit; font-size: 12.5px;
   padding: 6px 8px; border-radius: 7px; cursor: pointer; text-align: center;
+  /* Was set only on the icon variant. Every slot button can now carry a count badge
+     beside its label, and they have to sit on one centred line. */
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
 /* --- Details sheet (card properties) ---------------------------------- */
 .lib-modal-backdrop {
@@ -1843,11 +1851,39 @@ html.dark .lib-folder-front { fill: #d99a34; }
 }
 
 /* Theme buttons carry a light/dark glyph, so centre icon + label as a row. */
-.lib-popup-btn.with-ic { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.lib-popup-btn.with-ic { gap: 5px; }
 .lib-popup-btn:hover { background: var(--btn-bg-hover); }
 .lib-popup-sep { height: 1px; background: var(--card-border); margin: 6px 4px; }
 .lib-popup-btn.danger { width: 100%; color: var(--destructive); }
 .lib-popup-btn.danger:hover { background: rgba(224, 27, 36, 0.12); }
+/* BUG-037. How many photos this monitor-and-theme spot already holds. An empty spot
+   carries no badge at all — a "0" would read as a broken counter rather than as
+   emptiness. */
+.lib-popup-count {
+  font-size: 11px; font-weight: 600; line-height: 1;
+  padding: 2px 5px; border-radius: 20px;
+  background: var(--btn-bg-hover); color: var(--text-dim);
+}
+/* This very photo is one of them, so pressing again would change nothing. Said with the
+   badge's colour and NOT with an outline: the window focuses its first button when it
+   opens, and that focus ring is an accent outline too — two different meanings drawn the
+   same way, which was visible the moment the first real screenshot was taken. */
+.lib-popup-btn.is-here .lib-popup-count { background: var(--accent); color: #fff; }
+/* ONL-010. The size filter's own row, under the content one and behind the same button. */
+.lib-size-input {
+  flex: 0 1 220px; min-width: 140px;
+  border: 1px solid var(--card-border); background: var(--btn-bg); color: var(--text);
+  font-family: inherit; font-size: 12.5px;
+  padding: 5px 8px; border-radius: 7px;
+}
+.lib-size-note { font-size: 12px; color: var(--text-dim); }
+.select-wrap.size-mode { flex: 0 0 auto; }
+
+.lib-popup-check {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 8px 3px; font-size: 12.5px; color: var(--text-dim); cursor: pointer;
+}
+.lib-popup-check input { margin: 0; cursor: pointer; }
 
 .lib-context-menu {
   min-width: 190px; max-width: min(280px, calc(100vw - 16px));
@@ -1933,8 +1969,25 @@ html.dark .lib-folder-front { fill: #d99a34; }
   color: var(--text-dim); font-size: 11.5px; line-height: 1.35;
 }
 .lib-tag-empty[hidden] { display: none; }
-.lib-popup-tags { padding: 2px 4px; }
-.lib-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+/* BUG-038. `position: relative` so the tag suggestions can hang OVER the window instead
+   of pushing everything below them down — the red "remove from library" button sits
+   below, and it must not move while the user is typing right above it. */
+.lib-popup-tags { padding: 2px 4px; position: relative; }
+.lib-chips {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px;
+  /* Two rows, then it scrolls. The window's height stops being a function of how many
+     tags a photo happens to carry — 77 of the owner's 274 records have more than ten,
+     and it used to swing by 84 points on that alone. */
+  max-height: 52px; overflow-y: auto;
+  /* The default Windows scrollbar is as tall as this whole area, so inside 52 points it
+     is drawn as two arrows with a stub between them and reads as broken. The same thin
+     bar the tag rail already uses, and the wheel keeps working as it did. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--switch-off) transparent;
+}
+.lib-chips::-webkit-scrollbar { width: 6px; }
+.lib-chips::-webkit-scrollbar-thumb { background: var(--switch-off); border-radius: 4px; }
+.lib-chips::-webkit-scrollbar-track { background: transparent; }
 .lib-chips:empty { display: none; }
 .lib-chip {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1955,6 +2008,8 @@ html.dark .lib-folder-front { fill: #d99a34; }
 
 /* Tag autocomplete dropdown (by popularity) under the tag input. */
 .lib-tag-suggest {
+  /* Overlays the window rather than growing it — see the note on .lib-popup-tags. */
+  position: absolute; left: 4px; right: 4px; z-index: 3;
   margin-top: 4px; max-height: 128px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 1px;
   background: var(--bg); border: 1px solid var(--card-border);

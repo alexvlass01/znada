@@ -255,6 +255,25 @@ ok('valid onlineSort survives; purity coerced to booleans', (() => {
   const c = C.load(p('online_params.json'));
   return c.onlineSort === 'toplist' && c.onlinePurity.sfw === false && c.onlinePurity.sketchy === false && c.onlinePurity.nsfw === true;
 })());
+// ONL-010. The size filter is normalized on LOAD, not only when the window sets it — a
+// hand-edited or half-written file must not reach the matcher as it stands.
+ok('fresh defaults: the size filter is off and reads the monitors',
+  fresh.onlineSizeFilter.enabled === false && fresh.onlineSizeFilter.mode === 'auto'
+  && Array.isArray(fresh.onlineSizeFilter.targets) && fresh.onlineSizeFilter.targets.length === 0);
+fs.writeFileSync(p('online_size.json'), JSON.stringify({
+  onlineSizeFilter: {
+    enabled: 'yes', mode: 'sideways',
+    targets: [{ minWidth: 1920, minHeight: 1080 }, { minWidth: 1920, minHeight: 1080 }, {}, 'big'],
+  },
+}));
+ok('a stored size filter is normalized on load: junk mode, junk flag and junk targets', (() => {
+  const c = C.load(p('online_size.json'));
+  const f = c.onlineSizeFilter;
+  // 'yes' is not true — a filter must never switch itself on because a field was a string.
+  return f.enabled === false && f.mode === 'auto'
+    && f.targets.length === 1 && f.targets[0].minWidth === 1920
+    && Math.abs(f.targets[0].ratio - 16 / 9) < 1e-9;
+})());
 fs.writeFileSync(p('online_bad.json'), JSON.stringify({ onlineSort: 'banana', onlinePurity: { sfw: false, sketchy: false, nsfw: false } }));
 ok('bad onlineSort → date_added; all-off purity → sfw forced on', (() => {
   const c = C.load(p('online_bad.json'));

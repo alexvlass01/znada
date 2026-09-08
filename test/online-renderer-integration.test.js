@@ -85,6 +85,10 @@ const loadInternetResults = vm.runInNewContext(`(${match[0]})`, context);
       setLibViewHeader: () => {},
       updatePurityToggle: () => {},
       onlineGridDescriptor: (kind, item) => ({ kind, item }),
+      // ONL-003. The real loader now also reports each round to the scroll guard. It is a
+      // real one rather than a stub, so these cases keep exercising the same decisions
+      // the app makes — its own behaviour is covered in test/auto-load.test.js.
+      onlineAutoLoad: require('../renderer/auto-load').createAutoLoader(),
       window: { api: { internetSearch: () => reply } },
     };
     vm.createContext(ctx);

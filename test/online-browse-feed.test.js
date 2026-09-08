@@ -939,6 +939,92 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
   }
 
 
+  // --- ONL-010: only what fits the screen ---------------------------------
+  // Through the real handler, because the interesting parts are exactly what the modules
+  // cannot see: what left the process, and what survived on the way back.
+  //
+  // The fixture makes this easy to read: Wallhaven answers 3840×2160 and the booru
+  // 1920×1080 — the same shape, one big and one small — so a target of 3840×2160 keeps
+  // one site's cards and drops the other's on the floor rule alone.
+  {
+    const sizeFilter = {
+      enabled: true, mode: 'manual', targets: [{ minWidth: 3840, minHeight: 2160 }],
+    };
+
+    {
+      const { main } = setup('feed-size-off');
+      const net = installFetch(answerFor);
+      const res = await main.invoke('internet-search', { q: '', page: 1, sort: 'date_added', purity: { sfw: true }, browse: true });
+      ok('with the filter off both sites\' cards come through',
+        res.items.some((i) => i.provider === 'wallhaven') && res.items.some((i) => i.provider !== 'wallhaven'));
+      ok('and no site is asked to narrow anything',
+        wh(net.urls).every((u) => !u.includes('atleast')) && booru(net.urls).every((u) => !u.includes('width')));
+      net.restore();
+    }
+
+    {
+      const { main } = setup('feed-size-on', { onlineSizeFilter: sizeFilter });
+      const net = installFetch(answerFor);
+      const res = await main.invoke('internet-search', { q: '', page: 1, sort: 'date_added', purity: { sfw: true }, browse: true });
+      ok('the sites are asked to narrow, each in its own spelling',
+        wh(net.urls).some((u) => param(u, 'atleast') === '3840x2160')
+        && booru(net.urls).some((u) => decodeURIComponent(u).includes('width:>=3840')));
+      ok('a picture smaller than the target is dropped even though its shape matches',
+        res.items.length > 0 && res.items.every((i) => i.width >= 3840 && i.height >= 2160));
+      net.restore();
+    }
+
+    // The owner's rule, and the one a mutation walked straight through the first time:
+    // this is the USER'S setting, so it holds for a typed search exactly as for the
+    // front page. Curation is what stops at the search box; a filter is not curation.
+    {
+      const { main } = setup('feed-size-search', { onlineSizeFilter: sizeFilter });
+      const net = installFetch(answerFor);
+      const res = await main.invoke('internet-search', { q: 'sky', page: 1, sort: 'date_added', purity: { sfw: true }, browse: false });
+      ok('a typed search is filtered too, and the sites are told so',
+        res.browsing === false
+        && wh(net.urls).some((u) => param(u, 'atleast') === '3840x2160')
+        && res.items.every((i) => i.width >= 3840 && i.height >= 2160));
+      net.restore();
+    }
+
+    // ONL-017, on the wire: the site that cannot narrow by shape is asked for its biggest
+    // page while the filter is on, and the ones that can are not. One request instead of
+    // several, decided from the declarations rather than from any site's name.
+    {
+      const { main } = setup('feed-size-pagesize', { onlineSizeFilter: sizeFilter });
+      const net = installFetch(answerFor);
+      await main.invoke('internet-search', { q: '', page: 1, sort: 'date_added', purity: { sfw: true }, browse: true });
+      const gel = net.urls.filter((u) => u.includes('gelbooru.com'));
+      ok('the shape-blind site is asked for its biggest page while the filter is on',
+        gel.length > 0 && gel.every((u) => param(u, 'limit') === '100'));
+      ok('and the site that narrows by shape keeps the ordinary page',
+        wh(net.urls).length > 0 && wh(net.urls).every((u) => !u.includes('limit=100')));
+      net.restore();
+    }
+    {
+      const { main } = setup('feed-size-pagesize-off');
+      const net = installFetch(answerFor);
+      await main.invoke('internet-search', { q: '', page: 1, sort: 'date_added', purity: { sfw: true }, browse: true });
+      const gel = net.urls.filter((u) => u.includes('gelbooru.com'));
+      ok('with the filter off nobody is asked for a bigger page',
+        gel.length > 0 && gel.every((u) => param(u, 'limit') !== '100'));
+      net.restore();
+    }
+
+    // A target nothing can satisfy must end in a short page, not in an endless hunt.
+    {
+      const { main } = setup('feed-size-empty', {
+        onlineSizeFilter: { enabled: true, mode: 'manual', targets: [{ minWidth: 20000, minHeight: 12000 }] },
+      });
+      const net = installFetch(answerFor);
+      const res = await main.invoke('internet-search', { q: '', page: 1, sort: 'date_added', purity: { sfw: true }, browse: true });
+      ok('when nothing fits, the page is empty and the hunt is bounded rather than endless',
+        res.items.length === 0 && wh(net.urls).length <= 6 && booru(net.urls).length <= 6);
+      net.restore();
+    }
+  }
+
   unloadMain();
   console.log(`\nAll ${passed} online browse-feed tests passed.`);
 })().catch((err) => { console.error(err); process.exit(1); });

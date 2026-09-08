@@ -58,11 +58,30 @@ function orderTag(sort) {
   return '';
 }
 
+// ONL-010. The loosest size bound that still covers every target, spelled the way this
+// site spells it. Only a narrowing: the exact judgement is made against the card.
+function sizeTags(hints) {
+  if (!hints || typeof hints !== 'object') return [];
+  const out = [];
+  const width = Number(hints.minWidth);
+  const height = Number(hints.minHeight);
+  const ratio = Number(hints.minRatio);
+  if (Number.isFinite(width) && width > 0) out.push(`width:>=${Math.floor(width)}`);
+  if (Number.isFinite(height) && height > 0) out.push(`height:>=${Math.floor(height)}`);
+  // A shape bound only when EVERY target names one — otherwise it would cut away the
+  // pictures a target without a shape was meant to allow.
+  if (hints.everyTargetHasRatio && Number.isFinite(ratio) && ratio > 0) {
+    out.push(`ratio:>=${(ratio * 0.98).toFixed(3)}`);
+  }
+  return out;
+}
+
 function buildSearchTags(opts = {}) {
   return [
     ...queryTags(opts.q),
     ratingTag(opts.purity),
     fileTypeTag(opts.formats),
+    ...sizeTags(opts.sizeHints),
     'mpixels:1..',
     orderTag(opts.sorting),
   ].filter(Boolean).join(' ');
@@ -135,6 +154,8 @@ function mapItem(post) {
     resolution: width > 0 && height > 0 ? `${width}x${height}` : '',
     width,
     height,
+    // ONL-016. This site reports the size in bytes; Gelbooru does not report it at all.
+    fileSize: Number(post.file_size) || 0,
     fileType: `image/${format === 'jpg' ? 'jpeg' : format}`,
     format,
     purity: purityName(post.rating),
@@ -252,6 +273,15 @@ const PROVIDER = Object.freeze({
     tagSuggest: true,
     // ONL-015. Cards from here carry their format — see the note in src/wallhaven.js.
     cardFormat: true,
+    // ONL-010. Measured on the live API 2026-09-03: `width:>=`, `height:>=` and
+    // `ratio:>=` all work, and three terms at once are accepted. One bound at a time, so
+    // no list.
+    sizeFilter: Object.freeze({
+      resolution: true, ratio: true, ratioList: false,
+      // Stated for completeness; unused while `ratio` is true, because a page from here
+      // already comes back narrowed by shape.
+      maxPageSize: 200,
+    }),
   }),
   requestHeaders: Object.freeze({}),
   loadsDirectly: false,
@@ -270,6 +300,7 @@ async function search(params, ctx) {
     page,
     limit,
     formats: o.formats,
+    sizeHints: o.sizeHints,
   });
   const res = await ctx.fetchJson(url, { timeoutMs: 15000 });
   if (res.error) return { error: res.error };
