@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -9,6 +10,7 @@ const {
   ALWAYS_IGNORED,
   KEYLESS_IGNORED,
   OFFICIAL_ENV,
+  PRIVATE_SENTINELS,
   assertSourceBoundary,
   buildPackagerArgs,
   findSensitiveSourceEntries,
@@ -33,15 +35,71 @@ ok('package command excludes dev-only diagnostics directory',
   ignorePatterns.some((pattern) => pattern.test('/diagnostics/core/session.js')));
 ok('package command keeps production-safe diagnostics gate',
   !ignorePatterns.some((pattern) => pattern.test('/src/diagnostics-gate.js')));
+// COLLAB-003. The same split as diagnostics itself: the decision ships, the labels and the
+// one-hour limit do not. main.js requires the implementation only behind that decision.
+ok('package command excludes the dev-only check-launch labels and hour limit',
+  ignorePatterns.some((pattern) => pattern.test('/diagnostics/main/dev-launch.js')));
+ok('package command keeps the production-safe check-launch gate',
+  !ignorePatterns.some((pattern) => pattern.test('/src/dev-launch-gate.js')));
+ok('the package verifier accepts that guarded require as a dev-only dependency',
+  require('../scripts/verify-thumbnail-package').OPTIONAL_LOCAL_DEPENDENCIES
+    .some((entry) => '/diagnostics/main/dev-launch.js'.startsWith(entry)));
 // Privacy boundary: internal agent handoff docs and scratch dirs must never ship
 // inside the public installer (they used to leak into app.asar until v1.4.6).
 // `/scratch/x` joined the list on 2026-07-29: the folder sat in the repo root unignored by
 // both git and the packager, so anything dropped there would have ridden into app.asar. It
 // was empty at the time, which is exactly why nobody noticed — the v1.4.6 leak started the
 // same way.
-for (const leak of ['/plans/index.md', '/STATUS.md', '/ROADMAP.md', '/CLAUDE.md', '/AGENTS.md', '/.tmp/x', '/.tmp-stealth-ui.err.log', '/scratch/x', '/.agents', '/.codex', '/test/config.test.js', '/Znada-DEV.bat', '/Znada-DIAG.bat', '/Znada-Review.bat']) {
+for (const leak of ['/plans/index.md', '/STATUS.md', '/ROADMAP.md', '/CLAUDE.md', '/AGENTS.md', '/.tmp/x', '/.tmp-stealth-ui.err.log', '/scratch/x', '/.agents', '/.codex', '/test/config.test.js', '/Znada-DEV.bat', '/Znada-DIAG.bat', '/Znada-Review.bat', '/Znada-Check.bat', '/Znada-Next.bat']) {
   ok(`package command excludes ${leak}`,
     ignorePatterns.some((pattern) => pattern.test(leak)));
+}
+// BUG-045. What a root entry does in a package is decided by two hand-kept lists: the ignore
+// patterns above and the verifier's allow-list of runtime roots. Znada-Check.bat joined the
+// launchers and the private sentinels but neither of those lists, so every `npm run package`
+// failed after packing until someone read the verifier's refusal. The class is "a root entry
+// nobody claimed", so the check runs over the whole tracked root rather than one filename.
+//
+// BUG-047. The sanitized public export and a source archive carry no .git of their own, and
+// `npm test` must pass there too — it once failed for everyone building 1.7.5 from source.
+// Where git cannot say what is tracked, this one check steps aside; in the private checkout
+// (AGENTS.md present) a missing work tree is a broken checkout and still fails.
+function trackedRootEntries(repoRoot) {
+  let top = '';
+  try {
+    top = execFileSync('git', ['rev-parse', '--show-toplevel'],
+      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { top = ''; }
+  // A folder that merely sits inside some other repository is not its own work tree.
+  if (!top || path.resolve(top).toLowerCase() !== repoRoot.toLowerCase()) return null;
+  const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' });
+  return [...new Set(tracked.split('\0').filter(Boolean).map((file) => file.split('/')[0]))].sort();
+}
+
+{
+  const { ALLOWED_RUNTIME_ROOTS } = require('../scripts/verify-thumbnail-package');
+  const repoRoot = path.resolve(__dirname, '..');
+  const excluded = (name) => ignorePatterns.some((pattern) => pattern.test(`/${name}`));
+  const roots = trackedRootEntries(repoRoot);
+  if (roots) {
+    const unclaimed = roots.filter((name) => !ALLOWED_RUNTIME_ROOTS.includes(name) && !excluded(name));
+    ok(`every tracked root entry either ships or is excluded (unclaimed: ${unclaimed.join(', ') || 'none'})`,
+      roots.includes('package.json') && unclaimed.length === 0);
+  } else if (fs.existsSync(path.join(repoRoot, 'AGENTS.md'))) {
+    throw new Error('private canonical checkout is not its own git work tree; the tracked-root check needs git');
+  } else {
+    console.log('  SKIP tracked root entries: no git work tree here (sanitized export or source archive).');
+  }
+  const contradicted = ALLOWED_RUNTIME_ROOTS.filter(excluded);
+  ok(`no runtime root is excluded by the packager (${contradicted.join(', ') || 'none'})`,
+    contradicted.length === 0);
+  // A private sentinel must stay out of the ordinary AND the official package, so only the
+  // patterns both modes share count here — not the keyless-only credential patterns.
+  const alwaysPatterns = ALWAYS_IGNORED.map((entry) => new RegExp(entry));
+  const shipped = PRIVATE_SENTINELS.map((entry) => `/${entry.replace(/\\/g, '/')}`)
+    .filter((entry) => !alwaysPatterns.some((pattern) => pattern.test(entry)));
+  ok(`every private sentinel is excluded from every package (${shipped.join(', ') || 'none'})`,
+    shipped.length === 0);
 }
 // Translation freshness state is agent/maintenance bookkeeping, not runtime data:
 // the app must still get its dictionaries, but the sidecar has no business shipping.

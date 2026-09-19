@@ -33,6 +33,9 @@ function setHd(on) {
 }
 
 const LOADING_PILL_DELAY = 350;
+// BUG-042. Две попытки, не больше: третья уже не про «сорвалось», а про «его нет».
+const RETRY_ATTEMPTS = 2;
+const RETRY_PAUSE_MS = 450;
 let loadingTimer = null;
 
 function clearLoadingTimer() {
@@ -206,8 +209,11 @@ function zoomAt(clientX, clientY, factor) {
   applyZoom();
 }
 
-function showImage(src, fit, hardSwap) {
-  crossfadeTo(STAGE, src, fit, hardSwap);
+// Дальше нужно передать ровно `hardSwap`: своего `fit` у crossfadeTo нет и не было никогда
+// (CODE-003). Прежняя подпись несла мёртвый `fit`, и признак мгновенной смены доезжал лишь
+// потому, что совпадали позиции аргументов — выравнивание арности молча вернуло бы BUG-039.
+function showImage(src, hardSwap) {
+  crossfadeTo(STAGE, src, hardSwap);
   applyZoom(); // carry the current zoom/pan onto the freshly shown layer
   updateBackgroundFromSrc(src);
 }
@@ -387,6 +393,48 @@ function setState(message, hidden = false) {
   state.hidden = hidden || !message;
 }
 
+/*
+ * BUG-042. «Не удалось открыть это изображение» было тупиком: ни повторной попытки,
+ * ни способа попросить ещё раз. Здесь у сообщения появляется выход. Разметка строится
+ * узлами, а не строкой: в сообщение попадает текст перевода, и собирать его в innerHTML
+ * означало бы завести дыру там, где её сейчас нет.
+ */
+function setLoadError(message, onRetry) {
+  const state = $('#viewerState');
+  if (!state) return;
+  state.textContent = '';
+  state.classList.remove('has-action');
+  const text = document.createElement('span');
+  text.textContent = message || '';
+  state.appendChild(text);
+  if (typeof onRetry === 'function') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'media-state-retry';
+    button.textContent = t('viewer.retry');
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      onRetry();
+    });
+    state.appendChild(button);
+    state.classList.add('has-action');
+  }
+  state.hidden = false;
+}
+
+// PERF-008. Ступень → поле карточки. Само правило живёт в `src/media-proxy.js`; здесь только
+// выбор поля, потому что карточку знает окно, а не модуль.
+// BUG-046. A site whose pictures the window loads itself declares no proxy hosts, so main
+// refuses such a request (403). The builder, not each caller, says "not through the proxy":
+// previewSource once skipped the check and a Wallhaven preview never appeared.
+function mediaProxyUrl(item, tier) {
+  if (!item || !item.provider || item.loadsDirectly) return '';
+  const url = String(item[tier === 'thumb' ? 'thumb' : tier] || '');
+  if (!url) return '';
+  return ZnadaMediaProxy.buildUrl({ provider: item.provider, tier, url }) || '';
+}
+
 async function previewSource(entry) {
   if (!entry) return '';
   if ((entry.kind === 'library' || entry.kind === 'path') && entry.path) {
@@ -399,11 +447,11 @@ async function previewSource(entry) {
     const item = entry.raw || {};
     const thumb = String(item.thumb || entry.previewUrl || '');
     if (thumb.startsWith('data:image/')) return thumb;
-    try {
-      const result = await window.viewerApi.internetThumbnail(item);
-      if (result && result.dataUrl) return result.dataUrl;
-    } catch {}
-    return thumb || '';
+    // PERF-008. Прежде здесь ждали, пока главный процесс скачает файл целиком и вернёт
+    // его строкой base64: до конца загрузки не рисовалось ничего. Теперь окно получает
+    // адрес и рисует с первых байт, а маршрут и все проверки остались прежними.
+    const proxied = mediaProxyUrl(item, 'thumb');
+    return proxied || thumb || '';
   }
   return entry.previewUrl || '';
 }
@@ -420,10 +468,8 @@ async function fullSource(entry, fallback = '') {
     // and this window cannot send that header — so those are fetched through main as a
     // data URL. The card carries the answer; this file names no site.
     if (item.provider && !item.loadsDirectly) {
-      try {
-        const r = await window.viewerApi.internetFull(item);
-        if (r && r.dataUrl) return r.dataUrl;
-      } catch {}
+      const proxied = mediaProxyUrl(item, 'full');
+      if (proxied) return proxied;
     }
     return direct || fallback;
   }
@@ -436,14 +482,36 @@ async function sampleSource(entry) {
   if (!entry || entry.kind !== 'internet') return '';
   const item = entry.raw || {};
   if (!item.sample || !item.provider || item.loadsDirectly) return '';
-  try {
-    const r = await window.viewerApi.internetSample(item);
-    if (r && r.dataUrl) return r.dataUrl;
-  } catch {}
-  return '';
+  return mediaProxyUrl(item, 'sample');
 }
 
-function loadImage(src) {
+/*
+ * BUG-042. Одна сорвавшаяся загрузка не должна становиться приговором: владелец получил
+ * «не удалось открыть» на кадре 96 из 115, а замер потом показал, что сама картинка
+ * грузится и раскодируется за 0.6 с. Отказал не размер, а сеть, и повторить было некому —
+ * в просмотрщике не было ни одной повторной попытки.
+ *
+ * Но слепой повтор здесь опаснее, чем кажется. Главная гипотеза причины — всплеск запросов
+ * к сайту при быстром листании вместе с предзагрузкой соседей; повторы этот всплеск
+ * УСИЛИВАЮТ. Поэтому политика такая:
+ *
+ *   - число попыток ограничено, бесконечности нет ни при каких входных данных;
+ *   - повтор отменяется, как только человек ушёл на другое фото (`active`), иначе
+ *     брошенные загрузки продолжают долбить сайт как раз в тот момент, когда ему тяжело;
+ *   - пауза растёт с номером попытки, чтобы вторая не легла в ту же секунду, что первая.
+ *
+ * Возвращает паузу в миллисекундах или -1 = больше не пробовать.
+ */
+function retryDelayMs(attempt, maxAttempts, basePauseMs, active) {
+  if (!active) return -1;
+  if (!Number.isFinite(attempt) || !Number.isFinite(maxAttempts)) return -1;
+  if (attempt < 1 || maxAttempts < 1) return -1;
+  if (attempt >= maxAttempts) return -1;
+  const base = Number.isFinite(basePauseMs) && basePauseMs > 0 ? basePauseMs : 0;
+  return base * attempt;
+}
+
+function loadOnce(src) {
   return new Promise((resolve, reject) => {
     if (!src) { reject(new Error('empty')); return; }
     const probe = new Image();
@@ -453,13 +521,40 @@ function loadImage(src) {
   });
 }
 
+// BUG-042. Повторяет попытку по политике `retryDelayMs`. Пустой `src` не повторяется:
+// это не сетевой отказ, а отсутствие адреса, и второй раз он не появится.
+async function loadImage(src, options) {
+  const opts = options || {};
+  const maxAttempts = Number.isFinite(opts.attempts) ? opts.attempts : 1;
+  const pause = Number.isFinite(opts.pauseMs) ? opts.pauseMs : RETRY_PAUSE_MS;
+  const active = typeof opts.active === 'function' ? opts.active : () => true;
+  let attempt = 0;
+  for (;;) {
+    attempt += 1;
+    try {
+      return await loadOnce(src);
+    } catch (err) {
+      const delay = src ? retryDelayMs(attempt, maxAttempts, pause, active()) : -1;
+      if (delay < 0) throw err;
+      await new Promise((done) => { setTimeout(done, delay); });
+      if (!active()) throw err;
+    }
+  }
+}
+
 // Decode then crossfade a resolved src onto the stage. Returns false on failure
 // or if the render was superseded (token changed), so callers can react.
 // `requireShape` — не показывать кадр, если его форма расходится с формой фотографии.
 // Ставится на предварительные кадры: правильный по форме всё равно придёт следом.
 async function present(src, token, entry, requireShape) {
   try {
-    const loaded = await loadImage(src);
+    // BUG-042. `active` — не оптимизация, а защита: брошенные повторы при быстром
+    // листании усиливали бы тот самый всплеск запросов, который и подозревается причиной.
+    const loaded = await loadImage(src, {
+      attempts: RETRY_ATTEMPTS,
+      pauseMs: RETRY_PAUSE_MS,
+      active: () => token === VIEWER.token,
+    });
     if (token !== VIEWER.token) return false;
     if (requireShape && !frameShapeMatches(loaded.width, loaded.height, knownAspect(entry))) return false;
     // BUG-039. Прямоугольник меняется РОВНО ТОГДА, когда меняется картинка, и ни секундой
@@ -560,12 +655,15 @@ function dismissViewerNotice() {
   if (element) element.remove();
 }
 
-function createViewerNotice(message) {
+// `wrap` lets a notice take more than one line. Notices are one line with an ellipsis by
+// default, which is right for short statuses and wrong for one whose end is the point —
+// LIB-009's eviction warning was cut exactly at «уже не вернуть».
+function createViewerNotice(message, { wrap = false } = {}) {
   const root = $('#viewerRoot');
   if (!root) return null;
   dismissViewerNotice();
   const element = document.createElement('div');
-  element.className = 'media-notice';
+  element.className = wrap ? 'media-notice media-notice-wrap' : 'media-notice';
   element.setAttribute('role', 'status');
   element.setAttribute('aria-live', 'polite');
   const text = document.createElement('span');
@@ -588,8 +686,8 @@ function finishViewerNotice(notice, message, delay = 2400) {
   }, delay);
 }
 
-function showViewerMessage(message, delay = 2400) {
-  const notice = createViewerNotice(message);
+function showViewerMessage(message, delay = 2400, options = {}) {
+  const notice = createViewerNotice(message, options);
   if (!notice) return;
   VIEWER_NOTICE.timer = setTimeout(() => {
     if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
@@ -639,8 +737,18 @@ function syncCurrentAddAction(entry) {
   return true;
 }
 
-function showRemovalUndo(entry, pooled, token) {
-  const notice = createViewerNotice(t('library.removedToast'));
+// LIB-009. `evicted` — сколько записей выпало из корзины насовсем: вернуть их одним
+// нажатием уже нельзя. Уведомление здесь тоже одно за раз, поэтому текст склеивается,
+// а не вытесняет кнопку «Отменить» вторым сообщением.
+function removalNoticeText(evicted) {
+  return [
+    t('library.removedToast'),
+    evicted > 0 ? t('library.trashEvictedN', { n: evicted }) : '',
+  ].filter(Boolean).join(' · ');
+}
+
+function showRemovalUndo(entry, pooled, token, evicted) {
+  const notice = createViewerNotice(removalNoticeText(evicted), { wrap: evicted > 0 });
   if (!notice) return;
   const undo = document.createElement('button');
   undo.type = 'button';
@@ -672,6 +780,15 @@ function showRemovalUndo(entry, pooled, token) {
   VIEWER_NOTICE.timer = setTimeout(() => {
     if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
   }, 6000);
+}
+
+// What the viewer says after a removal. Without Undo the notice would vanish after the
+// usual 2.4 s; a warning about entries that are gone for good gets the same time to be
+// read as the notice with Undo, and room to wrap.
+function showRemovalResult(entry, pooled, res) {
+  if (res.undo) showRemovalUndo(entry, pooled, res.undo.token, res.evicted);
+  else if (res.evicted > 0) showViewerMessage(removalNoticeText(res.evicted), 6000, { wrap: true });
+  else showViewerMessage(removalNoticeText(res.evicted));
 }
 
 // ONL-009. The same right-click menu the grid has. The viewer is where a picture is
@@ -904,8 +1021,7 @@ async function removeViewerCard(entry) {
   }
   entry.added = false;
   entry.pooled = null;
-  if (res.undo) showRemovalUndo(entry, removedPoolRecord, res.undo.token);
-  else showViewerMessage(t('library.removedToast'));
+  showRemovalResult(entry, removedPoolRecord, res);
   syncCurrentAddAction(entry);
   return true;
 }
@@ -1060,7 +1176,9 @@ async function renderCore() {
   if (token === VIEWER.token && !stageHasImage()) {
     clearLoadingTimer();
     clearStage();
-    setState(t('viewer.loadError'));
+    // BUG-042. Повтор перезапускает показ того же кадра целиком: источники пробуются
+    // заново, включая те, что отказали. Это и есть «попросить ещё раз» руками.
+    setLoadError(t('viewer.loadError'), () => { render(); });
     return;
   }
   prefetchNeighbors(idx);

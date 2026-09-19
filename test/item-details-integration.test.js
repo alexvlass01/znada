@@ -63,8 +63,8 @@ ok('opening read-only details never materializes a transient card',
 // META-001, owner QA 2026-08-28. The sheet and the card menu must answer "can this photo
 // be looked up" with the SAME rule. The sheet asked its own question — "is it already in
 // the pool" — which hid the button for every photo inside a watched folder: exactly the
-// population the action exists for. It read as "the button needs tags", because tags can
-// only live on a pool record.
+// population the action exists for. It looked as if the button needed tags, because tags
+// can only live on a pool record.
 ok('the lookup button is drawn from the shared registry, not from pool membership',
   detailsBlock.includes("only: ['lookupMeta']")
   && detailsBlock.includes('CardActions.localSubject')

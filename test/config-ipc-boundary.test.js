@@ -168,6 +168,8 @@ function settingKeysUsedByRenderer() {
       singleWallpaper: true,
       viewerBackground: 'charcoal',
       onlineSort: 'toplist',
+      onlineSourcesExpanded: true,
+      libraryTagsExpanded: true,
     };
     for (const [key, value] of Object.entries(sent)) {
       await m.invoke('set-config', { [key]: value });
@@ -218,7 +220,10 @@ function settingKeysUsedByRenderer() {
 
     await m.invoke('set-config', { onlineSources: { lumina: true, internet: false } });
     live = m.__test.getConfig();
-    assert.deepStrictEqual(live.onlineSources, { lumina: true, internet: false });
+    assert.deepStrictEqual(live.onlineSources, {
+      lumina: true, internet: false,
+      providers: { wallhaven: false, gelbooru: false, danbooru: false },
+    });
 
     await m.invoke('set-config', { onlinePurity: { sfw: true, sketchy: true, nsfw: false } });
     live = m.__test.getConfig();

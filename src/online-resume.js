@@ -49,6 +49,7 @@ function signatureOf(request) {
     purity.sfw ? 1 : 0,
     purity.sketchy ? 1 : 0,
     purity.nsfw ? 1 : 0,
+    String(r.sourcesKey || ''),
   ].join('|');
 }
 

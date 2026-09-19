@@ -143,7 +143,9 @@ function verifyRootBoundary(entries, official) {
     .map((entry) => entry.replace(/^\/+/, '').split('/')[0])
     .filter(Boolean))].sort();
   const unexpected = roots.filter((name) => !allowed.has(name));
-  if (unexpected.length > 0) fail(`unexpected app.asar root: ${unexpected[0]}`);
+  // All of them at once: BUG-045 reported one launcher, and a second stray root would only have
+  // surfaced on the next full package run.
+  if (unexpected.length > 0) fail(`unexpected app.asar root: ${unexpected.join(', ')}`);
   return roots;
 }
 

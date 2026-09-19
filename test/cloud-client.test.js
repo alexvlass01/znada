@@ -345,5 +345,107 @@ ok('createClient: throws without a fetch', (() => {
     ok('the default deadline can be overridden by the caller', custom[0] === 2500);
   }
 
+  // -------------------------------------------------------------------------
+  // BUG-034 — an answer that stopped arriving part-way is a broken connection, not a
+  // server that sent nonsense.
+  //
+  // readBody swallowed every failure of the body read except a missed deadline and
+  // handed back null. For a success that read as "a 200 with nothing in it": the schema
+  // check then blamed the server for breaking the contract, and a call without a schema
+  // reported the cut-off answer as a success.
+  //
+  // Driven through a real local HTTP server and the real fetch, because the point is
+  // what undici actually throws when the connection drops (TypeError 'terminated'), not
+  // what a fake claims it throws. Nothing here talks to the production Cloud.
+  // -------------------------------------------------------------------------
+  {
+    const http = require('http');
+    const valid = JSON.stringify({ user: sampleUser, entitlements: [] });
+    const cutOff = (res, status, body, headers) => {
+      res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
+      res.write(body.slice(0, 10));
+      setTimeout(() => res.socket.destroy(), 20);
+    };
+    const routes = {
+      // The headers promise more than ever arrives, then the connection drops.
+      'cut-length': (res) => cutOff(res, 200, valid, { 'Content-Length': String(valid.length) }),
+      // The same drop without a length: the closing chunk never comes.
+      'cut-chunked': (res) => cutOff(res, 200, valid, {}),
+      'cut-401': (res) => {
+        const body = JSON.stringify({ error: { code: 'unauthorized', message: 'session expired' } });
+        cutOff(res, 401, body, { 'Content-Length': String(body.length) });
+      },
+      'malformed': (res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(valid.slice(0, 20)); },
+      'valid': (res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(valid); },
+      'empty': (res) => { res.writeHead(204); res.end(); },
+      // Headers, one byte, then silence with the connection left open.
+      'stall': (res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.write('{'); },
+    };
+    const server = http.createServer((req, res) => {
+      const route = routes[String(req.url).split('/')[1]];
+      if (route) route(res); else { res.writeHead(404); res.end(); }
+    });
+    await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+    const address = server.address();
+    const base = `http://127.0.0.1:${address && typeof address === 'object' ? address.port : 0}`;
+    // No fetchImpl: the client uses the global fetch, exactly as main.js creates it. A real
+    // deadline stays on so a regression fails the test instead of hanging it.
+    const at = (route, ms = 5000) => CL.createClient({
+      baseUrl: `${base}/${route}`, makeTimeoutSignal: () => AbortSignal.timeout(ms),
+    });
+    try {
+      for (const route of ['cut-length', 'cut-chunked']) {
+        const r = await at(route).getMe('tok');
+        ok(`a success cut off mid-body (${route}) is a broken connection, not a broken contract`,
+          r.ok === false && r.error.kind === 'network' && r.error.code === 'network');
+      }
+      const fav = await at('cut-length').addFavorite('c1', 'tok');
+      ok('a call without a schema does not report a cut-off answer as success',
+        fav.ok === false && fav.error.kind === 'network');
+      // The status line did arrive. A 401 must still reach the caller as a 401, or it will
+      // not drop the dead session.
+      const denied = await at('cut-401').getFavorites('tok');
+      ok('a server error keeps its status when only its explanation was cut off',
+        denied.ok === false && denied.error.kind === 'http' && denied.error.status === 401);
+      const junk = await at('malformed').getMe('tok');
+      ok('a complete body that is not JSON is still the server breaking the contract',
+        junk.ok === false && junk.error.kind === 'contract' && junk.error.code === 'invalid_response');
+      const good = await at('valid').getMe('tok');
+      ok('a whole valid answer still parses', good.ok === true && good.data.user.id === 'u1');
+      const empty = await at('empty').addFavorite('c1', 'tok');
+      ok('an empty 204 is still a success', empty.ok === true && empty.data === null);
+      const late = await at('stall', 150).getMe('tok');
+      ok('a body that stops without the connection dropping is still a timeout',
+        late.ok === false && late.error.code === 'timeout');
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+
+    // The same line for a response that only offers json(), where both failures arrive
+    // through one call: its parse error is junk, anything else is the connection.
+    const jsonOnly = (thrown) => CL.createClient({
+      baseUrl: BASE,
+      fetchImpl: async () => ({ status: 200, async json() { throw thrown; } }),
+      makeTimeoutSignal: () => null,
+    });
+    const unparsable = await jsonOnly(new SyntaxError('Unexpected end of JSON input')).getMe('tok');
+    ok('json(): a parse error is still a broken contract',
+      unparsable.ok === false && unparsable.error.kind === 'contract');
+    const dropped = await jsonOnly(new TypeError('terminated')).getMe('tok');
+    ok('json(): a dropped connection is a network error',
+      dropped.ok === false && dropped.error.kind === 'network');
+
+    // Keeping a failure status must not swallow a missed deadline: a server error whose
+    // body never arrives was a timeout before BUG-034 and stays one.
+    const stalledError = await CL.createClient({
+      baseUrl: BASE,
+      fetchImpl: async () => ({ status: 503, async text() { throw Object.assign(new Error('aborted'), { name: 'TimeoutError' }); } }),
+      makeTimeoutSignal: () => null,
+    }).health();
+    ok('a failure status whose body misses the deadline is still a timeout',
+      stalledError.ok === false && stalledError.error.code === 'timeout');
+  }
+
   console.log('\nAll ' + passed + ' cloud-client tests passed.');
 })().catch((e) => { console.error(e); process.exit(1); });

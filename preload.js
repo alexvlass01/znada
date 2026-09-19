@@ -13,7 +13,32 @@ try {
   }
 } catch { /* diagnostics is optional */ }
 
+// COLLAB-003. A DEV/DIAG check launch passes the label of the code it runs, and the title
+// bar shows it. Read here with no module loading at all: in DEV this preload is sandboxed,
+// and a relative module once took the whole bridge down there (QA-009). A user build never
+// receives the argument, so `devLaunch` is null in it.
+const devLaunch = (() => {
+  const prefix = '--znada-dev-launch=';
+  try {
+    const arg = process.argv.find((a) => typeof a === 'string' && a.indexOf(prefix) === 0);
+    if (!arg) return null;
+    const label = JSON.parse(decodeURIComponent(arg.slice(prefix.length)));
+    if (!label || typeof label.badgeText !== 'string' || !label.badgeText) return null;
+    return Object.freeze({
+      mode: label.mode === 'diag' ? 'diag' : 'dev',
+      badgeText: label.badgeText.slice(0, 200),
+      details: typeof label.details === 'string' ? label.details.slice(0, 2000) : '',
+      dirty: label.dirty === true,
+      known: label.known === true,
+    });
+  } catch {
+    return null;
+  }
+})();
+
 contextBridge.exposeInMainWorld('api', {
+  // COLLAB-003: the check-launch label, or null. A value, not a method.
+  devLaunch,
   getPathForFile: (file) => webUtils.getPathForFile(file),
   getConfig: () => ipcRenderer.invoke('get-config'),
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
@@ -39,7 +64,7 @@ contextBridge.exposeInMainWorld('api', {
   libraryAddFolder: () => ipcRenderer.invoke('library-add-folder'),
   libraryAddPaths: (paths) => ipcRenderer.invoke('library-add-paths', paths),
   // Records are { path, id? }: every card knows its path, only some have a pool id.
-  libraryRemoveMany: (records) => ipcRenderer.invoke('library-remove-many', records),
+  libraryRemoveMany: (records, options) => ipcRenderer.invoke('library-remove-many', records, options),
   // The token binds this UI action to the exact removal that created its toast.
   // Without it, an old toast in the main window could undo a newer removal made in
   // the fullscreen viewer (main intentionally keeps only one removal snapshot).
@@ -90,7 +115,6 @@ contextBridge.exposeInMainWorld('api', {
   internetStatus: () => ipcRenderer.invoke('internet-status'),
   internetSearch: (opts) => ipcRenderer.invoke('internet-search', opts),
   internetTagSuggest: (opts) => ipcRenderer.invoke('internet-tag-suggest', opts),
-  internetThumbnail: (item) => ipcRenderer.invoke('internet-thumbnail', item),
   internetAdd: (item, query) => ipcRenderer.invoke('internet-add', item, query),
   openGalleryViewer: (payload) => ipcRenderer.invoke('gallery-open', payload),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),

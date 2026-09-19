@@ -14,6 +14,16 @@ ok('queryTags: metatags are not accepted from UI', D.queryTags('rating:e landsca
 ok('ratingTag: default maps SFW+Sketchy to g,s,q', D.ratingTag() === 'rating:g,s,q');
 ok('ratingTag: explicit only', D.ratingTag({ sfw: false, sketchy: false, nsfw: true }) === 'rating:e');
 ok('orderTag: Lumina sorts map to Danbooru', D.orderTag('toplist') === 'order:rank' && D.orderTag('views') === 'order:favcount');
+// ONL-005 task 3. `order:rank` is a trending window of the last few days. On the front page
+// that is the point; for a typed tag it answered nothing at all (live, 2026-09-15:
+// `sameko_saba rating:g` gave 0 posts with order:rank and 20 with order:score). A search's
+// Top is the tag's all-time best — the meaning Top already has on Gelbooru.
+ok('buildSearchTags: Top on the front page stays the trending order',
+  D.buildSearchTags({ q: '', sorting: 'toplist' }).split(' ').includes('order:rank'));
+ok('buildSearchTags: Top for a typed tag is the all-time best, not a trending window', (() => {
+  const tags = D.buildSearchTags({ q: 'sameko_saba', sorting: 'toplist' }).split(' ');
+  return tags.includes('order:score') && !tags.includes('order:rank');
+})());
 
 const url = D.buildSearchUrl({ q: 'landscape, sky', purity: { sfw: true, sketchy: false, nsfw: false }, sorting: 'random', page: 2, limit: 30, formats: ['jpg', 'jpeg', 'png'] });
 ok('buildSearchUrl: official posts endpoint', url.startsWith(D.API_BASE + '?'));

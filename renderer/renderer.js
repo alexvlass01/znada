@@ -121,7 +121,7 @@ if (!window.api) {
       // branch on — without them the preview cannot exercise removal at all.
       if (removed) mockUndoToken = `mock-${++mockUndoSeq}`;
       return {
-        config: mock, affected: removed, removed, hidden: 0, warning: null,
+        config: mock, affected: removed, removed, hidden: 0, warning: null, evicted: 0,
         undo: removed ? { count: removed, token: mockUndoToken } : null,
       };
     },
@@ -194,7 +194,7 @@ if (!window.api) {
     onCloudSession: () => {},
     cloudFavorites: async () => { const favs = mockCloud.favs || {}; const items = Object.keys(favs).map((id) => favs[id]); return { items, error: null }; },
     cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
-    internetStatus: async () => ({ nsfwAvailable: true, providers: [{ id: 'wallhaven', name: 'Wallhaven' }, { id: 'gelbooru', name: 'Gelbooru' }] }),
+    internetStatus: async () => ({ nsfwAvailable: true, providers: [{ id: 'wallhaven', name: 'Wallhaven', browse: true }, { id: 'gelbooru', name: 'Gelbooru', browse: true }, { id: 'danbooru', name: 'Danbooru', browse: true }] }),
     internetSearch: async (opts) => {
       const page = (opts && opts.page) || 1;
       const mk = (i, color) => ({ id: 'net' + page + '_' + i, provider: 'wallhaven', page: 'https://wh/' + page + '-' + i, full: 'data:', thumb: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="${color}"/></svg>`), resolution: '1920x1080', category: 'general', width: 1920, height: 1080 });
@@ -211,7 +211,6 @@ if (!window.api) {
       ].filter((it) => it.name.startsWith(q)).slice(0, (opts && opts.limit) || 10);
       return { items, error: null };
     },
-    internetThumbnail: async (item) => ({ dataUrl: item && String(item.thumb || '').startsWith('data:') ? item.thumb : '', error: null }),
     // Records the source page the real handler records, so the preview can show a card
     // going in and back out again (ONL-008) rather than always looking un-added.
     internetAdd: async (item) => {
@@ -409,8 +408,14 @@ async function undoLastRemoval(token) {
   toast(t('library.undoneToast'));
 }
 
-function toastRemoved(count, undoToken) {
-  const msg = t('library.removedToastN', { n: count });
+// LIB-009. Окно держит ОДИН тост: `toast()` перезаписывает его текст целиком. Отдельным
+// сообщением о вытеснении мы бы стёрли «Отменить» у только что сделанного удаления — то есть
+// сообщили бы о потере, отняв возможность её предотвратить. Поэтому одна строка, а не второй тост.
+function toastRemoved(count, undoToken, evicted) {
+  const msg = [
+    t('library.removedToastN', { n: count }),
+    evicted > 0 ? t('library.trashEvictedN', { n: evicted }) : '',
+  ].filter(Boolean).join(' · ');
   if (undoToken) toastAction(msg, t('library.undo'), () => undoLastRemoval(undoToken));
   else toast(msg);
 }
@@ -1305,6 +1310,13 @@ function libAllTags() {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+// ONL-005 task 6: frequent tags first, as the owner asked. The rail lists tags by how many
+// photos carry them, most used first; ties stay alphabetical. Alphabetical alone put ":/", ":3", ":d" on top.
+function sortTagsByUse(tags, counts) {
+  const uses = counts || {};
+  return (tags || []).slice().sort((a, b) => ((uses[b] || 0) - (uses[a] || 0)) || String(a).localeCompare(String(b)));
+}
+
 function filterLibRailTags(tags, query) {
   const needle = String(query || '').trim().toLocaleLowerCase();
   if (!needle) return tags.slice();
@@ -1420,23 +1432,43 @@ function renderLibRailTags() {
   const empty = $('#libTagEmpty');
   const search = $('#libTagSearch');
   if (!box || !section || !empty) return;
+  // ONL-005 task 5: the site list is Online's own rail section, local tags are the others'.
+  const sources = $('#onlineSourcesSection');
+  if (sources) sources.hidden = LIB.filter !== 'online';
+  if (LIB.filter === 'online') {
+    section.hidden = true;
+    document.querySelectorAll('#viewLibrary .lib-railbtn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.filter === LIB.filter);
+    });
+    return;
+  }
   const tags = libAllTags();
 
   // Search only narrows the navigation list. The selected card filter is validated
   // against ALL tags so a zero-result query never silently switches the grid to All.
   if (LIB.filter.startsWith('tag:') && !tags.includes(LIB.filter.slice(4))) LIB.filter = 'all';
+  // No tags, no section — there is nothing to open (owner, 2026-09-17).
   section.hidden = tags.length === 0;
   if (!tags.length) {
     LIB.tagQuery = '';
     if (search) search.value = '';
   }
-
-  const matches = filterLibRailTags(tags, LIB.tagQuery);
+  // ONL-005 task 6: every tag, most used first. The three-tag cut and its "All tags"
+  // button are gone; the section itself is what opens and closes.
+  const matches = filterLibRailTags(sortTagsByUse(tags, libTagCounts()), LIB.tagQuery);
+  const active = $('#libActiveTag');
+  if (active) {
+    active.hidden = !LIB.filter.startsWith('tag:');
+    active.textContent = active.hidden ? '' : LIB.filter.slice(4) + ' ×';
+    active.title = t('library.clearTagFilter');
+    active.setAttribute('aria-label', t('library.clearTagFilter') + ': ' + LIB.filter.slice(4));
+  }
   box.innerHTML = '';
   matches.forEach((tg) => {
     const b = document.createElement('button');
     b.className = 'lib-railbtn';
     b.dataset.filter = `tag:${tg}`;
+    b.title = tg;
     const ic = document.createElement('span');
     ic.className = 'lib-rail-ic lib-rail-hash';
     ic.textContent = '#';
@@ -1447,6 +1479,11 @@ function renderLibRailTags() {
   });
   box.hidden = matches.length === 0;
   empty.hidden = matches.length !== 0;
+  // The head is lit like a chosen rail row while a tag filters the grid (owner, 2026-09-17).
+  // It has no count: the number of tags tells the user nothing.
+  $('#libTagsToggle')?.classList.toggle('active', LIB.filter.startsWith('tag:'));
+  setLibTagsOpen(!!(config && config.libraryTagsExpanded));
+  fitRailSectionHeads();
   document.querySelectorAll('#viewLibrary .lib-railbtn').forEach((b) => {
     b.classList.toggle('active', b.dataset.filter === LIB.filter);
   });
@@ -3180,8 +3217,8 @@ function appendAssignRows(pop, onPick, options = {}) {
 }
 
 // The owner's decision, 2026-09-03. Assigning ADDS to a slot rather than replacing it,
-// and that is the right default — a slot is a playlist. But the common wish is "and show
-// it now", which previously meant assigning, then going to Appearance and clicking the
+// and that is the right default — a slot is a playlist. But the common wish is to see it
+// at once, which previously meant assigning, then going to Appearance and clicking the
 // thumbnail. One tick does both, and leaves the meaning of the buttons alone.
 function appendApplyNowToggle(pop) {
   const label = document.createElement('label');
@@ -3562,14 +3599,22 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
 
 // One card, same meaning as the multi-select button: stop showing this in Znada.
 // Goes through the same path so a photo without a pool record is removable too.
+// LIB-012. Обе поверхности, которые сюда приходят, ставят «Убрать из библиотеки» вплотную
+// к похожему действию: меню карточки — рядом с «Убрать из слота», всплывающее окно — под
+// полем ввода тега. Поэтому подтверждение просится ИМЕННО отсюда, а не из обработчика:
+// массовая кнопка, онлайн-карточка и просмотрщик такого соседства не имеют и спрашивать
+// не должны.
 async function removeRecordFromLibrary(record) {
   if (!record) return;
   const item = poolItemForRecord(record);
   const payload = [{ path: (item && item.path) || record.path, id: (item && item.id) || '', type: record.type }];
   if (!payload[0].path && !payload[0].id) return;
   let res;
-  try { res = await window.api.libraryRemoveMany(payload); }
+  try { res = await window.api.libraryRemoveMany(payload, { confirm: true }); }
   catch { res = null; }
+  // Отказ — не ошибка. Человек нажал «Отмена», и всё должно выглядеть так, будто он не
+  // нажимал ничего: ни тоста, ни перерисовки, ни снятого выделения.
+  if (res && res.cancelled) return;
   if (!res || res.error) { toast(t('library.massDeleteFailed')); return; }
   config = res.config || config;
   const affected = res.affected || 0;
@@ -3579,7 +3624,7 @@ async function removeRecordFromLibrary(record) {
   renderLibrary();
   renderPreviews();
   renderHome();
-  toastRemoved(affected, res.undo && res.undo.token);
+  toastRemoved(affected, res.undo && res.undo.token, res.evicted);
 }
 
 // --- Details view (UX1 step C) -------------------------------------------
@@ -3645,8 +3690,18 @@ async function detailsPreviewUrl(preview) {
     return (info && info.url) || '';
   }
   if (preview.loadsDirectly) return String(preview.item.thumb || '');
-  const result = await window.api.internetThumbnail(preview.item);
-  return (result && result.dataUrl) || '';
+  // PERF-008. Раньше здесь ждали, пока главный процесс скачает файл целиком и вернёт его
+  // строкой base64. Теперь окно получает адрес и рисует с первых байт; маршрут и все
+  // проверки остались прежними, изменилась только форма отдачи.
+  return internetThumbUrl(preview.item);
+}
+
+// PERF-008. Адрес потокового прокси для миниатюры карточки. Сам модуль один на всё
+// приложение и живёт в `src/media-proxy.js`; здесь только выбор поля карточки.
+// BUG-046: a site the window loads itself is never asked through the proxy, whoever calls.
+function internetThumbUrl(item) {
+  if (!item || !item.provider || !item.thumb || item.loadsDirectly) return '';
+  return ZnadaMediaProxy.buildUrl({ provider: item.provider, tier: 'thumb', url: String(item.thumb) }) || '';
 }
 
 function closeCardDetails() {
@@ -3786,9 +3841,9 @@ async function openCardDetails(subject, record = null) {
   // belongs. WHICH photos may be looked up is the registry's answer and not a second one
   // written here: asking "is it already in the pool" hid the button for every photo
   // inside a watched folder — precisely the population the action exists for, and the
-  // population the card menu one click away already serves. The owner reported it as
-  // "the button is missing when the photo has no tags", because tags can only live on a
-  // pool record, so "has tags" looked like the rule while pool membership was.
+  // population the card menu one click away already serves. To the owner it looked as if
+  // the button vanished for photos without tags, because tags can only live on a pool
+  // record, so having tags looked like the rule while pool membership was.
   const lookupSubject = record
     ? CardActions.localSubject({ ...record, removedView: inRemovedView() }, item)
     : null;
@@ -4282,7 +4337,7 @@ function initLibrary() {
       renderLibrary();
       renderPreviews();
       renderHome();
-      toastRemoved(affected, res.undo && res.undo.token);
+      toastRemoved(affected, res.undo && res.undo.token, res.evicted);
     } finally {
       libraryBatchRemovePending = false;
       syncSelectionUI();
@@ -4312,6 +4367,13 @@ function initLibrary() {
     if (tagList) tagList.scrollTop = 0;
   });
   const refreshBtn = $('#libRefresh');
+  $('#libTagsToggle')?.addEventListener('click', () => {
+    setLibTagsOpen(!(config && config.libraryTagsExpanded), { persist: true });
+  });
+  $('#libActiveTag')?.addEventListener('click', () => {
+    LIB.filter = 'all';
+    renderLibrary();
+  });
   if (refreshBtn) refreshBtn.addEventListener('click', async () => {
     if (refreshBtn.classList.contains('spinning')) return;
     refreshBtn.classList.add('spinning');
@@ -4341,11 +4403,17 @@ function initLibrary() {
     if (res && res.added > 0) toast(t('toast.folderAdded'));
   });
 
-  // online source selector (Cloud C2)
-  const srcLumina = $('#srcLumina');
-  if (srcLumina) srcLumina.addEventListener('click', () => toggleOnlineSource('lumina'));
-  const srcInternet = $('#srcInternet');
-  if (srcInternet) srcInternet.addEventListener('click', () => toggleOnlineSource('internet'));
+  // One listener set for the lifetime of the window; renders only update the rows.
+  // ONL-005 task 5: a rail section, not a popover — it stays as the user left it and does
+  // not close when the pointer or focus goes elsewhere.
+  $('#onlineSourcesToggle')?.addEventListener('click', () => {
+    setOnlineSourcesOpen(!(config && config.onlineSourcesExpanded), { persist: true });
+  });
+  $('#onlineSourceOptions')?.addEventListener('change', (event) => {
+    const id = event.target.dataset.provider;
+    if (id) toggleOnlineSource(id);
+  });
+  watchRailSectionHeads();
 
   // Znada Cloud favorites toggle (C5) — shares the unified search bar.
   const favToggle = $('#onlineFavToggle');
@@ -4753,7 +4821,7 @@ function onlineSources() {
   const lumina = !!s.lumina;
   let internet = s.internet !== false;
   if (!lumina && !internet) internet = true;
-  return { lumina, internet };
+  return { ...s, lumina, internet };
 }
 
 // Restore persisted Online search params (sort + purity) into INTERNET at startup.
@@ -4784,12 +4852,103 @@ async function ensureCloudCapability() {
   CLOUD.fetched = true;
 }
 
-// Reflect the source selection: chip pressed-state + which panel(s) show.
+// Reflect the source selection in the rail section: rows, the keep-one rule, and which sites are on.
 function applyOnlineSourceUI(sources) {
-  const lum = $('#srcLumina'), net = $('#srcInternet');
-  if (lum) { lum.setAttribute('aria-pressed', sources.lumina ? 'true' : 'false'); lum.classList.toggle('active', sources.lumina); }
-  if (net) { net.setAttribute('aria-pressed', sources.internet ? 'true' : 'false'); net.classList.toggle('active', sources.internet); }
+  const host = $('#onlineSourceOptions');
+  const providers = OnlineSources.available(INTERNET.providers || []);
+  const selected = providers.filter((p) => OnlineSources.enabled(sources, p)).length;
+  if (host) {
+    // Keep focused native checkboxes alive while a save/search is in flight.
+    const ids = JSON.stringify(providers.map((p) => [p.id, p.name]));
+    if (host.dataset.providers !== ids) {
+      host.replaceChildren();
+      for (const p of providers) {
+        const row = document.createElement('label');
+        row.className = 'online-source-option';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.dataset.provider = p.id;
+        const label = document.createElement('span');
+        label.textContent = p.name;
+        row.append(input, label);
+        host.append(row);
+      }
+      host.dataset.providers = ids;
+    }
+    const lastOne = selected === 1;
+    host.querySelectorAll('input').forEach((input) => {
+      const provider = providers.find((p) => p.id === input.dataset.provider);
+      input.checked = OnlineSources.enabled(sources, provider);
+      input.disabled = !!INTERNET.sourcePending || (input.checked && lastOne);
+      // The locked row says why it cannot be unticked.
+      const row = input.closest ? input.closest('label') : null;
+      if (row) row.title = input.checked && lastOne ? t('online.sourcesHint') : '';
+    });
+  }
+  // The rule is shown only while it actually holds something back.
+  const hint = $('#onlineSourcesHint');
+  if (hint) hint.hidden = selected !== 1;
+  const toggle = $('#onlineSourcesToggle');
+  if (toggle) {
+    toggle.disabled = !providers.length;
+    // Collapsed, the head still says which sites are on. It shows no count: "3/4" was the
+    // normal state (the Znada catalogue is off by default) and told the user nothing.
+    toggle.title = providers.filter((p) => OnlineSources.enabled(sources, p)).map((p) => p.name).join(', ');
+  }
+  setOnlineSourcesOpen(!!(config && config.onlineSourcesExpanded));
+  fitRailSectionHeads();
   if (!sources.internet) hideOnlineTagSuggest();
+}
+
+// A rail section's title is never cut. Measured first as it would normally sit — one line,
+// arrow beside it; if it does not fit, the head goes `tight` and the title wraps (styles.css).
+// Longest real title 2026-09-17: Bulgarian "Източници", 69px — it fits the 156px rail now
+// that heads carry no count, so this guards longer future titles.
+function fitRailSectionHeads(root = document) {
+  root.querySelectorAll('.lib-rail-section-head').forEach((head) => {
+    const title = head.querySelector('.lib-rail-section-title');
+    if (!title) return;
+    head.classList.remove('tight');
+    if (title.scrollWidth > title.clientWidth + 1) head.classList.add('tight');
+  });
+}
+
+// Refit whenever a head or its title changes size. Both are watched: the title catches a
+// language switch and the section being shown, the head catches the rail getting WIDER —
+// a tight title keeps its own width then, so watching it alone never put it back on one
+// line. The measured result does not depend on the previous state, so this settles.
+function watchRailSectionHeads() {
+  if (typeof ResizeObserver !== 'function') return;
+  const observer = new ResizeObserver(() => fitRailSectionHeads());
+  document.querySelectorAll('.lib-rail-section-head, .lib-rail-section-title').forEach((el) => observer.observe(el));
+}
+
+// ONL-005 tasks 5-6. A rail section is collapsed until the user opens it, then remembered
+// across launches. `persist` is set only by the user's own click; a render just shows the
+// stored state. Each section names its own setting and its own save call — a literal
+// setConfig per setting, so the set-config allowlist guard can still read them all.
+function setRailSectionOpen(spec, open, { persist = false } = {}) {
+  const value = !!open;
+  $(spec.section)?.classList.toggle('open', value);
+  $(spec.toggle)?.setAttribute('aria-expanded', String(value));
+  if (!persist || !config || config[spec.setting] === value) return;
+  config[spec.setting] = value;
+  // A remembered UI state; a failed write only means it opens collapsed next time.
+  Promise.resolve(spec.save(value)).catch(() => {});
+}
+
+function setOnlineSourcesOpen(open, options) {
+  setRailSectionOpen({
+    section: '#onlineSourcesSection', toggle: '#onlineSourcesToggle', setting: 'onlineSourcesExpanded',
+    save: (value) => window.api.setConfig({ onlineSourcesExpanded: value }),
+  }, open, options);
+}
+
+function setLibTagsOpen(open, options) {
+  setRailSectionOpen({
+    section: '#libTagSection', toggle: '#libTagsToggle', setting: 'libraryTagsExpanded',
+    save: (value) => window.api.setConfig({ libraryTagsExpanded: value }),
+  }, open, options);
 }
 
 // --- Cloud account (C4) ---
@@ -4810,10 +4969,16 @@ function renderCloudAccount() {
   host.innerHTML = '';
   const s = CLOUDAUTH.state || { signedIn: false };
 
-  if (CLOUDAUTH.signingIn) {
+  // BUG-031. Main's answer counts, not only this window's own press: a window created
+  // during a sign-in pressed nothing, and drew a Sign in button beside the running one.
+  if (CLOUDAUTH.signingIn || s.signingIn) {
     const msg = document.createElement('span');
     msg.className = 'lib-cloud-acc-msg';
     msg.textContent = t('online.signingIn');
+    host.append(msg);
+    // Only while main says it still works. Past the browser redirect the exchange cannot
+    // be called back, and a Cancel there silently did nothing.
+    if (!s.signinCancellable) return;
     // The way out. Abandoning the browser tab sends nothing back, so without this the
     // strip sat here for five minutes with no control on it at all, and the only cure
     // was quitting the app.
@@ -4828,7 +4993,7 @@ function renderCloudAccount() {
       // still in flight resolve into a window that already believes it is signed out.
       try { await window.api.cloudSigninCancel(); } catch { /* the flag clears anyway */ }
     });
-    host.append(msg, cancel);
+    host.append(cancel);
     return;
   }
 
@@ -5007,10 +5172,15 @@ function replaceOnlineEntries(entries, opts = {}) {
 
 function appendOnlineEntries(entries) {
   const known = new Set(ONLINE.entries.map((entry) => entry.key));
+  const identities = new Set(ONLINE.entries.flatMap((entry) => OnlineIdentity.keys(entry.item)));
   const extra = [];
   for (const entry of (entries || [])) {
     if (!entry || !entry.key || known.has(entry.key)) continue;
     known.add(entry.key);
+    const keys = OnlineIdentity.keys(entry.item);
+    const duplicate = keys.some((key) => identities.has(key));
+    keys.forEach((key) => identities.add(key));
+    if (duplicate) continue;
     extra.push(entry);
   }
   if (extra.length) ONLINE.entries = ONLINE.entries.concat(extra);
@@ -5129,7 +5299,7 @@ async function removeOnlineFromLibrary(pooled) {
   if (!res || res.error || !res.affected) { toast(t('library.massDeleteFailed')); return false; }
   config = res.config || config;
   refreshPoolDependentChrome();
-  toastRemoved(res.affected, res.undo && res.undo.token);
+  toastRemoved(res.affected, res.undo && res.undo.token, res.evicted);
   return true;
 }
 
@@ -5211,12 +5381,12 @@ async function renderOnline() {
   await ensureCloudCapability();
   if (LIB.filter !== 'online' || renderEpoch !== ONLINE.renderEpoch) return;
   const sources = onlineSources();
-  const sourceSignature = `${sources.lumina ? 1 : 0}${sources.internet ? 1 : 0}`;
+  const sourceSignature = OnlineSources.signature(sources);
   const isCurrent = () => {
     const current = onlineSources();
     return LIB.filter === 'online'
       && renderEpoch === ONLINE.renderEpoch
-      && `${current.lumina ? 1 : 0}${current.internet ? 1 : 0}` === sourceSignature;
+      && OnlineSources.signature(current) === sourceSignature;
   };
   applyOnlineSourceUI(sources);
   await refreshOnlineAccount(sources, isCurrent);
@@ -5228,12 +5398,15 @@ async function renderOnline() {
   if (!INTERNET.statusFetched) {
     try {
       const st = await window.api.internetStatus();
+      if (!isCurrent()) return;
       INTERNET.nsfwAvailable = !!st.nsfwAvailable;
       INTERNET.providerNames = providerNameMap(st.providers);
+      INTERNET.providers = st.providers;
     } catch { INTERNET.nsfwAvailable = false; }
     if (!isCurrent()) return;
     INTERNET.statusFetched = true;
   }
+  applyOnlineSourceUI(sources);
   updatePurityToggle();
   const sortEl = $('#whSort'); if (sortEl && sortEl.value !== INTERNET.sort) sortEl.value = INTERNET.sort;
   if (ONLINE.view === 'favorites') { loadFavoritesFeed(); return; }
@@ -5264,17 +5437,38 @@ async function refreshOnlineAccount(sources, isCurrent = () => true) {
 }
 
 // Toggle a content source on/off (keeps at least one on), persist, re-search.
-function toggleOnlineSource(key) {
+async function toggleOnlineSource(id) {
+  if (INTERNET.sourcePending) return;
   const cur = onlineSources();
-  const next = { lumina: cur.lumina, internet: cur.internet };
-  next[key] = !next[key];
-  if (!next.lumina && !next.internet) return; // never leave the tab empty
-  config.onlineSources = next;
-  window.api.setConfig({ onlineSources: next });
-  ONLINE.generation += 1; // cancel pages still arriving from the previous source mix
-  ONLINE.loading = false;
-  ONLINE.loaded = false;
-  renderOnline();
+  const provider = (INTERNET.providers || []).find((p) => p.id === id);
+  if (!provider) return;
+  const value = !OnlineSources.enabled(cur, provider);
+  const patch = OnlineSources.isCloud(provider) ? { lumina: value } : { providers: { [id]: value } };
+  const next = OnlineSources.patch(patch, cur, INTERNET.providers);
+  if (!next) { applyOnlineSourceUI(cur); return; }
+  INTERNET.sourcePending = true;
+  applyOnlineSourceUI(cur);
+  try {
+    const saved = await window.api.setConfig({ onlineSources: patch });
+    // set-config returns the old config on a disk failure; never pretend it saved.
+    if (!saved || OnlineSources.signature(saved.onlineSources) !== OnlineSources.signature(next)) {
+      throw new Error('Source selection was not saved');
+    }
+    config.onlineSources = saved.onlineSources;
+    hideOnlineTagSuggest();
+    INTERNET_TAG_SUGGEST.cache.clear();
+    INTERNET.statusFetched = false;
+    INTERNET.resume = null;
+    ONLINE.generation += 1;
+    ONLINE.loading = false;
+    ONLINE.loaded = false;
+    if (LIB.filter === 'online') renderOnline();
+  } catch {
+    toast(t('online.sourcesSaveFailed'));
+  } finally {
+    INTERNET.sourcePending = false;
+    applyOnlineSourceUI(onlineSources());
+  }
 }
 
 // Unified search: one query + content filter drives every active source into #whGrid.
@@ -5283,6 +5477,7 @@ async function doOnlineSearch(reset) {
   hideOnlineTagSuggest();
   const generation = ++ONLINE.generation;
   ONLINE.view = 'search';
+  INTERNET.searchError = '';
   applyFavToggleUI();
   const qEl = $('#whQuery'); INTERNET.q = (qEl && qEl.value || '').trim();
   INTERNET.sortTouched = OnlineBrowse.sortTouchedAfterSearch(INTERNET.q, INTERNET.sortTouched);
@@ -5334,6 +5529,15 @@ async function loadInternetResults(generation) {
   catch { res = { error: 'network' }; }
   if (!onlineSearchIsCurrent(generation)) return [];
   INTERNET.searched = true;
+  // R1: a failed source is not an empty catalogue. Keep the notice through paging;
+  // even if other sites answer, this search may be incomplete. A new search resets it.
+  const failedSources = Object.keys(res && res.providerErrors || {});
+  if (failedSources.length) {
+    const names = INTERNET.providerNames || {};
+    INTERNET.searchError = t('online.sourcesFailed', { sources: failedSources.map((id) => names[id] || id).join(', ') });
+  } else if (!res || res.error) {
+    INTERNET.searchError = t('online.error', { e: 'network' });
+  }
   if (res && typeof res.nsfwAvailable !== 'undefined') { INTERNET.nsfwAvailable = !!res.nsfwAvailable; updatePurityToggle(); }
   // Main records one strike per failed provider even when the merged round is an error.
   // Carry that replacement token before returning: otherwise every click sends the old
@@ -5374,7 +5578,7 @@ function finalizeOnlineFeed() {
   const note = $('#whNote'); const more = $('#whMore');
   const n = ONLINE.entries.length;
   setLibViewHeader(n);
-  if (note) note.textContent = n ? '' : t('online.noResults');
+  if (note) note.textContent = INTERNET.searchError || (n ? '' : t('online.noResults'));
   const hasMore = !!INTERNET.resume;
   // ONL-003. The button is now the FALLBACK, not the way. It stays out of sight while
   // scrolling keeps the feed filling itself, and comes back the moment the feed stops
@@ -5455,9 +5659,9 @@ function setInternetCardThumbnail(card, item) {
     card.style.backgroundImage = `url("${item.thumb}")`;
     return;
   }
-  window.api.internetThumbnail(item).then((result) => {
-    if (result && result.dataUrl) card.style.backgroundImage = `url("${result.dataUrl}")`;
-  }).catch(() => {});
+  // PERF-008. Та же замена, что и в превью карточки: адрес вместо ожидания данных.
+  const url = internetThumbUrl(item);
+  if (url) card.style.backgroundImage = `url("${url}")`;
 }
 
 function buildInternetCard(item) {

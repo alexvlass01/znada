@@ -122,7 +122,12 @@ const param = (url, name) => new URL(url).searchParams.get(name);
 function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
   const userData = makeTempProfile(label);
   writeJson(path.join(userData, 'config.json'), {
-    autoSwitch: true, style: 'fill', monitors: {}, ...configPatch,
+    // Curation/pagination cases choose two sites explicitly. ONL-005 makes board
+    // membership a user choice, no longer an implicit group fallback.
+    autoSwitch: true, style: 'fill', monitors: {},
+    onlineSources: { lumina: false, internet: true, providers: {
+      wallhaven: true, gelbooru: firstSiteUsable, danbooru: !firstSiteUsable,
+    } }, ...configPatch,
   });
   const main = loadMain(userData);
   main.__test.setProviderCredentials('gelbooru', firstSiteUsable ? { userId: 'test', apiKey: 'test' } : null);
@@ -147,18 +152,10 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
     ok('Wallhaven is asked WITHOUT the people category',
       wh(net.urls).every((u) => param(u, 'categories') === '110'));
 
-    // The FIRST member of a group is the one asked while it CAN answer; the alternative
-    // is a fallback, not a co-equal. Checked by host, or a site quietly dropping out
-    // would look identical to a site answering.
-    //
-    // "While it can answer" is the part the earlier version of this left out. It named
-    // gelbooru.com outright, and the key that site needs lives in a gitignored file — so
-    // the whole suite went red for anyone building without it, while the app was doing
-    // exactly the right thing and falling back. Found on the 1.7.3 gate by running the
-    // suite twice, with the key and without (BUG-033).
+    // ONL-005: only the board selected in setup is asked, not a hidden alternative.
     const boorusAsked = new Set(booru(net.urls).map((u) => new URL(u).host));
-    ok('only ONE site of the group is asked, never both at once', boorusAsked.size === 1);
-    ok('and it is the first one that can answer, with the fallback used only when it cannot',
+    ok('only the selected board is asked', boorusAsked.size === 1);
+    ok('and that selected board is Gelbooru',
       boorusAsked.has('gelbooru.com'));
     const limits = booru(net.urls).map((u) => Number(param(u, 'limit')));
     ok('the anime board is asked for the same page size as Wallhaven, not four times more',
@@ -368,6 +365,34 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
     main.__test.setBrowseRandom(null);
   }
 
+  // ONL-005 task 3. The random slice is FRONT-PAGE curation. A search is the user's own
+  // question, so its top starts at the top: a rare tag with a page or two of results would
+  // otherwise start past its end and read as "nothing found" (owner QA: sameko_saba on Top).
+  {
+    const { main } = setup('feed-search-top');
+    // The roll that would land furthest from the top if a search were still sliced.
+    main.__test.setBrowseRandom(() => 0.95);
+    const net = installFetch((target, n) => {
+      const body = answerFor(target, n);
+      // Plenty left, so a missing second request cannot be blamed on the site running out.
+      if (target.includes('gelbooru.com')) body['@attributes'] = { count: 1000, offset: 0 };
+      return body;
+    });
+    const topPids = () => booru(net.urls)
+      .filter((u) => param(u, 'tags').includes('sort:score'))
+      .map((u) => Number(param(u, 'pid')));
+    const ask = (resume) => main.invoke('internet-search', {
+      q: 'sameko_saba', sort: 'toplist', purity: { sfw: true, sketchy: false, nsfw: false }, browse: false, resume,
+    });
+    const first = await ask(undefined);
+    ok('a search on Top asks Gelbooru for the first page, not a random slice', topPids().join() === '0');
+    net.urls.length = 0;
+    await ask(first.resume);
+    ok('and "show more" on that search walks on to the second page', topPids().join() === '1');
+    net.restore();
+    main.__test.setBrowseRandom(null);
+  }
+
   // A site that has said "nothing more" is not asked again. This is the measured waste
   // the change is about: searching a booru-only tag, the other site returned nothing on
   // the first page and was still asked on the four pages after it.
@@ -456,7 +481,8 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
     // nothing left to ask" must not be dressed up as "the internet is down".
     const resume = require('../src/online-resume');
     const purity = { sfw: true, sketchy: false, nsfw: false };
-    const done = { sig: resume.signatureOf({ q: 'cats', purity, browse: false }), slots: {} };
+    const sourcesKey = require('../src/online-sources').signature(main.__test.getConfig().onlineSources);
+    const done = { sig: resume.signatureOf({ q: 'cats', purity, browse: false, sourcesKey }), slots: {} };
     for (const id of ['wallhaven', 'gelbooru', 'danbooru']) {
       done.slots[resume.slotKey(id, 'date_added')] = { at: null, fails: 0 };
     }
@@ -538,16 +564,17 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
       && byProvider('gelbooru').every((i) => i.loadsDirectly === false));
   }
 
-  // A site that cannot answer must simply drop out, and its alternative take over —
-  // this is the hardwired pair replaced by registry order.
+  // A failing site drops out while another ENABLED board still answers.
   {
-    const { main } = setup('feed-fallback');
+    const { main } = setup('feed-fallback', {
+      onlineSources: { lumina: false, internet: true },
+    });
     const net = installFetch((target, n) => {
       if (target.includes('gelbooru.com')) throw Object.assign(new Error('down'), { name: 'TypeError' });
       return answerFor(target, n);
     });
     const res = await main.invoke('internet-search', { q: 'x', page: 1, purity: { sfw: true, sketchy: false, nsfw: false }, browse: false });
-    ok('the alternative is asked when the first cannot answer',
+    ok('the other enabled board answers when Gelbooru fails',
       net.urls.some((u) => u.includes('donmai.us')) && res.items.some((i) => i.provider === 'danbooru'));
     ok('and the user is told nothing while any site still works', !res.error);
     // ONL-012 review. The handler's format rule travels WITH the request, so a site that
@@ -697,6 +724,7 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
   // checked is the shared handler's side of the bargain, not the catalogue's.
   {
     const { main } = setup('feed-session');
+    main.__test.getConfig().onlineSources.providers.marked = true; // explicitly enable the synthetic paging site
     const all = main.__test.searchAllProviders;
 
     // A key in a file is read once and kept. A session must be asked for every time, or
@@ -835,11 +863,12 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
     const internetOnly = setup('feed-source-internet', {
       onlineSources: { lumina: false, internet: true },
     }).main;
+    internetOnly.__test.getConfig().onlineSources.providers['public-default'] = true;
     await internetOnly.__test.searchRound(
       require('../src/online-resume').emptyToken('internet-only'),
       'date_added', {}, [site('public-default'), site('catalogue', 'lumina')],
     );
-    ok('a site with no special source key follows the Internet switch',
+    ok('an explicitly selected external site is asked independently of the catalogue',
       asked.join() === 'public-default');
   }
 
@@ -888,7 +917,7 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
 
   // A site that is refused, or that answers 200 while reporting a failure in the body.
   {
-    const { main } = setup('feed-refused');
+    const { main } = setup('feed-refused', { onlineSources: { lumina: false, internet: true } });
     const net = installFetch((target, n) => {
       if (target.includes('gelbooru.com')) return 429;
       return answerFor(target, n);
@@ -898,7 +927,7 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
       net.urls.some((u) => u.includes('donmai.us')) && res.items.some((i) => i.provider === 'danbooru'));
   }
   {
-    const { main } = setup('feed-softfail');
+    const { main } = setup('feed-softfail', { onlineSources: { lumina: false, internet: true } });
     const net = installFetch((target, n) => {
       // This site can answer 200 and still be reporting a failure inside the body.
       if (target.includes('gelbooru.com')) return { success: false, message: 'Search error' };
@@ -1025,6 +1054,142 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
     }
   }
 
+  // ONL-005: selection, persistence, stale cursors and MD5 identity through real IPC.
+  {
+    const { main, userData } = setup('source-picker', { onlineSources: { lumina: false, internet: true } });
+    const hash = 'a'.repeat(32);
+    const net = installFetch((url, n) => {
+      const body = answerFor(url, n);
+      if (url.includes('gelbooru.com')) body.post[0].md5 = hash;
+      if (url.includes('donmai.us')) body[0].md5 = hash;
+      return body;
+    });
+    const request = { q: 'sky', sort: 'date_added', purity: { sfw: true }, browse: false };
+    const first = await main.invoke('internet-search', request);
+    ok('both selected boards are asked even when Gelbooru succeeds',
+      net.urls.some((u) => u.includes('gelbooru.com')) && net.urls.some((u) => u.includes('donmai.us')));
+    ok('a valid MD5 appears once across the two successful boards', first.items.filter((i) => i.md5 === hash).length === 1);
+    const saved = await main.invoke('set-config', { onlineSources: { providers: { danbooru: false } } });
+    ok('a provider patch preserves the other selected sites',
+      saved.onlineSources.providers.gelbooru && saved.onlineSources.providers.wallhaven && !saved.onlineSources.providers.danbooru);
+    const disk = JSON.parse(require('fs').readFileSync(path.join(userData, 'config.json'), 'utf8'));
+    ok('the per-site choice is persisted', disk.onlineSources.providers.danbooru === false);
+    net.urls.length = 0;
+    await main.invoke('internet-search', { ...request, resume: first.resume });
+    ok('changing sites invalidates an old cursor, even through IPC', param(wh(net.urls)[0], 'page') === '1');
+    ok('a disabled board receives no search request', !net.urls.some((u) => u.includes('donmai.us')));
+    net.restore();
+    const failedNet = installFetch((url, n) => url.includes('gelbooru.com') ? 503 : answerFor(url, n));
+    await main.invoke('internet-search', request);
+    ok('failure does not secretly enable a disabled fallback', !failedNet.urls.some((u) => u.includes('donmai.us')));
+    failedNet.restore();
+    const before = JSON.stringify(main.__test.getConfig().onlineSources);
+    await assert.rejects(async () => main.invoke('set-config', { onlineSources: { providers: { wallhaven: false, gelbooru: false } } }), /E_SETTINGS_REJECTED/);
+    await assert.rejects(async () => main.invoke('set-config', { onlineSources: { providers: { unknown: true } } }), /E_SETTINGS_REJECTED/);
+    await assert.rejects(async () => main.invoke('set-config', { onlineSources: { providers: { gelbooru: 'yes' } } }), /E_SETTINGS_REJECTED/);
+    ok('all-off, unknown and non-boolean source patches are refused atomically',
+      JSON.stringify(main.__test.getConfig().onlineSources) === before);
+    await main.invoke('set-config', { onlineSources: { providers: { gelbooru: false } } });
+    const quiet = installFetch(answerFor);
+    await main.invoke('internet-tag-suggest', { q: 'sky', limit: 5 });
+    ok('disabled boards are not used for tag suggestions', quiet.urls.length === 0);
+    quiet.restore();
+    let release;
+    const delayed = installFetch(() => new Promise((resolve) => { release = resolve; }));
+    const pending = main.invoke('internet-search', request);
+    await new Promise((resolve) => { setImmediate(resolve); });
+    await main.invoke('set-config', { onlineSources: { providers: { danbooru: true } } });
+    release(answerFor('https://wallhaven.cc/api/v1/search', 1));
+    const stale = await pending;
+    ok('an in-flight reply for the old selection is discarded', stale.items.length === 0 && stale.resume === null);
+    delayed.restore();
+  }
+
+  // ONL-005 task 4. Owner QA saw pictures vanish once a second board was switched on. Measured
+  // on live replies (2026-09-16), that feed was Danbooru answering alone — Gelbooru had no key
+  // in the preview copy — and Danbooru rates one of them `s` and never returns pictures under
+  // one megapixel. The merge itself lost nothing. Pinned here through the real handler, over
+  // two pages, with the shapes the live replies had: adding a board never takes a picture away.
+  {
+    const md5 = (tag) => (tag + 'f'.repeat(32)).slice(0, 32);
+    const sharedPost = 'https://www.pixiv.net/artworks/1';
+    const gelPost = (id, tag, extra = {}) => ({
+      id, md5: md5(tag), image: `${tag}.jpg`,
+      file_url: `https://img3.gelbooru.com/images/aa/bb/${tag}.jpg`,
+      preview_url: `https://img3.gelbooru.com/thumbnails/aa/bb/${tag}.jpg`,
+      width: 2000, height: 3000, rating: 'general', tags: 'sameko_saba', source: '', ...extra,
+    });
+    const danPost = (id, tag, extra = {}) => ({
+      id, md5: md5(tag), file_ext: 'jpg',
+      file_url: `https://cdn.donmai.us/original/aa/${tag}.jpg`,
+      preview_file_url: `https://cdn.donmai.us/preview/aa/${tag}.jpg`,
+      image_width: 2000, image_height: 3000, rating: 'g',
+      tag_string: 'sameko_saba', tag_string_general: '', source: '', ...extra,
+    });
+    // a3 is the wide picture Danbooru rates `s`; a5 is the one under a megapixel. a4 and b2 come
+    // from the same artist post but are different files, so both must stay.
+    const gelbooru = {
+      1: [gelPost(101, 'a1'), gelPost(102, 'a2'), gelPost(103, 'a3', { width: 4096, height: 2419 }),
+        gelPost(104, 'a4', { source: sharedPost }), gelPost(105, 'a5', { width: 1200, height: 676 })],
+      2: [gelPost(106, 'a6'), gelPost(107, 'a7')],
+    };
+    const danbooru = {
+      1: [danPost(9001, 'a1'), danPost(9002, 'b1'), danPost(9003, 'b2', { source: sharedPost }), danPost(9004, 'a2')],
+      // a3 turning up on a LATER page of the other board is a copy of a picture already shown.
+      2: [danPost(9101, 'a7'), danPost(9102, 'a3'), danPost(9103, 'b3')],
+    };
+    const answer = (url) => {
+      if (url.includes('gelbooru.com')) {
+        const page = Number(param(url, 'pid')) + 1;
+        return { post: gelbooru[page] || [], '@attributes': { count: 102, offset: (page - 1) * 100 } };
+      }
+      if (url.includes('donmai.us')) {
+        const page = Number(param(url, 'page'));
+        const rows = danbooru[page] || [];
+        if (page !== 1) return rows;
+        // Danbooru says "there is more" only by filling the page it was asked for.
+        const limit = Number(param(url, 'limit')) || 100;
+        const filler = Array.from({ length: limit - rows.length },
+          (_, i) => danPost(9500 + i, `c${i.toString(16).padStart(3, '0')}`));
+        return rows.concat(filler);
+      }
+      return answerFor(url, 1);
+    };
+    const onlyBoards = (gel, dan) => ({ onlineSources: { lumina: false, internet: true, providers: {
+      wallhaven: false, gelbooru: gel, danbooru: dan,
+    } } });
+    const request = { q: 'sameko_saba', sort: 'date_added', purity: { sfw: true }, browse: false };
+    const twoPages = async (main) => {
+      const first = await main.invoke('internet-search', request);
+      const second = await main.invoke('internet-search', { ...request, resume: first.resume });
+      return [first.items, second.items];
+    };
+    const picturesOf = (pages) => new Set(pages.flat().map((i) => i.md5));
+
+    const both = setup('source-union-both', onlyBoards(true, true));
+    const net = installFetch(answer);
+    const bothPages = await twoPages(both.main);
+    const union = picturesOf(bothPages);
+    ok('both boards reach their second page', booru(net.urls).length === 4);
+    ok('every Gelbooru picture is still there with Danbooru switched on, the wide one and the small one included',
+      ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'].every((tag) => union.has(md5(tag))));
+    ok('and every picture only Danbooru has is added',
+      ['b1', 'b2', 'b3'].every((tag) => union.has(md5(tag))));
+    ok('a different file from the same artist post is not taken for a copy',
+      union.has(md5('a4')) && union.has(md5('b2')));
+    ok('the same file from both boards is shown once per page',
+      bothPages.every((items) => items.length === new Set(items.map((i) => i.md5)).size));
+    net.restore();
+    unloadMain();
+
+    const alone = setup('source-union-gelbooru', onlyBoards(true, false));
+    const aloneNet = installFetch(answer);
+    const alonePictures = picturesOf(await twoPages(alone.main));
+    ok('Gelbooru alone is asked on its own', aloneNet.urls.every((u) => !u.includes('donmai.us')));
+    ok('nothing Gelbooru alone shows is missing once Danbooru is added',
+      alonePictures.size === 7 && [...alonePictures].every((hash) => union.has(hash)));
+    aloneNet.restore();
+  }
   unloadMain();
   console.log(`\nAll ${passed} online browse-feed tests passed.`);
 })().catch((err) => { console.error(err); process.exit(1); });

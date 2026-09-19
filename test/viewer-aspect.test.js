@@ -143,4 +143,43 @@ ok('сцена умеет принимать пропорции — иначе �
     'viewer.js не умеет вернуться к прежнему поведению, когда разрешение неизвестно');
 });
 
+// CODE-003. Оба конца этой цепочки проверены выше, а середина — нет, и держалась она на
+// совпадении позиций: `showImage(src, fit, hardSwap)` звала `crossfadeTo(STAGE, src, fit, hardSwap)`
+// четырьмя аргументами при трёх объявленных. В `hardSwap` попадал `fit`, четвёртый молча
+// отбрасывался, и нужное поведение получалось случайно. Своего `fit` у `crossfadeTo` не было
+// никогда: имя осталось от `c89d44e`, где параметр добавили в `showImage`, но не в неё.
+// Пользователь этого не видит — опасность в следующем, кто «выровняет арность» и уберёт
+// лишний аргумент: он вернёт BUG-039, и ни одна проверка не покраснеет.
+ok('showImage передаёт признак мгновенной смены именем, а не совпадением позиций', () => {
+  assert.ok(/function showImage\(src, hardSwap\)/.test(viewerSrc),
+    'у showImage остался мёртвый параметр — признак снова едет по позиции, а не по имени');
+  assert.ok(viewerSrc.includes('crossfadeTo(STAGE, src, hardSwap)'),
+    'showImage зовёт crossfadeTo не тем набором аргументов, который та объявляет');
+  assert.ok(!viewerSrc.includes('crossfadeTo(STAGE, src, fit, hardSwap)'),
+    'лишний аргумент всё ещё передаётся и молча отбрасывается');
+});
+
+// Ветку выше проверяли регулярным выражением по исходнику: оно докажет, что строка на месте,
+// но не то, что она срабатывает. Здесь `crossfadeTo` выполняется по-настоящему на подставных
+// слоях, поэтому «мгновенно» и «плавно» различаются результатом, а не написанием.
+ok('смена формы коробки снимает уходящий слой мгновенно, а не уводит за 70 мс', () => {
+  const crossfadeTo = vm.runInContext(`(${viewerFn('crossfadeTo')})`, ctx);
+  const layer = () => ({ style: {}, src: '' });
+
+  const hard = { front: layer(), back: layer() };
+  const leavingHard = hard.front;
+  crossfadeTo(hard, 'new.jpg', true);
+  assert.strictEqual(leavingHard.style.transition, 'none',
+    'при смене формы коробки уходящий слой всё ещё уводится плавно — это и есть BUG-039');
+  assert.strictEqual(leavingHard.style.opacity, '0', 'уходящий слой не снят');
+  assert.strictEqual(hard.front.src, 'new.jpg', 'новый слой не стал текущим');
+
+  const soft = { front: layer(), back: layer() };
+  const leavingSoft = soft.front;
+  crossfadeTo(soft, 'new.jpg', false);
+  assert.strictEqual(leavingSoft.style.transition, '',
+    'форма коробки не менялась, а плавный уход подменён мгновенным');
+  assert.strictEqual(leavingSoft.style.opacity, '0', 'уходящий слой не снят');
+});
+
 console.log(`\nAll ${passed} viewer-aspect tests passed.`);

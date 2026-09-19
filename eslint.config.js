@@ -62,6 +62,9 @@ const DUAL_MODE_FILES = [
   'src/hotkey.js',
   'src/next-change.js',
   'src/online-add.js',
+  'src/online-sources.js',
+  'src/online-identity.js',
+  'src/media-proxy.js',
   'src/path-key.js',
   'src/gallery-payload.js',
   'src/size-filter.js',
@@ -74,8 +77,8 @@ const DUAL_MODE_FILES = [
 const RENDERER_SHARED = [
   'AssignRows', 'AutoLoad', 'CardActions', 'CardDetails', 'CardInteraction', 'CardMenu', 'CardMetadata', 'ViewScroll',
   'CardTransfer', 'DeferredRefresh', 'JustifiedLayout', 'NextChange', 'OnlineAdd',
-  'OnlineBrowse', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
-  'VirtualWindow', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaPathKey',
+  'OnlineBrowse', 'OnlineSources', 'OnlineIdentity', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
+  'VirtualWindow', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaMediaProxy', 'ZnadaPathKey',
 ].reduce((all, name) => Object.assign(all, { [name]: 'readonly' }), {});
 
 // Pages that are only ever a page.

@@ -103,8 +103,8 @@ ok('and an account that may not see adult content is not asked for it',
   // key cannot split a picture that two different sites both hold.
   ok('while the same picture on two different sites is still one picture',
     online.interleave([
-      [{ provider: 'a', id: '1', md5: 'abc' }],
-      [{ provider: 'b', id: '2', md5: 'abc' }],
+      [{ provider: 'a', id: '1', md5: 'a'.repeat(32) }],
+      [{ provider: 'b', id: '2', md5: 'a'.repeat(32) }],
     ]).length === 1);
   ok('but equal site-local ids from different sites remain two different pictures',
     online.interleave([

@@ -172,7 +172,6 @@ function reportStyle(langs, { en, entries }) {
 // всё остальное должен увидеть человек.
 const ENGLISH_OK = [
   'online.sourceLumina',   // бренд
-  'online.sourceInternet', // «Internet» — то же слово в большинстве языков
   'online.rail', 'online.source', // «Online» — заимствование
   'monitor.label', 'home.monitorSingle', 'home.monitorRange', // «Monitor {n}»
   'viewerBg.aurora',       // название режима

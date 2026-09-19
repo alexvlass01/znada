@@ -13,9 +13,9 @@ ok('interleave: alternates providers', (() => {
   return merged.map((x) => x.id).join(',') === 'w1,d1,w2,d2';
 })());
 ok('interleave: keeps the longer provider tail', O.interleave([[item('w1', 'w')], [item('d1', 'd'), item('d2', 'd')]]).length === 3);
-ok('interleave: deduplicates matching original sources', (() => {
+ok('interleave: a shared original post can contain different images (MD5 only)', (() => {
   const source = 'https://x.com/a/status/7';
-  return O.interleave([[item('w1', 'w', source)], [item('d1', 'd', source)]]).length === 1;
+  return O.interleave([[item('w1', 'w', source)], [item('d1', 'd', source)]]).length === 2;
 })());
 ok('allowedDownloadUrl: accepts only the provider CDN', (() => {
   return O.allowedDownloadUrl({ provider: 'wallhaven', full: 'https://w.wallhaven.cc/full/a.jpg' })

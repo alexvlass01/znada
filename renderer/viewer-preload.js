@@ -18,15 +18,12 @@ contextBridge.exposeInMainWorld('viewerApi', {
   close: () => ipcRenderer.invoke('gallery-close'),
   toggleFullscreen: () => ipcRenderer.invoke('gallery-toggle-fullscreen'),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
-  internetThumbnail: (item) => ipcRenderer.invoke('internet-thumbnail', item),
-  internetSample: (item) => ipcRenderer.invoke('internet-sample', item),
-  internetFull: (item) => ipcRenderer.invoke('internet-full', item),
   internetAdd: (item, query) => ipcRenderer.invoke('internet-add', item, query),
   cloudAdd: (item) => ipcRenderer.invoke('cloud-add', item),
   // ONL-008: removing and immediately restoring an online item from inside the viewer.
   // These are the same validated handlers the Library tab uses: removal moves records
   // to the trash, and Undo restores the complete record without touching the file.
-  libraryRemoveMany: (records) => ipcRenderer.invoke('library-remove-many', records),
+  libraryRemoveMany: (records, options) => ipcRenderer.invoke('library-remove-many', records, options),
   libraryUndoRemove: (token) => ipcRenderer.invoke('library-undo-remove', token),
   // ONL-009. The same handlers the grid uses: the viewer is where a picture is
   // actually being looked at, so it is where "save this" gets decided.

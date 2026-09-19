@@ -2,14 +2,14 @@
 
 // Plain Node test: `node test/auto-load.test.js`.
 //
-// ONL-003, the owner's complaint of 2026-09-02: "и кнопку убирай" — reaching the end of
+// ONL-003, from the owner's request of 2026-09-02 to drop the button: reaching the end of
 // the online feed should load the next page instead of asking for a click.
 //
 // Every check here is about the one way this feature can go badly wrong. Scrolling to the
 // bottom asks for more; if "more" adds nothing, the bottom is still the bottom and the
 // next frame asks again. That is a request storm made out of one gesture, against three
 // sites, and BUG-020 spent a whole task limiting exactly this kind of traffic. The owner
-// asked for this change "максимально осторожно", so the loader is suspicious by design
+// asked for this change to be made with the utmost care, so the loader is suspicious by design
 // and these tests exist to keep it that way.
 
 const assert = require('assert');

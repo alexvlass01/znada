@@ -280,6 +280,19 @@ ok('bad onlineSort → date_added; all-off purity → sfw forced on', (() => {
   return c.onlineSort === 'date_added' && c.onlinePurity.sfw === true;
 })());
 
+// ONL-005 task 5: the Online site list starts collapsed; only a real `true` keeps it open.
+ok('fresh default: the site list is collapsed', fresh.onlineSourcesExpanded === false);
+fs.writeFileSync(p('sources_open.json'), JSON.stringify({ onlineSourcesExpanded: true }));
+ok('an opened site list stays open after a restart', C.load(p('sources_open.json')).onlineSourcesExpanded === true);
+fs.writeFileSync(p('sources_bad.json'), JSON.stringify({ onlineSourcesExpanded: 'yes' }));
+ok('a non-boolean open state reads as collapsed', C.load(p('sources_bad.json')).onlineSourcesExpanded === false);
+// ONL-005 task 6: the local tag section follows the same rule.
+ok('fresh default: the tag section is collapsed', fresh.libraryTagsExpanded === false);
+fs.writeFileSync(p('tags_open.json'), JSON.stringify({ libraryTagsExpanded: true }));
+ok('an opened tag section stays open after a restart', C.load(p('tags_open.json')).libraryTagsExpanded === true);
+fs.writeFileSync(p('tags_bad.json'), JSON.stringify({ libraryTagsExpanded: 1 }));
+ok('a non-boolean tag section state reads as collapsed', C.load(p('tags_bad.json')).libraryTagsExpanded === false);
+
 // viewerBackground: fresh default is ambient; valid values pass; bad → ambient
 ok('fresh default: viewerBackground ambient', fresh.viewerBackground === 'ambient');
 fs.writeFileSync(p('viewerbg_ok.json'), JSON.stringify({ viewerBackground: 'aurora' }));

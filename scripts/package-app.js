@@ -63,12 +63,16 @@ const ALWAYS_IGNORED = Object.freeze([
   '^/ROADMAP\\.md$',
   '^/CLAUDE\\.md$',
   '^/AGENTS\\.md$',
-  '^/Znada-DEV\\.bat$',
-  '^/Znada-DIAG\\.bat$',
-  '^/Znada-Review\\.bat$',
+  // BUG-045. Root batch files are local launchers (DEV, DIAG, Review, Check), and none of them
+  // ships. One pattern for the whole class: Znada-Check.bat arrived without a line of its own
+  // here and every package failed its verification until the pattern covered it.
+  '^/[^/]+\\.(?:bat|cmd)$',
   // CODE-002 dev tooling: public, but no part of what a user installs.
   '^/eslint\\.config\\.js$',
   '^/tsconfig\\.json$',
+  // @electron/packager drops the lockfile by default too. Listed so this list alone decides
+  // the root boundary and the regression test needs no knowledge of packager internals.
+  '^/package-lock\\.json$',
 ]);
 const KEYLESS_IGNORED = Object.freeze([
   '^/wallhaven-key\\.json$',

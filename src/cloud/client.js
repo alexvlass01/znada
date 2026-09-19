@@ -179,19 +179,25 @@ function parseJsonResponse(res, schema) {
 // Read a fetch Response body as JSON, tolerant of empty bodies (e.g. 204 from an
 // idempotent favorite) and non-JSON payloads. Works with both the real Response
 // and the test fake (either text() or json()).
+//
+// A body whose READ fails is not an empty body. BUG-030 let a missed deadline through;
+// BUG-034 found every other read failure still swallowed into null. undici rejects text()
+// with TypeError('terminated') when the connection drops mid-answer, and as null that read
+// as "a 200 with nothing in it": the schema check blamed the server for breaking the
+// contract, and a call without a schema reported the cut-off answer as a success. Every
+// read failure now reaches request(), which decides what it means. Only a body that did
+// arrive and is not JSON is tolerated here.
 async function readBody(res) {
   if (!res) return null;
   if (typeof res.text === 'function') {
-    let text;
-    // A body that fails to arrive because the deadline expired is a TIMEOUT, not an empty
-    // body. Swallowing it here reported a stalled server as a 200 with nothing in it, and
-    // the schema check then called it a broken contract.
-    try { text = await res.text(); } catch (err) { if (isAbortError(err)) throw err; return null; }
+    const text = await res.text();
     if (!text) return null;
     try { return JSON.parse(text); } catch { return { _raw: text }; }
   }
   if (typeof res.json === 'function') {
-    try { return await res.json(); } catch (err) { if (isAbortError(err)) throw err; return null; }
+    // json() reports junk and a dropped connection through the same call; only its parse
+    // error means the body arrived.
+    try { return await res.json(); } catch (err) { if (err instanceof SyntaxError) return null; throw err; }
   }
   return null;
 }
@@ -234,7 +240,12 @@ function createClient({ baseUrl, fetchImpl, anonId, timeoutMs, makeTimeoutSignal
       res = await doFetch(url, init);
       body = await readBody(res);
     } catch (err) {
-      return networkError(err);
+      // BUG-034. If the connection drops after the status line, a failure status still
+      // stands: a 401 must reach the caller as a 401 so it drops the dead session, and
+      // losing only the server's explanation must not turn it into "no connection". A
+      // success whose content never arrived is a failed exchange.
+      if (!res || isAbortError(err) || isOkStatus(res.status)) return networkError(err);
+      body = null;
     }
     return parseJsonResponse({ status: res.status, body }, schema);
   }

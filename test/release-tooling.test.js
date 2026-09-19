@@ -352,6 +352,9 @@ ok('package verifier declares runtime/private and credential boundaries', () => 
   assert.deepStrictEqual(verifyRootBoundary(['/main.js', '/src/library.js'], false), ['main.js', 'src']);
   assert.throws(() => verifyRootBoundary(['/main.js', '/.tmp-leak.log'], false), /unexpected app\.asar root/);
   assert.throws(() => verifyRootBoundary(['/main.js', '/wallhaven-key.json'], false), /unexpected app\.asar root/);
+  // BUG-045: every stray root in one refusal, not one per full package run.
+  assert.throws(() => verifyRootBoundary(['/main.js', '/Znada-Check.bat', '/notes.txt'], false),
+    /unexpected app\.asar root: Znada-Check\.bat, notes\.txt$/);
   assert.deepStrictEqual(
     verifyRootBoundary(['/main.js', '/wallhaven-key.json', '/gelbooru-key.json'], true),
     ['gelbooru-key.json', 'main.js', 'wallhaven-key.json']
@@ -415,7 +418,7 @@ okPrivate('Codex QA contract forbids ad hoc GUI control', 'scripts/codex-qa.ps1'
   const runner = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'codex-qa.ps1'), 'utf8');
   const protocol = fs.readFileSync(
     path.join(__dirname, '..', 'scripts', 'codex-qa-protocol.md'), 'utf8');
-  assert.match(runner, /Статические состояния сохранять как PNG только через tracked scripts\/capture-window\.ps1/);
+  assert.match(runner, /tracked scripts\/capture-window\.ps1/);
   assert.match(runner, /Не писать и не запускать untracked PostMessage\/SendInput\/window-control\/CDP helper-ы/);
   // The PROSE of the contract is deliberately not asserted.
   //

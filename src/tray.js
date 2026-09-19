@@ -25,7 +25,7 @@ function buildMenuTemplate(state, t, actions) {
 
 // System-tray controller. Electron objects, i18n, state and actions are INJECTED
 // so this module has no direct coupling to app state.
-//   deps: { Tray, Menu, nativeImage, assetsDir, t, getState,
+//   deps: { Tray, Menu, nativeImage, assetsDir, t, getState, tooltip?,
 //           onOpen, onApplyCurrent, onNextWallpaper, onInstallUpdate, onQuit }
 function createTrayController(deps) {
   const { Tray, Menu, nativeImage, assetsDir, t, getState } = deps;
@@ -56,7 +56,7 @@ function createTrayController(deps) {
 
   const create = () => {
     tray = new Tray(nativeImage.createFromPath(trayIconPath(getState().theme)));
-    tray.setToolTip('Znada');
+    tray.setToolTip(deps.tooltip || 'Znada'); // COLLAB-003: a DEV/DIAG check names its code here too
     refresh();
     refreshIcon();
     tray.on('click', deps.onOpen);

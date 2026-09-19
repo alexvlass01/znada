@@ -27,6 +27,7 @@ const replies = [
 ];
 const context = {
   INTERNET,
+  t: (key) => key,
   OnlineBrowse: { isBrowse: () => false },
   window: { api: { internetSearch: async (opts) => { sent.push(opts.resume); return replies.shift(); } } },
   onlineSearchIsCurrent: () => true,
@@ -99,6 +100,13 @@ const loadInternetResults = vm.runInNewContext(`(${match[0]})`, context);
     ctx.note = note; ctx.more = more;
     return ctx;
   };
+
+  {
+    const ctx = makeOnlineCtx(Promise.resolve({ items: [], error: null, resume: null }));
+    ctx.INTERNET.searchError = 'previous failed source';
+    await ctx.doOnlineSearch(true);
+    assert.strictEqual(ctx.note.textContent, 'online.noResults', 'fresh successful search clears stale source error');
+  }
 
   // Characterization 1. Switching to a local rail already clears the flag by hand, in
   // renderLibraryCore's non-online branch. The simulation below reproduces that reset,

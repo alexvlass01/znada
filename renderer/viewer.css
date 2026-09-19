@@ -243,6 +243,38 @@ body {
   backdrop-filter: blur(16px);
 }
 
+/* BUG-042. Отказ загрузки перестал быть тупиком: рядом с сообщением живёт кнопка
+   повтора. Правило стоит ВЫШЕ `.media-state[hidden]` намеренно — специфичность у них
+   одинаковая, и снизу `display: inline-flex` перебил бы скрытие пилюли. */
+.media-state.has-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 14px;
+}
+
+.media-state-retry {
+  min-height: 26px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.10);
+  color: #62a0ea;
+  font: inherit;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.media-state-retry:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.media-state-retry:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .media-state[hidden] {
   display: none;
 }
@@ -277,6 +309,21 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* LIB-009: a notice whose end is the point (the trash-eviction warning) wraps instead of
+   ending in an ellipsis. The Undo button keeps its own width beside the wrapped text.
+   Placed from the middle, a wrapping box would get only the right half of the window and
+   fold into a narrow column, so it takes the text's width up to the same max-width. */
+.media-notice.media-notice-wrap {
+  width: max-content;
+}
+
+.media-notice.media-notice-wrap > span {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .media-notice-action {

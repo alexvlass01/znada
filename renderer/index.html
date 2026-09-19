@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; img-src 'self' file: data: https://th.wallhaven.cc https://w.wallhaven.cc https://*.r2.cloudflarestorage.com; style-src 'self' 'unsafe-inline';" />
+        content="default-src 'self'; img-src 'self' file: data: https://th.wallhaven.cc https://w.wallhaven.cc https://*.r2.cloudflarestorage.com znada-media:; style-src 'self' 'unsafe-inline';" />
   <title>Znada</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -12,6 +12,7 @@
     <div class="tb-left">
       <img class="tb-icon" src="../assets/icon.png" alt="" />
       <span class="tb-title">Znada</span>
+      <span class="tb-dev-launch" id="tbDevLaunch" hidden></span>
     </div>
     <div class="tb-nav" id="tbNav">
       <button class="navbtn active" data-page="home" data-i18n="nav.home">Главная</button>
@@ -496,13 +497,42 @@
             <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 3.9 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.3 5.4 8S6.3 3.6 8 1.8z"/></svg>
             <span data-i18n="online.rail">Онлайн</span>
           </button>
-          <div class="lib-tags-section" id="libTagSection" hidden>
-            <label class="lib-tag-searchbox">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
-              <input type="search" id="libTagSearch" placeholder="Поиск тегов" data-i18n-ph="library.tagSearchPh" data-i18n-title="library.tagSearchPh" aria-label="Поиск тегов" aria-controls="libTags" autocomplete="off" spellcheck="false" />
-            </label>
-            <div class="lib-railtags" id="libTags"></div>
-            <div class="lib-tag-empty" id="libTagEmpty" data-i18n="library.noTagsFound" aria-live="polite" hidden>Подходящие теги не найдены</div>
+          <!-- ONL-005 task 5: which sites the Online tab asks. A rail section of its own, shown
+               only on Online, collapsed until the user opens it; the open state is remembered.
+               The ids are the ones the source logic has always used. -->
+          <div class="lib-rail-section" id="onlineSourcesSection" hidden>
+            <button type="button" class="lib-rail-section-head" id="onlineSourcesToggle" aria-expanded="false" aria-controls="onlineSourcesPanel" disabled>
+              <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2 14 5.2 8 8.2 2 5.2z"/><path d="m2 8 6 3 6-3"/><path d="m2 10.8 6 3 6-3"/></svg>
+              <span class="lib-rail-section-title" data-i18n="online.sourcesLabel">Источники</span>
+              <svg class="lib-rail-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg>
+            </button>
+            <div class="lib-rail-section-body" id="onlineSourcesPanel">
+              <div class="lib-rail-section-inner">
+                <div id="onlineSourceOptions" role="group" aria-labelledby="onlineSourcesToggle" aria-describedby="onlineSourcesHint"></div>
+                <p class="lib-rail-section-note" id="onlineSourcesHint" data-i18n="online.sourcesHint" hidden>Оставьте хотя бы один источник включённым.</p>
+              </div>
+            </div>
+          </div>
+          <!-- ONL-005 task 6: local tags, the same kind of rail section. Absent until there is a
+               tag, collapsed until opened, then remembered. The chosen tag sits above the body
+               so it stays visible and clearable while the section is collapsed. -->
+          <div class="lib-rail-section lib-tags-section" id="libTagSection" hidden>
+            <button type="button" class="lib-rail-section-head" id="libTagsToggle" aria-expanded="false" aria-controls="libTagsPanel">
+              <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M2.4 3.2v4.2c0 .4.2.8.5 1.1l4.9 4.9c.6.6 1.5.6 2.1 0l3.3-3.3c.6-.6.6-1.5 0-2.1L8.3 3.1c-.3-.3-.7-.5-1.1-.5H3.2c-.5 0-.8.3-.8.6z"/><circle cx="5.4" cy="5.5" r="1"/></svg>
+              <span class="lib-rail-section-title" data-i18n="library.tags">Теги</span>
+              <svg class="lib-rail-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg>
+            </button>
+            <button type="button" class="lib-active-tag" id="libActiveTag" hidden></button>
+            <div class="lib-rail-section-body" id="libTagsPanel">
+              <div class="lib-rail-section-inner">
+                <label class="lib-tag-searchbox">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
+                  <input type="search" id="libTagSearch" placeholder="Поиск тегов" data-i18n-ph="library.tagSearchPh" data-i18n-title="library.tagSearchPh" aria-label="Поиск тегов" aria-controls="libTags" autocomplete="off" spellcheck="false" />
+                </label>
+                <div class="lib-railtags" id="libTags"></div>
+                <div class="lib-tag-empty" id="libTagEmpty" data-i18n="library.noTagsFound" aria-live="polite" hidden>Подходящие теги не найдены</div>
+              </div>
+            </div>
           </div>
         </aside>
         <div class="lib-main">
@@ -544,26 +574,18 @@
           <div class="lib-online" id="libOnline" hidden>
             <!-- Unified online search: one bar + one grid for all active sources.
                  Znada is just another source feeding the same results, not a block. -->
-            <div class="lib-toolbar lib-online-toolbar" id="libSourceBar">
-              <span class="lib-online-toolbar-label" data-i18n="online.sourcesLabel">Источники</span>
-              <button class="lib-source-chip" id="srcLumina" type="button" data-source="lumina" aria-pressed="false">
-                <svg class="lib-source-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4.4 12.5a2.9 2.9 0 0 1-.3-5.78A3.4 3.4 0 0 1 10.5 5.6a2.6 2.6 0 0 1 .5 6.9z"/></svg>
-                <span data-i18n="online.sourceLumina">Znada</span>
-              </button>
-              <button class="lib-source-chip" id="srcInternet" type="button" data-source="internet" aria-pressed="true">
-                <svg class="lib-source-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 3.9 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.3 5.4 8S6.3 3.6 8 1.8z"/></svg>
-                <span data-i18n="online.sourceInternet">Интернет</span>
-              </button>
-              <div class="lib-online-account" id="libCloudAccount" hidden></div>
-            </div>
-
             <div class="lib-toolbar lib-online-search" id="onlineSearchBar">
-              <div class="lib-search-wrap">
-                <label class="lib-searchbox" for="whQuery">
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
-                  <input type="search" id="whQuery" class="lib-search" placeholder="Теги: nature, space…" data-i18n-ph="online.searchPh" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="whSuggest" />
-                </label>
-                <div class="online-tag-suggest" id="whSuggest" role="listbox" hidden></div>
+              <!-- The query and the button that runs it share one row; sorting and filters
+                   wrap to the next one (owner, 2026-09-16). -->
+              <div class="lib-online-query-row">
+                <div class="lib-search-wrap">
+                  <label class="lib-searchbox" for="whQuery">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
+                    <input type="search" id="whQuery" class="lib-search" placeholder="Теги: nature, space…" data-i18n-ph="online.searchPh" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="whSuggest" />
+                  </label>
+                  <div class="online-tag-suggest" id="whSuggest" role="listbox" hidden></div>
+                </div>
+                <button class="pill suggested" id="whSearch" data-i18n="online.search">Найти</button>
               </div>
               <button class="pill lib-fav-toggle" id="onlineFavToggle" type="button" hidden aria-pressed="false" data-i18n-title="online.favViewHint" title="Избранное Znada">
                 <svg class="lib-source-ic" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.2-3.3-6.7-6.2C.2 5.3 1.5 3 3.8 3c1.4 0 2.3.8 2.9 1.6.3.4.6.4.9 0C8.2 3.8 9.1 3 10.5 3c2.3 0 3.6 2.3 2.5 4.8C12 10.7 8 14 8 14z"/></svg>
@@ -578,7 +600,7 @@
                 </select>
               </div>
               <button class="pill icon-only" id="whFilterToggle" data-i18n-title="online.filterToggle" title="Фильтры контента"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:-1px"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
-              <button class="pill suggested" id="whSearch" data-i18n="online.search">Найти</button>
+              <div class="lib-online-account" id="libCloudAccount" hidden></div>
             </div>
             <div class="lib-filters-row" id="whFiltersRow" hidden>
               <span class="lib-filters-label" data-i18n="online.purityLabel">Допуск контента:</span>
@@ -784,6 +806,7 @@
 
   <div class="toast" id="toast"></div>
 
+  <script src="dev-launch-badge.js"></script>
   <script src="../src/next-change.js"></script>
   <script src="../src/path-key.js"></script>
   <script src="../src/gallery-payload.js"></script>
@@ -794,6 +817,8 @@
   <script src="unified-grid.js"></script>
   <script src="card-interaction.js"></script>
   <script src="../src/online-add.js"></script>
+  <script src="../src/online-sources.js"></script>
+  <script src="../src/online-identity.js"></script>
   <script src="select-popup.js"></script>
   <script src="../src/size-filter.js"></script>
   <script src="view-scroll.js"></script>
@@ -807,6 +832,7 @@
   <script src="assign-rows.js"></script>
   <script src="resize-anchor.js"></script>
   <script src="deferred-refresh.js"></script>
+  <script src="../src/media-proxy.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

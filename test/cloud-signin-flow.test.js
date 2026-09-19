@@ -768,6 +768,191 @@ function withinASecond(promise) {
     assert.notStrictEqual(one, two, 'the same state was reused for a second sign-in');
   });
 
+  // -------------------------------------------------------------------------
+  // BUG-031. A window created while a sign-in was running knew nothing about it.
+  // "Signing in" lived only in the renderer that pressed the button, and main announced
+  // account changes but never that a sign-in had started or ended. A new window drew a
+  // plain Sign in button beside a sign-in already holding the port: pressing it answered
+  // 'busy', and a Cancel for the running one existed nowhere.
+  // -------------------------------------------------------------------------
+  const SAFE_STATE_KEYS = ['available', 'entitlements', 'signedIn', 'signinCancellable', 'signingIn', 'user'];
+  const assertRendererSafe = (payload, secrets, where) => {
+    assert.deepStrictEqual(Object.keys(payload).sort(), SAFE_STATE_KEYS,
+      `${where} carries fields beyond the renderer-safe set`);
+    const text = JSON.stringify(payload);
+    for (const secret of secrets.filter(Boolean)) {
+      assert.ok(!text.includes(secret), `${where} carries a sign-in secret`);
+    }
+  };
+  // The harness never creates a window, so a broadcast used to go nowhere. This stand-in
+  // records what an open window would be told.
+  const windowLog = (m) => {
+    const sent = [];
+    m.__test.useMainWindow({
+      isDestroyed: () => false,
+      webContents: { send: (channel, payload) => { if (channel === 'cloud-session-changed') sent.push(payload); } },
+    });
+    return sent;
+  };
+
+  await test('a window opened during sign-in is told it is running and can be called off', async (dir) => {
+    const m = start(dir);
+    const attempt = m.invoke('cloud-signin');
+    attempt.catch(() => {});
+    const url = new URL(await untilBrowserOpened(m));
+    const secrets = [url.searchParams.get('state'), url.searchParams.get('challenge')];
+
+    // A freshly created window asks exactly this on its first look at the Online tab.
+    const seen = await m.invoke('cloud-session');
+    assert.strictEqual(seen.signingIn, true, 'a new window was not told a sign-in is running');
+    assert.strictEqual(seen.signinCancellable, true,
+      'a new window was not told the running sign-in can still be called off');
+    assertRendererSafe(seen, secrets, 'the session answer');
+    // Asking must never become a second attempt.
+    await m.invoke('cloud-session');
+    assert.strictEqual(m.calls.opened.length, 1, 'opening a window started a second sign-in');
+    assert.strictEqual(m.__test.cloudSigninInFlight(), true);
+
+    // The Cancel that window now draws reaches the running sign-in...
+    const answer = await m.invoke('cloud-signin-cancel');
+    assert.strictEqual(answer.cancelled, true);
+    assert.ok(!(await withinASecond(attempt)).timedOut, 'the cancelled sign-in did not end');
+    // ...and afterwards nobody is told a sign-in that has ended is still running.
+    const after = await m.invoke('cloud-session');
+    assert.strictEqual(after.signingIn, false, 'the ended sign-in is still reported as running');
+    assert.strictEqual(after.signinCancellable, false);
+  });
+
+  await test('open windows hear a sign-in start, lose its Cancel at the redirect, and end', async (dir) => {
+    let releaseExchange;
+    let announceExchange;
+    const exchangeStarted = new Promise((resolve) => { announceExchange = resolve; });
+    globalThis.fetch = async (url) => {
+      if (String(url).endsWith('/v1/auth/exchange')) {
+        announceExchange();
+        return new Promise((resolve) => { releaseExchange = () => resolve(jsonResponse(200, {
+          session_token: TOKEN_A, user: USER_A,
+        })); });
+      }
+      if (String(url).endsWith('/v1/me')) return jsonResponse(200, { user: USER_A, entitlements: ['online_catalog'] });
+      throw new Error(`unexpected Cloud request: ${url}`);
+    };
+    const m = start(dir, { safeStorage: TEST_SAFE_STORAGE });
+    const sent = windowLog(m);
+    const attempt = m.invoke('cloud-signin');
+    attempt.catch(() => {});
+    const url = await untilBrowserOpened(m);
+    const secrets = [TOKEN_A, stateOf(url), new URL(url).searchParams.get('challenge')];
+    const latest = () => sent[sent.length - 1] || {};
+
+    assert.strictEqual(latest().signingIn, true, 'the start of a sign-in was not announced');
+    assert.strictEqual(latest().signinCancellable, true, 'the start of a sign-in was announced without its Cancel');
+
+    try {
+      assert.strictEqual(await request({ port: portOf(url), pathname: `/?code=REALCODE&state=${stateOf(url)}` }), 200);
+      await exchangeStarted;
+      // Past the redirect the exchange cannot be called back, so a Cancel drawn now would
+      // silently do nothing.
+      assert.strictEqual(latest().signingIn, true, 'the exchange phase was announced as finished');
+      assert.strictEqual(latest().signinCancellable, false,
+        'windows kept a Cancel that can no longer stop anything');
+      const late = await m.invoke('cloud-session');
+      assert.strictEqual(late.signingIn, true, 'a window opened during the exchange was not told');
+      assert.strictEqual(late.signinCancellable, false);
+    } finally {
+      if (releaseExchange) releaseExchange();
+    }
+
+    const result = await withinASecond(attempt);
+    assert.strictEqual(result.ok, true, `the sign-in failed with ${result.error}`);
+    assert.strictEqual(latest().signingIn, false, 'the end of a successful sign-in was never announced');
+    assert.strictEqual(latest().signedIn, true);
+    // The pressing window stores this answer. Described from inside the transaction, it
+    // would redraw a sign-in that has already ended over the announcement that it had.
+    assert.strictEqual(result.state.signingIn, false,
+      'the sign-in reply describes the slot before this sign-in released it');
+    sent.forEach((payload, i) => assertRendererSafe(payload, secrets, `announcement ${i + 1}`));
+    assertRendererSafe(result.state, secrets, 'the sign-in reply');
+  });
+
+  // Timeout is not driven here: its five-minute timer rejects the same promise a cancel
+  // does and ends in the same finally, and no seam exists to shorten it.
+  for (const ending of [
+    {
+      name: 'a refused exchange',
+      error: 'server_error',
+      fetch: async (url) => {
+        if (String(url).endsWith('/v1/auth/exchange')) {
+          return jsonResponse(500, { error: { code: 'server_error', message: 'exchange unavailable' } });
+        }
+        throw new Error(`unexpected Cloud request: ${url}`);
+      },
+      finish: async (m, url) => {
+        assert.strictEqual(await request({ port: portOf(url), pathname: `/?code=REALCODE&state=${stateOf(url)}` }), 200);
+      },
+    },
+    { name: 'a cancel', error: 'cancelled', finish: async (m) => { await m.invoke('cloud-signin-cancel'); } },
+  ]) {
+    await test(`open windows are told the sign-in ended after ${ending.name}`, async (dir) => {
+      if (ending.fetch) globalThis.fetch = ending.fetch;
+      const m = start(dir);
+      const sent = windowLog(m);
+      const attempt = m.invoke('cloud-signin');
+      attempt.catch(() => {});
+      const url = await untilBrowserOpened(m);
+      await ending.finish(m, url);
+      const result = await withinASecond(attempt);
+      assert.ok(!result.timedOut, 'the sign-in did not end');
+      assert.strictEqual(result.error, ending.error);
+      const last = sent[sent.length - 1];
+      assert.ok(last && last.signingIn === false && last.signinCancellable === false,
+        `open windows still believe a sign-in is running after ${ending.name}`);
+      assert.strictEqual((await m.invoke('cloud-session')).signingIn, false);
+    });
+  }
+
+  await test('the account strip draws the sign-in main reports, with Cancel only while it works', async () => {
+    const vm = require('vm');
+    const source = fs.readFileSync(path.join(H.ROOT, 'renderer', 'renderer.js'), 'utf8').split('\r\n').join('\n');
+    const match = source.match(/function renderCloudAccount\(\) \{[\s\S]*?\n\}/);
+    assert.ok(match, 'renderCloudAccount must stay a named renderer function');
+    const draw = (auth) => {
+      const cancels = [];
+      const node = () => ({
+        className: '', textContent: '', disabled: false, children: [], listeners: {},
+        append(...kids) { this.children.push(...kids); },
+        appendChild(kid) { this.children.push(kid); },
+        addEventListener(type, fn) { this.listeners[type] = fn; },
+      });
+      const host = node();
+      vm.runInNewContext(`(${match[0]})`, {
+        $: () => host,
+        document: { createElement: node },
+        t: (key) => key,
+        CLOUDAUTH: auth,
+        window: { api: { cloudSigninCancel: async () => { cancels.push(true); return { ok: true, cancelled: true }; } } },
+        doCloudSignin: () => {},
+        doCloudSignout: () => {},
+      })();
+      return { host, cancels, texts: host.children.map((child) => child.textContent) };
+    };
+    const signedOut = { available: true, signedIn: false, user: null, entitlements: [] };
+
+    // A new window: it pressed nothing, so only main's answer can tell it.
+    const fresh = draw({ state: { ...signedOut, signingIn: true, signinCancellable: true }, fetched: true, signingIn: false });
+    assert.deepStrictEqual(fresh.texts, ['online.signingIn', 'online.signinCancel'],
+      'a window that did not press Sign in drew no running sign-in');
+    await fresh.host.children[1].listeners.click();
+    assert.strictEqual(fresh.cancels.length, 1, 'its Cancel did not reach main');
+
+    const exchanging = draw({ state: { ...signedOut, signingIn: true, signinCancellable: false }, fetched: true, signingIn: false });
+    assert.deepStrictEqual(exchanging.texts, ['online.signingIn'],
+      'a Cancel was drawn for a sign-in past the point where it can be called off');
+
+    const idle = draw({ state: { ...signedOut, signingIn: false, signinCancellable: false }, fetched: true, signingIn: false });
+    assert.deepStrictEqual(idle.texts, ['online.signIn']);
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
   if (failures.length) {
     for (const f of failures) {

@@ -81,8 +81,9 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  ✓ ' + name)
 // ---------------------------------------------------------------------------
 // Wiring.
 // ---------------------------------------------------------------------------
-const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
-const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
+// Source text as written, whatever line endings the checkout gave it (QA-010).
+const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8').split('\r\n').join('\n');
+const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8').split('\r\n').join('\n');
 
 ok('the window loads the module', html.includes('view-scroll.js'));
 ok('the Library keeps one position per list rather than one per tab',

@@ -43,48 +43,92 @@ function makeElectronStub(userData, options = {}) {
     hotkeyRegistered: new Set(),
     hotkeysSuspended: false,
     opened: [],
+    // COLLAB-003. How a launch ends and what it announces are the behaviour under test
+    // there: a refused launch must exit before opening a profile, a busy one must quit,
+    // and the hour must end through quit, not exit. Recorded rather than swallowed.
+    singleInstanceLock: [],
+    quit: 0,
+    exit: [],
+    errorBoxes: [],
+    windows: [],
+    trayTooltips: [],
+    appUserModelIds: [],
   };
   const listeners = new Map();
   const on = (map) => (event, fn) => {
     if (!map.has(event)) map.set(event, []);
     map.get(event).push(fn);
   };
+  // Lets a test deliver an app event (second-instance, before-quit) the way Electron would.
+  const emit = (event, ...args) => {
+    for (const fn of (listeners.get(event) || []).slice()) fn(...args);
+  };
 
   const app = {
     isQuitting: false,
     // Tests run from source, never from a packaged build, and some gates ask. Left
     // undefined it defaulted to "packaged", which quietly closed the diagnostics gate
-    // and made a test about diagnostics measure the ordinary path instead.
-    isPackaged: false,
+    // and made a test about diagnostics measure the ordinary path instead. A test that is
+    // ABOUT the packaged build says so explicitly.
+    isPackaged: options.isPackaged === true,
     getPath: (key) => (key === 'userData' ? userData : path.join(userData, key)),
     setPath: () => {},
     getAppPath: () => ROOT,
     getVersion: () => '0.0.0-test',
     getName: () => 'Znada',
     getLocale: () => 'en-US',
-    requestSingleInstanceLock: () => true,
+    requestSingleInstanceLock: (...args) => {
+      calls.singleInstanceLock.push(args);
+      return options.singleInstanceLock !== false;
+    },
     releaseSingleInstanceLock: () => {},
-    quit: () => {},
-    exit: () => {},
+    // Quitting runs the quit-time handlers only when a test asks for it: most tests load
+    // main.js to drive a handler, and flushing writers behind their back would change
+    // what they measure.
+    quit: () => {
+      calls.quit += 1;
+      if (options.emitQuitEvents) {
+        emit('before-quit', {});
+        emit('will-quit', {});
+      }
+    },
+    exit: (code) => { calls.exit.push(code); },
     relaunch: () => {},
     // Записываем, а не глотаем: смысл теста BUG-013 в том, ПЫТАЛОСЬ ли
     // приложение тронуть автозапуск, а не в том, что получилось.
     setLoginItemSettings: (settings) => { calls.loginItems.push(settings); },
     getLoginItemSettings: () => ({ openAtLogin: false }),
-    setAppUserModelId: () => {},
+    // Recorded: it is the first statement of the startup block, so a test can tell that the block
+    // really began instead of never having been reached.
+    setAppUserModelId: (id) => { calls.appUserModelIds.push(id); },
     disableHardwareAcceleration: () => {},
     commandLine: { appendSwitch: () => {} },
-    whenReady: () => new Promise(() => {}),   // never ready: skip the whole startup block
+    // Never ready by default: the whole startup block stays out of the test. `whenReady: 'resolve'`
+    // lets it begin — meant ONLY for a launch that did not get the profile lock (BUG-044), where the
+    // block has to stop at once. With the lock held it would run the real startup under the stubs.
+    whenReady: options.whenReady === 'resolve' ? () => Promise.resolve() : () => new Promise(() => {}),
     on: on(listeners),
     once: on(listeners),
     removeAllListeners: () => {},
   };
 
-  const noopWindowClass = class BrowserWindow {
-    constructor() { this.webContents = { send: () => {}, on: () => {}, session: { webRequest: { onHeadersReceived: () => {} } } }; }
+  // A window that is never really opened, but remembers what it was created with and
+  // what listened to it: the title and the page arguments are what a launch decides.
+  const windowClass = class BrowserWindow {
+    constructor(windowOptions) {
+      this.options = windowOptions || {};
+      this.listeners = new Map();
+      this.webContents = { send: () => {}, on: () => {}, session: { webRequest: { onHeadersReceived: () => {} } } };
+      calls.windows.push(this);
+    }
     static getAllWindows() { return []; }
     static fromWebContents() { return null; }
-    on() {} once() {} loadFile() {} show() {} hide() {} destroy() {}
+    on(event, fn) {
+      if (!this.listeners.has(event)) this.listeners.set(event, []);
+      this.listeners.get(event).push(fn);
+    }
+    once(event, fn) { this.on(event, fn); }
+    loadFile() {} show() {} hide() {} destroy() {}
     isDestroyed() { return true; }
     setTitleBarOverlay() {}
   };
@@ -92,10 +136,11 @@ function makeElectronStub(userData, options = {}) {
   return {
     handlers,
     calls,
+    emit,
     electron: {
       app,
-      BrowserWindow: noopWindowClass,
-      Tray: class { constructor() {} setToolTip() {} setContextMenu() {} on() {} destroy() {} setImage() {} },
+      BrowserWindow: windowClass,
+      Tray: class { constructor() {} setToolTip(tip) { calls.trayTooltips.push(tip); } setContextMenu() {} on() {} destroy() {} setImage() {} },
       Menu: { buildFromTemplate: () => ({}), setApplicationMenu: () => {} },
       ipcMain: {
         handle: (channel, fn) => handlers.set(channel, fn),
@@ -116,6 +161,7 @@ function makeElectronStub(userData, options = {}) {
         // see the handler REACH the dialog, not to write a file. A cancel is reported
         // differently from a refusal, so the two are easy to tell apart.
         showSaveDialog: async () => ({ canceled: true, filePath: '' }),
+        showErrorBox: (title, content) => { calls.errorBoxes.push({ title, content }); },
       },
       shell: {
         // A promise, because main chains .catch() onto it. Returning undefined threw a
@@ -145,7 +191,18 @@ function makeElectronStub(userData, options = {}) {
         },
       },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true, resize: () => ({}) }), createEmpty: () => ({}) },
-      screen: { getAllDisplays: () => [], getPrimaryDisplay: () => ({ id: 1, bounds: {}, scaleFactor: 1 }), on: () => {} },
+      screen: {
+        getAllDisplays: () => [],
+        getPrimaryDisplay: () => ({ id: 1, bounds: {}, scaleFactor: 1 }),
+        // Where the viewer opens. Enough for main to create that window under the stub.
+        getCursorScreenPoint: () => ({ x: 0, y: 0 }),
+        getDisplayNearestPoint: () => ({
+          id: 1,
+          bounds: { x: 0, y: 0, width: 1280, height: 720 },
+          workArea: { x: 0, y: 0, width: 1280, height: 680 },
+        }),
+        on: () => {},
+      },
       autoUpdater: { on: () => {}, setFeedURL: () => {}, checkForUpdates: () => {}, quitAndInstall: () => {} },
       globalShortcut: {
         register: (accelerator) => {
@@ -170,6 +227,14 @@ function makeElectronStub(userData, options = {}) {
         || { isEncryptionAvailable: () => false, encryptString: () => Buffer.alloc(0), decryptString: () => '' },
       Notification: class { constructor() {} show() {} on() {} static isSupported() { return false; } },
       clipboard: { writeText: () => {} },
+      protocol: {
+        registeredSchemes: [],
+        handlers: new Map(),
+        registerSchemesAsPrivileged(list) {
+          this.registeredSchemes.push(...(Array.isArray(list) ? list : []));
+        },
+        handle(scheme, handler) { this.handlers.set(scheme, handler); },
+      },
       webContents: { getAllWebContents: () => [] },
     },
   };
@@ -222,9 +287,19 @@ function makeChildProcessStub() {
 // at the filesystem) for the stub while main.js loads.
 function loadMain(userData, options = {}) {
   const stub = makeElectronStub(userData, options);
-  const childStub = makeChildProcessStub();
+  // A test may put back ONE child-process function with a fake of its own (COLLAB-003
+  // answers `git status` with a known revision). Everything else stays disabled.
+  const childStub = { ...makeChildProcessStub(), ...(options.childProcess || {}) };
   const originalLoad = Module._load;
   const originalArgv = process.argv.slice();
+  // A packaged Electron always has `process.resourcesPath`, and main.js resolves the
+  // thumbnail helper from it while loading. Plain Node has none, so a test that loads main
+  // AS a packaged build gets a stand-in for the length of the load, and nothing more.
+  const hadResourcesPath = Object.prototype.hasOwnProperty.call(process, 'resourcesPath');
+  const originalResourcesPath = process.resourcesPath;
+  if (stub.electron.app.isPackaged && !process.resourcesPath) {
+    process.resourcesPath = path.join(userData, 'resources');
+  }
   process.argv = [process.argv[0], ...(options.argv || [])];
   if (!options.argv) process.argv = [process.argv[0], path.join(ROOT, 'main.js')];
   Module._load = function patched(request, parent, isMain) {
@@ -247,6 +322,8 @@ function loadMain(userData, options = {}) {
   } finally {
     Module._load = originalLoad;
     process.argv = originalArgv;
+    if (!hadResourcesPath) delete process.resourcesPath;
+    else process.resourcesPath = originalResourcesPath;
   }
   // SEC-002. Handlers now refuse anything that is not one of Znada's own windows, on its
   // own page, in its top frame. The harness therefore has to BE one: stand-in webContents
@@ -287,7 +364,10 @@ function loadMain(userData, options = {}) {
     invokeRaw,
     senders,
     handlers: stub.handlers,
+    protocol: stub.electron.protocol,
     calls: stub.calls,
+    app: stub.electron.app,
+    emitApp: stub.emit,
     userData,
   };
 }

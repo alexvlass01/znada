@@ -169,8 +169,8 @@
 
   // ONL-017. How big a page to ask a site for while the filter is on.
   //
-  // "Ask for more, not more often" — the owner's step 1, and the honest half of what the
-  // buffer idea was reaching for. A site that cannot narrow by SHAPE returns a page that
+  // Ask for more at once rather than more often — the owner's first step, and the honest
+  // half of what the buffer idea was reaching for. A site that cannot narrow by SHAPE returns a page that
   // is mostly thrown away here: measured against the live API on 2026-09-03, an anime
   // board leaves four cards in a hundred under a strict 16:9. Asking that site for its
   // biggest page is ONE request; getting the same cards by asking again and again is

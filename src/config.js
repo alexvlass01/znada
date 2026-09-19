@@ -64,6 +64,11 @@ const DEFAULT_CONFIG = {
   // намеренно: он лежит в config.json у пользователей. Either or both may be on; default keeps the
   // previous behavior (external only) so existing users see no change.
   onlineSources: { lumina: false, internet: true },
+  // ONL-005 task 5. Whether the site list in the Online rail is open. Collapsed until the
+  // user opens it; after that it stays the way they left it (owner, 2026-09-17).
+  onlineSourcesExpanded: false,
+  // ONL-005 task 6. The same for the local tag section of the Library rail.
+  libraryTagsExpanded: false,
   // Persisted Online search params (restored on restart). sort = whSort value;
   // purity = the SFW/Sketchy/NSFW content filter.
   onlineSort: 'date_added',
@@ -200,6 +205,8 @@ function normalize(cfg) {
     timeoutMin: Number.isFinite(timeout) && timeout >= 1 ? Math.min(60, Math.floor(timeout)) : 5,
   };
 
+  // Preserve per-site choices on disk without importing network adapters here.
+  // main resolves the map against its registry immediately after loading settings.
   cfg.onlineSources = {
     lumina: false, internet: true,
     ...(cfg.onlineSources && typeof cfg.onlineSources === 'object' ? cfg.onlineSources : {}),
@@ -208,6 +215,8 @@ function normalize(cfg) {
   cfg.onlineSources.internet = !!cfg.onlineSources.internet;
   // Never leave the Online tab with no source selected (avoids an empty page).
   if (!cfg.onlineSources.lumina && !cfg.onlineSources.internet) cfg.onlineSources.internet = true;
+  cfg.onlineSourcesExpanded = cfg.onlineSourcesExpanded === true;
+  cfg.libraryTagsExpanded = cfg.libraryTagsExpanded === true;
 
   if (!['date_added', 'toplist', 'random', 'views'].includes(cfg.onlineSort)) cfg.onlineSort = 'date_added';
   cfg.onlinePurity = {

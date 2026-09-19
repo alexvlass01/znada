@@ -2,6 +2,7 @@
 
 const registry = require('./provider-registry');
 const mediaFormats = require('./media-type');
+const onlineIdentity = require('./online-identity');
 
 function canonicalUrl(value) {
   if (!value) return '';
@@ -16,22 +17,7 @@ function canonicalUrl(value) {
 }
 
 function itemKeys(item) {
-  const keys = [];
-  if (item && item.md5) keys.push(`md5:${String(item.md5).toLowerCase()}`);
-  const source = canonicalUrl(item && item.source);
-  if (source) keys.push(`source:${source}`);
-  const full = canonicalUrl(item && item.full);
-  if (full) keys.push(`full:${full}`);
-  // ONL-014c. The three above are all ADDRESSES, and a card from our own catalogue has
-  // none of them: no hash, no source page, no lasting file link. It was therefore
-  // identified by nothing at all, so the same picture arriving from two orderings of the
-  // front page counted twice — measured as four cards for two pictures.
-  //
-  // Its own id within its own site is what it always had. Order among the keys does not
-  // matter: a card is the same card if ANY of its keys has been seen, so a picture two
-  // different sites both hold is still one picture by its hash.
-  if (item && item.provider && item.id) keys.push(`at:${item.provider}:${String(item.id).toLowerCase()}`);
-  return keys;
+  return onlineIdentity.keys(item);
 }
 
 // ONL-011. Every "may we touch this address?" question now reads the same declared

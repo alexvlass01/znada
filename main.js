@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain: electronIpcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification, clipboard } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain: electronIpcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification, clipboard, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -21,7 +21,9 @@ const liveFolderWatch = require('./src/live-folder-watch'); // lightweight fs.wa
 const online = require('./src/online');
 const sizeFilter = require('./src/size-filter'); // ONL-010: подходит ли картинка под экран
 const onlineResume = require('./src/online-resume'); // ONL-014b: где какой сайт остановился // смешивание и дедуп результатов внешних провайдеров
+const mediaProxy = require('./src/media-proxy'); // PERF-008: адресация потокового прокси картинок
 const providerRegistry = require('./src/provider-registry'); // ONL-011/012: единый список сайтов и их объявления
+const onlineSources = require('./src/online-sources');
 const mediaFormats = require('./src/media-type'); // ONL-015: единый список форматов картинок
 const tagSuggest = require('./src/tag-suggest'); // ONL-014: строка поиска (написание тега, токен под курсором)
 const itemDetails = require('./src/item-details'); // bounded metadata reader + URL/path validation
@@ -47,6 +49,7 @@ const cloudClientMod = require('./src/cloud/client'); // Znada Cloud: чисты
 const cloudOauth = require('./src/cloud/oauth'); // Znada Cloud: чистый PKCE/loopback-разбор (C4)
 const cloudDevProfile = require('./src/cloud/dev-profile'); // isolated userData for explicit staging launches
 const diagnosticsGate = require('./src/diagnostics-gate'); // production-safe gate for dev-only diagnostics
+const devLaunchGate = require('./src/dev-launch-gate'); // COLLAB-003: is this a DEV/DIAG check launch (the rest is dev-only)
 const galleryPayloadMod = require('./src/gallery-payload'); // viewer payload sanitizing/windowing
 const hotkey = require('./src/hotkey'); // accelerator parsing + atomic globalShortcut replacement
 const windowsLaunch = require('./src/windows-launch');
@@ -91,6 +94,48 @@ const STAGING_USER_DATA = DIAGNOSTICS_BOOTSTRAP.enabled ? null : cloudDevProfile
   requestedPath: process.env.ZNADA_DEV_USER_DATA,
 });
 if (STAGING_USER_DATA) app.setPath('userData', STAGING_USER_DATA);
+
+// COLLAB-003. A DEV or DIAG check launch says which code it runs and closes itself an hour
+// after start. Only the decision ships: the label, the git read and the hour live in
+// diagnostics/main/dev-launch.js, which no user package contains, and a packaged build is
+// always an ordinary launch. A check launch that cannot say which profile it may use is
+// refused here, before any path is derived from userData: falling back used to mean the
+// real %APPDATA%\znada.
+const DEV_LAUNCH = devLaunchGate.resolveDevLaunch({
+  isPackaged: app.isPackaged,
+  diagnostics: DIAGNOSTICS_BOOTSTRAP,
+  stagingRequested: (process.env.ZNADA_CLOUD || '').trim() === 'staging',
+  stagingUserData: STAGING_USER_DATA,
+});
+const devLaunchTools = DEV_LAUNCH.mode || DEV_LAUNCH.refusal ? require('./diagnostics/main/dev-launch') : null;
+if (DEV_LAUNCH.refusal) {
+  const message = devLaunchTools.refusalMessage(DEV_LAUNCH.refusal);
+  console.error(`[DEV] ${message}`);
+  // Allowed before ready, and shown on purpose: a launch from a shortcut has no console.
+  try { dialog.showErrorBox('Znada: проверочный запуск отклонён', message); } catch { /* the console has it */ }
+  app.exit(2);
+}
+// The hour starts here rather than on ready: it counts from the launch, and nothing a window
+// does later, opening it again included, may move it.
+let devSessionLimitReached = false;
+const devSession = DEV_LAUNCH.mode
+  ? devLaunchTools.createSessionLimit({
+    onExpire: () => {
+      quitForDevSessionLimit().catch((err) => console.error('[DEV] closing after the hour failed:', err));
+    },
+  }).start()
+  : null;
+const DEV_LAUNCH_INFO = DEV_LAUNCH.mode ? devLaunchTools.describeLaunch({
+  mode: DEV_LAUNCH.mode,
+  userDataPath: app.getPath('userData'),
+  revision: devLaunchTools.readRevision({ root: __dirname, execFileSync }),
+  startedAt: devSession.state().startedAt,
+  limitMs: devSession.state().limitMs,
+}) : null;
+if (DEV_LAUNCH_INFO) {
+  console.log(`[DEV] ${DEV_LAUNCH_INFO.windowTitle}; userData=${DEV_LAUNCH_INFO.profilePath}; `
+    + `closes itself at ${new Date(DEV_LAUNCH_INFO.closesAt).toLocaleTimeString()}`);
+}
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -157,8 +202,19 @@ try {
 // Single instance (the lock follows the selected userData profile, so isolated
 // staging and installed production can run at the same time).
 // ---------------------------------------------------------------------------
-const gotLock = app.requestSingleInstanceLock();
+// COLLAB-003. A check launch tells the running one which code it carries, so a profile that
+// is already open with other code is turned away out loud rather than silently showing that
+// other window as if it were this one. An ordinary launch asks exactly as before.
+// A refused check launch never asks at all: asking would wake whichever instance holds the
+// profile it fell back to, and that one is the user's own Znada.
+let gotLock = false;
+if (!DEV_LAUNCH.refusal) {
+  gotLock = DEV_LAUNCH_INFO
+    ? app.requestSingleInstanceLock({ znadaDevLaunch: devLaunchTools.identityOf(DEV_LAUNCH_INFO) })
+    : app.requestSingleInstanceLock();
+}
 if (!gotLock) {
+  if (DEV_LAUNCH_INFO) console.error(`[DEV] ${devLaunchTools.busyProfileMessage(DEV_LAUNCH_INFO)}`);
   app.quit();
 }
 
@@ -321,6 +377,11 @@ const thumbnailHost = new ThumbnailHost({
 // main only passes it under the dev-only gate — so a packaged build never activates it.
 function diagRendererArgs(role) {
   return DIAGNOSTICS_BOOTSTRAP.enabled ? [`--znada-diagnostics-renderer=${role}`] : [];
+}
+
+// COLLAB-003. The main window's title bar shows which code a check launch runs.
+function devLaunchRendererArgs() {
+  return DEV_LAUNCH_INFO ? [devLaunchTools.rendererArg(DEV_LAUNCH_INFO)] : [];
 }
 
 // Small dev-only control window (Start/Stop/mark/report). It is NOT instrumented — it
@@ -567,6 +628,7 @@ function enterLibraryWriteDegradedMode() {
 
 function loadConfig() {
   config = configMod.load(CONFIG_PATH);
+  config.onlineSources = onlineSources.normalize(config.onlineSources, providerRegistry.PROVIDERS);
 
   // BUG-023. Decided FIRST, and before any of the early returns below: a settings file
   // that could not be read must not be written over no matter what the pool file turns
@@ -2040,7 +2102,7 @@ function createWindow() {
     minWidth: 780,
     minHeight: 560,
     show: false,
-    title: 'Znada',
+    title: DEV_LAUNCH_INFO ? DEV_LAUNCH_INFO.windowTitle : 'Znada',
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarOverlayColors(),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#242424' : '#fafafa',
@@ -2048,7 +2110,7 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       ...windowSecurity('main'),
-      additionalArguments: diagRendererArgs('renderer-main'),
+      additionalArguments: [...diagRendererArgs('renderer-main'), ...devLaunchRendererArgs()],
       // In diagnostics mode keep rAF running while the window is merely unfocused (the
       // floating control window must not zero out smoothness sampling). The probe still
       // stops counting when the window is genuinely hidden/minimized.
@@ -2057,6 +2119,8 @@ function createWindow() {
   });
 
   if (diagnosticsController) diagnosticsController.attachWindowEvents(mainWindow, 'main');
+  // COLLAB-003. The page's own <title> would replace the check label on every load.
+  if (DEV_LAUNCH_INFO) mainWindow.on('page-title-updated', (event) => event.preventDefault());
 
   mainWindow.loadFile(hardenWindow(mainWindow, 'main'));
 
@@ -2136,7 +2200,7 @@ function createGalleryWindow() {
     frame: false,
     thickFrame: false,
     autoHideMenuBar: true,
-    title: 'Znada Media Viewer',
+    title: DEV_LAUNCH_INFO ? DEV_LAUNCH_INFO.viewerTitle : 'Znada Media Viewer',
     backgroundColor: '#050505',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
@@ -2148,6 +2212,7 @@ function createGalleryWindow() {
   });
 
   if (diagnosticsController) diagnosticsController.attachWindowEvents(galleryWindow, 'viewer');
+  if (DEV_LAUNCH_INFO) galleryWindow.on('page-title-updated', (event) => event.preventDefault());
 
   galleryWindow.loadFile(hardenWindow(galleryWindow, 'viewer'));
 
@@ -2374,6 +2439,7 @@ const trayCtl = createTrayController({
     slideshowEnabled: !!(config.slideshow && config.slideshow.enabled),
     hasSlideshowItems: hasSlideshowItems(),
   }),
+  tooltip: DEV_LAUNCH_INFO ? DEV_LAUNCH_INFO.trayTooltip : undefined, // COLLAB-003
   onOpen: () => showWindow(),
   onApplyCurrent: () => applyForTheme(null, true),
   onNextWallpaper: () => triggerNextWallpaper(),
@@ -2559,14 +2625,14 @@ const IPC_MAIN_ONLY = [
 // Both windows show cards, so both need the actions behind a card's menu (ONL-009).
 const IPC_MAIN_AND_VIEWER = [
   'card-copy-file', 'card-copy-link', 'card-open-source', 'card-save-as', 'cloud-add',
-  'file-url', 'get-i18n', 'internet-add', 'internet-thumbnail', 'item-lookup-metadata',
+  'file-url', 'get-i18n', 'internet-add', 'item-lookup-metadata',
   'library-assign', 'library-remove-many', 'library-undo-remove',
 ];
 
-// The fullscreen viewer's own window controls and its full-size image fetches.
+// The fullscreen viewer's own window controls.
 const IPC_VIEWER_ONLY = [
   'card-assign-targets', 'card-ensure-record', 'gallery-close', 'gallery-payload',
-  'gallery-toggle-fullscreen', 'internet-full', 'internet-sample',
+  'gallery-toggle-fullscreen',
 ];
 
 // Dev-only, and only in a gated diagnostics run; that window does not exist otherwise.
@@ -2797,6 +2863,12 @@ function cloudAuthState() {
     signedIn: !!_cloudToken && !!_cloudUser,
     user: _cloudUser ? _cloudUser.user : null,
     entitlements: _cloudUser ? _cloudUser.entitlements : [],
+    // BUG-031. Whether a sign-in is running and whether it can still be called off. It
+    // used to live only in the window that pressed Sign in, so a window created meanwhile
+    // never learned it. Two booleans on purpose: nothing of the attempt itself - its
+    // state, challenge or port - crosses to the renderer.
+    signingIn: !!activeCloudSignin,
+    signinCancellable: !!(activeCloudSignin && typeof activeCloudSignin.cancel === 'function'),
   };
 }
 function broadcastCloudSession() {
@@ -2937,7 +3009,7 @@ ipcMain.handle('cloud-session', async () => {
 });
 
 // Google sign-in: PKCE + loopback + system browser + exchange → store token, load /me.
-ipcMain.handle('cloud-signin', async () => {
+async function runCloudSignin() {
   const client = cloudClient();
   if (!client) return { ok: false, error: 'unavailable' };
   // SEC-002. A second press while one is still going would open a second listener and a
@@ -2950,7 +3022,14 @@ ipcMain.handle('cloud-signin', async () => {
     // One per press. The backend stores it and hands it back on the redirect; anything
     // that comes to the listener without it is not this sign-in.
     const state = cloudOauth.generateState();
-    const code = await runLoopbackSignin(challenge, state, attempt);
+    const browserAnswer = runLoopbackSignin(challenge, state, attempt);
+    // BUG-031. Every open window is told, not only the one that pressed the button. Sent
+    // after runLoopbackSignin, which hands the attempt its cancel synchronously, so the
+    // announcement already carries the way out.
+    broadcastCloudSession();
+    const code = await browserAnswer;
+    // The listener is down and the exchange cannot be called back: windows drop the Cancel.
+    broadcastCloudSession();
     const ex = await client.exchangeAuth({ code, pkce_verifier: verifier, client_label: `Znada on ${os.hostname()}` });
     if (!ex.ok) return { ok: false, error: ex.error.code };
     // Keep the exchange answer local until /me validates that exact bearer and returns
@@ -2962,7 +3041,7 @@ ipcMain.handle('cloud-signin', async () => {
     if (!replaceCloudSession(candidateToken, me.data, { persist: true, broadcast: true })) {
       return { ok: false, error: 'storage' };
     }
-    return { ok: true, state: cloudAuthState() };
+    return { ok: true };
   } catch (err) {
     // A sign-in the user called off is not a failure, and the window already has a
     // branch that stays silent for it — one that could never fire while every rejection
@@ -2976,8 +3055,22 @@ ipcMain.handle('cloud-signin', async () => {
     // The socket is only the browser half. The single-flight covers the whole
     // transaction through exchange + /me, so another attempt cannot race its commit.
     if (attempt.cleanup) attempt.cleanup();
-    if (activeCloudSignin === attempt) activeCloudSignin = null;
+    if (activeCloudSignin === attempt) {
+      activeCloudSignin = null;
+      // Success, failure, cancel and timeout all end here, and so does telling the
+      // windows that the sign-in is over.
+      broadcastCloudSession();
+    }
   }
+}
+
+ipcMain.handle('cloud-signin', async () => {
+  const result = await runCloudSignin();
+  // BUG-031. The state is read after the slot is released. Read inside the transaction it
+  // still reported this sign-in as running, and the window that pressed the button
+  // stores this reply after the announcement that the sign-in had ended.
+  if (result.ok) result.state = cloudAuthState();
+  return result;
 });
 
 // A sign-in nobody finished used to hold the window for the full five minutes: the strip
@@ -3116,7 +3209,9 @@ const SETTINGS_FIELDS = {
   librarySort: asOneOf('added', 'name', 'size', 'shuffle'),
   viewerBackground: asOneOf('ambient', 'charcoal', 'aurora', 'color'),
   onlineSort: asOneOf('date_added', 'toplist', 'random', 'views'),
-  onlineSources: asMergedObject({ lumina: asBool, internet: asBool }),
+  onlineSources: (value, current) => onlineSources.patch(value, current, providerRegistry.PROVIDERS) || REJECT_SETTING,
+  onlineSourcesExpanded: asBool,
+  libraryTagsExpanded: asBool,
   onlinePurity: asMergedObject({ sfw: asBool, sketchy: asBool, nsfw: asBool }),
   // ONL-010. The target list is validated by the module that also matches against it —
   // a second spelling of "what a target is" is where the two would drift apart. A list
@@ -3519,7 +3614,52 @@ ipcMain.handle('library-add-paths', async (e, paths) => withLibraryLock(async ()
 //
 // Input is a list of { path, id? } records — the renderer knows the path of every
 // card it draws, whereas only some cards have a pool id.
-ipcMain.handle('library-remove-many', async (e, rawRecords) => withLibraryLock(async () => {
+// LIB-012. Подтверждение спрашивает не обработчик по своему усмотрению, а ПОВЕРХНОСТЬ:
+// решение владельца 2026-09-03 — спрашивать там, где пункт легко спутать с соседним, и
+// только там. Поэтому признак приходит снаружи, а массовая кнопка, онлайн-карточка и
+// просмотрщик остаются как были.
+//
+// Диалог показывается ДО блокировки библиотеки. Он живёт ровно столько, сколько человек
+// думает, и блокировка на это время остановила бы все остальные операции; «Удалить с
+// диска» по той же причине спрашивает снаружи блокировки.
+//
+// Убрать из библиотеки обратимо — запись уходит в корзину, — поэтому вопрос задаётся
+// как вопрос, а не предупреждение, и по умолчанию выбрана отмена.
+async function confirmLibraryRemoval(rawRecords, rawOptions) {
+  if (!rawOptions || rawOptions.confirm !== true) return null;
+  const names = [];
+  for (const raw of Array.isArray(rawRecords) ? rawRecords : []) {
+    const rec = typeof raw === 'string' ? { id: raw, path: '' } : (raw || {});
+    const id = typeof rec.id === 'string' && rec.id ? rec.id : '';
+    const item = id ? library.getItem(config.library, id) : null;
+    const full = (typeof rec.path === 'string' && rec.path) || (item && item.path) || '';
+    if (full) names.push(path.basename(full));
+  }
+  // Называть нечего — пусть обработчик сам ответит на пустой запрос, как отвечал всегда.
+  if (!names.length) return null;
+
+  const shown = names.slice(0, 10);
+  const more = names.length - shown.length;
+  const answer = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    buttons: [tMain('library.removeConfirmYes'), tMain('library.removeConfirmCancel')],
+    defaultId: 1,
+    cancelId: 1,
+    title: tMain('library.removeConfirmTitle'),
+    // tMain() не умеет подстановку, как и у «Удалить с диска» — число подставляется здесь.
+    message: tMain('library.removeConfirmMessage').replace('{n}', String(names.length)),
+    detail: [...shown, ...(more > 0 ? [`… +${more}`] : []), '', tMain('library.removeConfirmDetail')].join('\n'),
+    noLink: true,
+  });
+  if (answer.response === 0) return null;
+  // Отказ не должен отличаться от «ничего не делали»: ни записи, ни отмены, ни тоста.
+  return { config, affected: 0, removed: 0, hidden: 0, error: null, cancelled: true, warning: null, undo: null };
+}
+
+ipcMain.handle('library-remove-many', async (e, rawRecords, rawOptions) => {
+  const declined = await confirmLibraryRemoval(rawRecords, rawOptions);
+  if (declined) return declined;
+  return withLibraryLock(async () => {
   if (!Array.isArray(rawRecords) || !rawRecords.length || rawRecords.length > 50000) {
     return { config, removed: 0, hidden: 0, error: 'bad_request', warning: null, undo: null };
   }
@@ -3636,6 +3776,10 @@ ipcMain.handle('library-remove-many', async (e, rawRecords) => withLibraryLock(a
     }
     return out;
   };
+  // LIB-009. Вытеснение переживает эту функцию: запись, выпавшая из корзины, теряет защиту
+  // от сборщика обоев, и вернуть её одним нажатием уже нельзя. Раньше об этом знала только
+  // консоль разработчика, поэтому счёт копится здесь и уходит в ответ вместе с остальным.
+  let evicted = 0;
   // Descendants of a removed folder are covered by the same rule.
   for (const rec of [...records.map((r) => ({ ...r, named: true })),
     ...descendants.map((item) => ({ item, named: false }))]) {
@@ -3659,6 +3803,7 @@ ipcMain.handle('library-remove-many', async (e, rawRecords) => withLibraryLock(a
     });
     config.libraryTrash = pushed.trash;
     if (pushed.evicted.length) {
+      evicted += pushed.evicted.length;
       console.log(`library trash full: ${pushed.evicted.length} oldest entr(y/ies) released to the orphan sweep`);
     }
   }
@@ -3780,12 +3925,14 @@ ipcMain.handle('library-remove-many', async (e, rawRecords) => withLibraryLock(a
     config,
     affected,
     removed: undo.items.length,
+    evicted,
     hidden: hiddenResult.updated + dirResult.updated,
     error: null,
     warning,
     undo: lastLibraryRemoval ? { count: records.length, token: lastLibraryRemoval.token } : null,
   };
-}));
+  });
+});
 
 // Put back exactly what the last removal took away. Only the most recent removal is
 // kept — this backs the "Undo" in the toast, not a full history.
@@ -4732,11 +4879,7 @@ ipcMain.handle('library-assign', async (e, id, monitorId, which) => {
 // ---- Internet providers: whoever the registry lists (src/provider-registry.js) ----
 
 const INTERNET_USER_AGENT = `Znada/${app.getVersion()} (https://github.com/alexvlass01/znada)`;
-const INTERNET_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
-const INTERNET_THUMBNAIL_CACHE_SIZE = 200;
-const INTERNET_FULL_MAX_BYTES = 30 * 1024 * 1024; // viewer full image (wallpapers can be large)
 const INTERNET_TAG_SUGGEST_CACHE_SIZE = 200;
-const internetThumbnailCache = new Map();
 const internetTagSuggestCache = new Map();
 
 // Two more fields used to ride along here — whether a Wallhaven key is bundled, twice
@@ -4746,12 +4889,15 @@ ipcMain.handle('internet-status', () => ({
   // Computed rather than asserted: this used to be a hardcoded `true` beside a comment
   // reasoning about which sites cover it, and that reasoning silently stopped being
   // true whenever a site was removed or shipped without its key.
-  nsfwAvailable: explicitContentReachableIn(providerRegistry.active()),
+  nsfwAvailable: explicitContentReachableIn(providerRegistry.active().filter(sourceEnabled)),
   // ONL-016. "Details" has to name the site a picture came from, and the registry is
   // the one place that knows what a site is called. Sent as a list rather than copied
   // onto every card, and taken from ALL providers rather than the active ones: a card
   // saved from a site Znada no longer asks must still be able to say where it is from.
-  providers: providerRegistry.PROVIDERS.map((p) => ({ id: p.id, name: p.name })),
+  providers: providerRegistry.PROVIDERS.map((p) => ({
+    id: p.id, name: p.name, status: p.status || 'active',
+    sourceKey: p.sourceKey || 'internet', browse: !!(p.capabilities && p.capabilities.browse),
+  })),
 }));
 
 async function fetchInternetTagSuggestions(opts) {
@@ -4759,7 +4905,8 @@ async function fetchInternetTagSuggestions(opts) {
   if (prefix.length < tagSuggest.MIN_PREFIX_LEN) return { items: [], error: null };
 
   const limit = tagSuggest.clampLimit(opts && opts.limit);
-  const cacheKey = `${prefix}|${limit}`;
+  const selection = onlineSources.signature(config.onlineSources);
+  const cacheKey = `${selection}|${prefix}|${limit}`;
   if (internetTagSuggestCache.has(cacheKey)) {
     const cached = internetTagSuggestCache.get(cacheKey);
     internetTagSuggestCache.delete(cacheKey);
@@ -4767,7 +4914,8 @@ async function fetchInternetTagSuggestions(opts) {
     return cached;
   }
 
-  const answer = await suggestTagsFromProviders(prefix, limit);
+  const answer = await suggestTagsFromProviders(prefix, limit, providerRegistry.active().filter(sourceEnabled));
+  if (selection !== onlineSources.signature(config.onlineSources)) return { items: [], error: null };
   if (answer.error) return { items: [], error: answer.error };
   const result = { items: answer.items, error: null };
   internetTagSuggestCache.set(cacheKey, result);
@@ -4903,9 +5051,7 @@ function appSession() {
 // Which sources the user has switched on. A site declares WHICH switch it belongs to;
 // the handler never works it out from what kind of site it is.
 function sourceEnabled(descriptor) {
-  const sources = (config && config.onlineSources) || {};
-  const key = (descriptor && descriptor.sourceKey) || 'internet';
-  return sources[key] !== false;
+  return onlineSources.enabled(config && config.onlineSources, descriptor);
 }
 // The one way any site reaches the network. Timeouts, headers and the wording of a
 // failure are the handler's business, so a new site inherits all of it and cannot get
@@ -5011,6 +5157,9 @@ async function searchOneProvider(descriptor, params) {
 // place — so they are asked in order until one answers, and only the answer is used.
 // This is what the hardwired Gelbooru→Danbooru pair became; a third alternative is now
 // a row in the registry rather than another branch here.
+// ONL-005: SEARCH no longer uses this. `searchRound` gives every chosen site its own
+// group, because a site the user switched off must not return as somebody's replacement.
+// The mechanism stays for a caller that does want alternatives; today none does.
 // ONL-014b. `attempts` collects every member that was actually ASKED, with the exact
 // parameters it was asked with. Alternatives page independently of one another, so the
 // one that answered this round has to carry on from where IT got to — a single "the
@@ -5108,11 +5257,14 @@ function browseTopStartPage() {
 }
 
 // Where this site should carry on from, for this ordering.
-function positionFor(token, descriptor, sorting) {
+// ONL-005 task 3: the random slice is front-page curation only. A search is the user's
+// question and starts at the top of its answer — sliced, a rare tag with a page or two of
+// results started past its end and read as "nothing found" on Top.
+function positionFor(token, descriptor, sorting, browsing = false) {
   const key = onlineResume.slotKey(descriptor.id, sorting);
   const at = onlineResume.positionOf(token, key);
   if (at !== undefined) return at;                    // null means finished
-  return sorting === 'toplist' && descriptor.capabilities && descriptor.capabilities.topIsAllTime
+  return browsing && sorting === 'toplist' && descriptor.capabilities && descriptor.capabilities.topIsAllTime
     ? browseTopStartPage()
     : 1;
 }
@@ -5123,13 +5275,13 @@ function positionFor(token, descriptor, sorting) {
 // wiring between a stored bookmark and the parameters a site is handed cannot be proved
 // with the shipped sites alone, and a wrapper that quietly reaches for the wrong list is
 // exactly the kind of thing a test cannot see.
-async function searchRound(token, sorting, extra, list) {
+async function searchRound(token, sorting, extra, list, browsing = false) {
   const live = (Array.isArray(list) ? list : providerRegistry.active())
     .filter(sourceEnabled)
     .filter((descriptor) => !onlineResume.isFinished(token, onlineResume.slotKey(descriptor.id, sorting)));
   if (!live.length) return { results: [], attempts: [] };
   return searchAllProviders((descriptor) => {
-    const at = positionFor(token, descriptor, sorting);
+    const at = positionFor(token, descriptor, sorting, browsing);
     return {
       ...extra,
       // ONL-017. Ask for MORE, not more often. A site that cannot narrow by shape sends a
@@ -5147,7 +5299,9 @@ async function searchRound(token, sorting, extra, list) {
       page: typeof at === 'number' ? at : 1,
       cursor: typeof at === 'string' ? at : '',
     };
-  }, live);
+  // ONL-005: chosen sites are independent search sources. Group alternatives remain
+  // a lower-level mechanism for other callers, but cannot silently replace a choice.
+  }, live.map((descriptor) => ({ ...descriptor, group: descriptor.id })));
 }
 
 // Write down where everyone got to. A site that failed keeps its bookmark and is asked
@@ -5170,7 +5324,7 @@ async function searchBrowseFeed(o, token) {
     q: '',
     categories: BROWSE_CATEGORIES,
     limit: BROWSE_PAGE_SIZE,
-  })));
+  }, undefined, true)));
   const results = rounds.flatMap((round) => round.results);
   rounds.forEach((round) => recordRound(token, round.attempts));
   if (!rounds.some((round) => round.attempts.length)) return nobodyLeft();
@@ -5222,6 +5376,7 @@ async function searchFiltered(o, token, browsing) {
   // Ask for more of the same rather than more often: a wider page is one request, and a
   // site that filters on its own side will simply return a full one.
   for (let round = 0; round < SIZE_FILTER_EXTRA_ROUNDS; round++) {
+    if (o.sourcesKey !== onlineSources.signature(config.onlineSources)) break;
     if (merged.items.length >= SIZE_FILTER_MIN_CARDS) break;
     const next = await run({ sizeHints: hints });
     const gained = keep(next.items);
@@ -5239,7 +5394,7 @@ async function searchFiltered(o, token, browsing) {
 }
 
 ipcMain.handle('internet-search', async (e, opts) => {
-  const o = opts || {};
+  const o = { ...(opts || {}), sourcesKey: onlineSources.signature(config.onlineSources) };
   // Both conditions, not just the renderer's flag: curation must never be able to
   // silently narrow a real search, whatever the renderer believes it asked for.
   const browsing = o.browse === true && !String(o.q || '').trim();
@@ -5248,11 +5403,12 @@ ipcMain.handle('internet-search', async (e, opts) => {
   // that does not belong to this exact question is discarded rather than repaired.
   const token = onlineResume.parse(o.resume, onlineResume.signatureOf({ ...o, browse: browsing }));
   const merged = await searchFiltered(o, token, browsing);
+  if (o.sourcesKey !== onlineSources.signature(config.onlineSources)) return { ...nobodyLeft(), resume: null };
   return {
     ...merged,
     browsing,
     resume: onlineResume.forReply(token),
-    nsfwAvailable: explicitContentReachableIn(providerRegistry.active()),
+    nsfwAvailable: explicitContentReachableIn(providerRegistry.active().filter(sourceEnabled)),
   };
 });
 
@@ -5286,85 +5442,86 @@ function explicitContentReachableIn(list) {
 
 
 
-async function fetchInternetThumbnail(item) {
-  if (!online.allowedThumbnailUrl(item)) return { dataUrl: '', error: 'badItem' };
-  const key = item.thumb;
-  if (internetThumbnailCache.has(key)) {
-    const cached = internetThumbnailCache.get(key);
-    internetThumbnailCache.delete(key);
-    internetThumbnailCache.set(key, cached);
-    return cached;
-  }
+/* ------------------------------------------------- потоковый прокси картинок ---- */
 
-  const pending = (async () => {
+/*
+ * PERF-008. Картинки booru появлялись примерно на 1.5 с позже, чем могли бы: главный
+ * процесс скачивал файл ЦЕЛИКОМ, кодировал в base64 и отдавал одной строкой через IPC.
+ * Пока не проехало всё — окно не рисовало ничего, а строка потом оседала в его памяти.
+ *
+ * Убрать прокси нельзя: замер 2026-09-09 показал, что настоящее окно Electron получает от
+ * `cdn.donmai.us` отказ за 151 мс. Дело не в `Referer` (Danbooru его вообще не шлёт и
+ * получает 200), а в бот-защите Cloudflare, реагирующей на браузерную ФОРМУ запроса; её
+ * окно изменить не может — `Sec-Fetch-*` ставит сам Chromium.
+ *
+ * Поэтому маршрут прежний, меняется форма: собственная схема отдаёт байты ПОТОКОМ, окно
+ * рисует с первых байт, а все проверки остаются здесь же, где стояли:
+ *   1. принадлежность адреса объявленным хостам провайдера — те же `online.allowed*`;
+ *   2. заголовки провайдера — тот же `internetRequestHeaders`;
+ *   3. разбор MIME — тот же `online.thumbnailMime`;
+ *   4. потолок размера — и по `content-length`, и ПО МЕРЕ чтения (см. ниже);
+ *   5. таймаут.
+ */
+function registerMediaProxy() {
+  protocol.handle(mediaProxy.SCHEME, async (request) => {
+    const asked = mediaProxy.parseUrl(request.url);
+    if (!asked) return new Response('bad request', { status: 400 });
+
+    /*
+     * Проверка ТА ЖЕ, что была на IPC-пути, и намеренно выбирается по ступени: у превью
+     * свой список хостов, и провайдер, чьи превью грузятся окном напрямую, не объявляет
+     * ни одного. Пустой список означает «никаких», а не «любые».
+     */
+    const item = { provider: asked.provider, [asked.field]: asked.url };
+    const allowed = asked.field === 'thumb'
+      ? online.allowedThumbnailUrl(item)
+      : (asked.field === 'sample' ? online.allowedSampleFetchUrl(item) : online.allowedFullFetchUrl(item));
+    if (!allowed) return new Response('forbidden', { status: 403 });
+
+    let upstream;
     try {
-      const res = await fetch(key, {
+      upstream = await fetch(asked.url, {
         headers: internetRequestHeaders(item),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
-      if (!res.ok) return { dataUrl: '', error: String(res.status) };
-      const mime = online.thumbnailMime(res.headers.get('content-type'));
-      const declaredSize = Number(res.headers.get('content-length')) || 0;
-      if (!mime || declaredSize > INTERNET_THUMBNAIL_MAX_BYTES) return { dataUrl: '', error: 'badImage' };
-      const bytes = Buffer.from(await res.arrayBuffer());
-      if (bytes.length > INTERNET_THUMBNAIL_MAX_BYTES) return { dataUrl: '', error: 'badImage' };
-      const dataUrl = online.thumbnailDataUrl(bytes, mime);
-      return dataUrl ? { dataUrl, error: null } : { dataUrl: '', error: 'badImage' };
     } catch (err) {
-      return { dataUrl: '', error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+      return new Response('upstream', { status: err && err.name === 'TimeoutError' ? 504 : 502 });
     }
-  })();
+    if (!upstream.ok) return new Response('upstream', { status: upstream.status });
 
-  internetThumbnailCache.set(key, pending);
-  while (internetThumbnailCache.size > INTERNET_THUMBNAIL_CACHE_SIZE) {
-    internetThumbnailCache.delete(internetThumbnailCache.keys().next().value);
-  }
-  const result = await pending;
-  if (result.error) internetThumbnailCache.delete(key);
-  return result;
-}
+    const mime = online.thumbnailMime(upstream.headers.get('content-type'));
+    if (!mime) return new Response('unsupported', { status: 415 });
+    const declared = Number(upstream.headers.get('content-length')) || 0;
+    if (mediaProxy.overLimit(declared, asked.limit)) return new Response('too large', { status: 413 });
+    if (!upstream.body) return new Response('empty', { status: 502 });
 
-// Booru CDNs may reject direct Chromium requests. Fetch only validated preview
-// URLs in main and return a small data URL to renderer.
-ipcMain.handle('internet-thumbnail', (e, item) => fetchInternetThumbnail(item));
+    /*
+     * Потолок проверяется ПО МЕРЕ чтения, а не после. В этом весь смысл потока: «после
+     * загрузки» не наступает, пока файл не доехал, — а рвать соединение надо раньше.
+     * Заголовку `content-length` доверять нельзя: его может не быть или он может лгать.
+     */
+    let seen = 0;
+    const capped = upstream.body.pipeThrough(new TransformStream({
+      transform(chunk, controller) {
+        seen += chunk.byteLength;
+        if (mediaProxy.overLimit(seen, asked.limit)) {
+          controller.error(new Error('too large'));
+          return;
+        }
+        controller.enqueue(chunk);
+      },
+    }));
 
-// Full image for the viewer. Booru hosts (esp. Gelbooru's hotlink.php) need a Referer
-// the renderer can't send, so main fetches the validated full URL and returns a data
-// URL. Wallhaven loads directly in the viewer, so this is only used for booru items.
-// Shared referer-gated, size-capped fetch → data URL. Used for both the sample
-// (intermediate) and full (original) tiers; the viewer shows sample first and
-// upgrades to full in the background to keep navigation fast and frugal.
-async function fetchInternetImageUrl(item, url) {
-  try {
-    const res = await fetch(url, {
-      headers: internetRequestHeaders(item),
-      signal: AbortSignal.timeout(30000),
+    return new Response(capped, {
+      status: 200,
+      headers: { 'Content-Type': mime, 'Cache-Control': 'private, max-age=3600' },
     });
-    if (!res.ok) return { dataUrl: '', error: String(res.status) };
-    const mime = online.thumbnailMime(res.headers.get('content-type'));
-    if (!mime) return { dataUrl: '', error: 'badImage' };
-    if ((Number(res.headers.get('content-length')) || 0) > INTERNET_FULL_MAX_BYTES) return { dataUrl: '', error: 'tooBig' };
-    const bytes = Buffer.from(await res.arrayBuffer());
-    if (bytes.length > INTERNET_FULL_MAX_BYTES) return { dataUrl: '', error: 'tooBig' };
-    const dataUrl = online.thumbnailDataUrl(bytes, mime);
-    return dataUrl ? { dataUrl, error: null } : { dataUrl: '', error: 'badImage' };
-  } catch (err) {
-    return { dataUrl: '', error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
-  }
+  });
 }
 
-async function fetchInternetFull(item) {
-  if (!online.allowedFullFetchUrl(item)) return { dataUrl: '', error: 'badItem' };
-  return fetchInternetImageUrl(item, item.full);
-}
-ipcMain.handle('internet-full', (e, item) => fetchInternetFull(item));
 
-// Intermediate "sample" tier (booru downscale). Same host/referer rules as full.
-async function fetchInternetSample(item) {
-  if (!online.allowedSampleFetchUrl(item)) return { dataUrl: '', error: 'badItem' };
-  return fetchInternetImageUrl(item, item.sample);
-}
-ipcMain.handle('internet-sample', (e, item) => fetchInternetSample(item));
+
+
 
 // ONL-012. The per-card extra request, asked of whoever declares one.
 //
@@ -6569,8 +6726,8 @@ ipcMain.handle('create-shortcuts', (e, which) => {
   // process.execPath is node_modules\electron\dist\electron.exe, so this button
   // used to plant a Start menu entry that carried Electron's name and icon and
   // opened Electron — and it overwrote the real one on the way, since it deletes
-  // any existing file at that path first. Reported by the owner 2026-08-16 as
-  // "an app called electron appeared and Znada disappeared from the list".
+  // any existing file at that path first. Reported by the owner 2026-08-16: an Electron
+  // entry showed up in the Start menu and Znada's own entry was gone.
   if (!updatesSupported()) {
     console.warn('[Shortcut] Запуск не установленный — ярлыки не создаются: они указывали бы на electron.exe.');
     return done;
@@ -6600,7 +6757,32 @@ ipcMain.handle('create-shortcuts', (e, which) => {
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
-app.on('second-instance', () => {
+// COLLAB-003. What the end of the hour does: the same exit as «Quit» in the tray, after a
+// library change already under way has had a bounded chance to finish.
+async function quitForDevSessionLimit() {
+  if (devSessionLimitReached) return;
+  devSessionLimitReached = true;
+  console.log('[DEV] Прошёл час с запуска: проверочный запуск закрывается штатно.');
+  try {
+    await devLaunchTools.settleWithin(libraryMutationQueue, devLaunchTools.SETTLE_LIMIT_MS);
+  } finally {
+    app.isQuitting = true;
+    app.quit();
+  }
+}
+
+app.on('second-instance', (_event, _argv, _workingDirectory, additionalData) => {
+  // COLLAB-003. A launch of other code on this profile must not look as if it opened: the
+  // running window comes forward and says what it runs and what was turned away. Its hour
+  // is not touched.
+  const incoming = additionalData && additionalData.znadaDevLaunch;
+  if (DEV_LAUNCH_INFO && !devLaunchTools.sameCode(DEV_LAUNCH_INFO, incoming)) {
+    showWindow();
+    const box = devLaunchTools.busyProfileDialog(DEV_LAUNCH_INFO, incoming);
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    (parent ? dialog.showMessageBox(parent, box) : dialog.showMessageBox(box)).catch(() => {});
+    return;
+  }
   // Защита от ДУБЛЯ автозапуска: если в реестре осталось несколько устаревших записей (от dev/
   // портативной сборок), при входе в Windows поднимается несколько экземпляров — второй НЕ должен
   // «будить» окно, раз мы стартовали скрыто (--hidden). Ручной повторный запуск (позже) показывает окно.
@@ -6608,10 +6790,32 @@ app.on('second-instance', () => {
   showWindow();
 });
 
+/*
+ * PERF-008. Схема объявляется ДО готовности приложения — позже Chromium её уже не примет.
+ * `standard` нужен, чтобы адрес разбирался как обычный (хост + запрос), `stream` — ради чего
+ * всё и делается, `secure` — чтобы окно не считало картинку небезопасным содержимым.
+ * `bypassCSP` НЕ включается: схема обязана быть перечислена в `img-src` страницы, иначе она
+ * стала бы обходом собственной политики.
+ */
+protocol.registerSchemesAsPrivileged([{
+  scheme: mediaProxy.SCHEME,
+  privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: false },
+}]);
+
 app.whenReady().then(async () => {
   // Electron finalizes its default dev identity during startup, so apply the
   // Squirrel-matching ID immediately after ready and before any window/toast.
   if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+  // BUG-044. A launch that did not get this profile's lock has already called app.quit() above,
+  // but Electron still emits `ready`, and this whole block used to run in that dying process: it
+  // rewrote the helper scripts inside the running app's profile, and by the order of the code it
+  // would go on to open a window and a tray icon, take the hotkey and apply wallpapers. Nothing
+  // below belongs to a process that is quitting. Kept after the identity line on purpose: that
+  // call has no effect outside this process, and the package-boundary test pins it as the first.
+  if (!gotLock) return;
+  // PERF-008. До первого окна: иначе первая картинка попросится по схеме, которую ещё
+  // никто не обслуживает.
+  registerMediaProxy();
 
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
   if (DIAGNOSTICS_BOOTSTRAP.enabled) {
@@ -6774,6 +6978,7 @@ app.whenReady().then(async () => {
 
   // Switch wallpaper when the computer wakes from sleep/hibernate
   powerMonitor.on('resume', () => {
+    if (devSession) devSession.check(); // COLLAB-003: a sleep does not stretch the hour
     themeToastQuietUntil = Date.now() + 10000; // resume catch-up flip must not toast
     syncLiveFolderWatchers();
     scheduleLiveFolderFullScan('resume', 5000);
@@ -6795,8 +7000,10 @@ app.whenReady().then(async () => {
 
 // Flush discovery metadata and dispose persistent helper processes on quit.
 app.on('before-quit', () => {
+  if (devSession) devSession.dispose(); // COLLAB-003: nothing of the hour outlives a quit
   if (diagnosticsController) {
-    void diagnosticsController.shutdownBestEffort({ reason: 'before-quit' });
+    // A recording the hour cut short says so, instead of looking like a manual quit.
+    void diagnosticsController.shutdownBestEffort({ reason: devSessionLimitReached ? 'dev-session-limit' : 'before-quit' });
   }
   if (liveFolderFullScanTimer) clearTimeout(liveFolderFullScanTimer);
   liveFolderFullScanTimer = null;
@@ -6838,6 +7045,7 @@ module.exports = {
   __test: {
     CONFIG_PATH,
     loadConfig,
+    registerMediaProxy,
     getConfig: () => config,
     isUnsafeToWrite: () => libraryUnsafeToWrite,
     // SEC-002 slice 2: what the media guard let through, and the grant side of it.
@@ -6856,6 +7064,14 @@ module.exports = {
     windowPages: () => Object.keys(WINDOW_PAGES),
     windowSecurity: (role) => windowSecurity(role),
     diagnosticsEnabled: () => DIAGNOSTICS_BOOTSTRAP.enabled,
+    // COLLAB-003. The check launch as main.js resolved it, with the REAL hour controller: a
+    // test that moves the clocks drives the same exit the timer would.
+    devLaunch: () => ({ mode: DEV_LAUNCH.mode, refusal: DEV_LAUNCH.refusal, info: DEV_LAUNCH_INFO, session: devSession }),
+    // The library mutation queue itself, so a test can hold a change open across the hour.
+    withLibraryLock: (fn) => withLibraryLock(fn),
+    // The tray is created on ready, which never comes under the harness. This creates it
+    // through the real controller, so what main hands it (the check label) can be seen.
+    createTray: () => trayCtl.create(),
     ipcAuthority: {
       register: (contents, role, url) => ipcAuthority.register(contents, role, url),
       forget: (contents) => ipcAuthority.forget(contents),
@@ -6954,7 +7170,7 @@ module.exports = {
     // answers" can be proved with sites the shipped registry cannot produce.
     suggestTagsFromProviders: (prefix, limit, list) => suggestTagsFromProviders(prefix, limit, list),
     suggestTagProviders: (list) => suggestTagProviders(list).map((d) => d.id),
-    searchRound: (token, sorting, extra, list) => searchRound(token, sorting, extra, list),
+    searchRound: (token, sorting, extra, list, browsing) => searchRound(token, sorting, extra, list, browsing),
     recordRound: (token, attempts) => recordRound(token, attempts),
     // ONL-014c. A key in a file is read once and kept; a session must be asked for every
     // time. The difference is only visible from here.
@@ -6976,7 +7192,11 @@ module.exports = {
     blockIntervalLikeGameMode: () => retrySlideshowIntervalSoon(),
     cloudSigninInFlight: () => !!activeCloudSignin,
     cancelCloudSignin: () => cancelCloudSignin(),
+    // BUG-031. whenReady never resolves under the harness, so no window exists and every
+    // broadcast went nowhere. A stand-in lets a test hear what an open window is told.
+    useMainWindow: (win) => { mainWindow = win || null; },
     disposeForTests: () => {
+      if (devSession) devSession.dispose();
       cancelCloudSignin();
       libraryWriter.dispose();
       metadataWriter.dispose();

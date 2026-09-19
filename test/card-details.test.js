@@ -176,7 +176,7 @@ ok('an online sheet stops before the disk read', rendererSrc.includes('if (!mode
 
 const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 ok('main tells the window what the sites are called',
-  mainSrc.includes('providers: providerRegistry.PROVIDERS.map((p) => ({ id: p.id, name: p.name }))'));
+  /providers:\s*providerRegistry\.PROVIDERS\.map\(\(p\) => \(\{\s*id: p\.id, name: p\.name[,\s}]/.test(mainSrc));
 
 const en = require('../locales/en.json');
 const ru = require('../locales/ru.json');

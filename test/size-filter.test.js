@@ -4,7 +4,7 @@
 //
 // ONL-010, decided by the owner on 2026-08-25: show only pictures that would fit a
 // screen. Filter both shape and resolution; off by default; two modes, one from the
-// monitors and one typed by hand; several monitors mean "suits at least one"; the cut is
+// monitors and one typed by hand; with several monitors a picture has to suit one; the cut is
 // hard; and it applies to a search as much as to the front page, because it is the
 // user's setting rather than our curation.
 
@@ -173,7 +173,7 @@ ok('what was typed comes back recognisably', S.formatTargets(S.parseTargets('384
   // Any whole-number pair, not a fixed menu: checked against the live API on
   // 2026-09-03, where ratios=43x18 returned 3440x1440 and 45x19 returned 3840x1617.
   // An ultrawide owner would otherwise get an empty feed and no explanation.
-  // ONL-017. "Ask for more, not more often." A site that cannot narrow by shape returns
+  // ONL-017. Ask for more at once rather than more often. A site that cannot narrow by shape returns
   // a page that is mostly discarded here — four cards in a hundred on an anime board —
   // so while the filter is on it is asked for its biggest page: one request instead of
   // several. A site that narrows properly gets the ordinary page, because a bigger one

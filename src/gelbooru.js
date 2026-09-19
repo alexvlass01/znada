@@ -407,10 +407,12 @@ const PROVIDER = Object.freeze({
     ]),
     thumb: Object.freeze([Object.freeze({ pattern: /^img\d*\.gelbooru\.com$/i })]),
   }),
-  // ONL-012. Same group as Danbooru: they are alternatives, not two separate sources.
+  // ONL-012. Declared as an alternative of Danbooru. ONL-005 took that OUT of search: the
+  // sites the user ticked are asked independently, and the grouping is left for a caller
+  // that explicitly wants alternatives (production search is not one any more).
   group: 'anime',
-  // Without the bundled key this site cannot be asked at all — the group then falls
-  // through to the next member.
+  // Without the bundled key this site cannot be asked at all. Search then NAMES it as the
+  // site that did not answer instead of quietly putting another one in its place.
   credentials: Object.freeze({ kind: 'bundled', required: true }),
   // Read by the shared handler — see the note in src/wallhaven.js about what does and
   // does not belong here.
@@ -454,7 +456,7 @@ async function search(params, ctx) {
   const o = params || {};
   const page = Number(o.page) > 0 ? Number(o.page) : 1;
   const credentials = ctx && ctx.credentials;
-  // No key means this site cannot be asked at all; the group falls through to the next.
+  // No key means this site cannot be asked at all; search names it instead of replacing it.
   if (!credentials) return { error: 'unavailable' };
   const limit = Number(o.limit) > 0 ? Number(o.limit) : MAX_PAGE_SIZE;
   const url = buildSearchUrl({
@@ -643,8 +645,8 @@ async function suggestTags(params, ctx) {
   return { items: parseTagSuggestions(res.json, { prefix: o.q }) };
 }
 
-// This site cannot be asked anything without the bundled credentials; a keyless build
-// simply falls through to the next member of its group.
+// This site cannot be asked anything without the bundled credentials; a keyless build gets
+// the other sites the user ticked, and this one is reported as not having answered.
 function loadCredentials() {
   try {
     const k = require('../gelbooru-key.json');

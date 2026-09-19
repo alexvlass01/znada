@@ -1,7 +1,7 @@
 'use strict';
 
 // ONL-003. Load the next page when the user reaches the end, instead of asking them to
-// press a button for it. The owner's words: "и кнопку убирай".
+// press a button for it; the button itself goes away.
 //
 // The whole risk of this change is a loop. Scrolling to the bottom asks for more; if
 // "more" adds nothing — every card filtered out by ONL-010, a site that has quietly

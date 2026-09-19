@@ -99,10 +99,11 @@ const slotOf = (rows, monitorIndex, theme) => rows[monitorIndex].slots.find((s) 
 // ---------------------------------------------------------------------------
 // Wiring: a rule nothing calls has not been applied.
 // ---------------------------------------------------------------------------
-const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
-const viewer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'viewer.js'), 'utf8');
-const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-const css = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'styles.css'), 'utf8');
+// Source text as written, whatever line endings the checkout gave it (QA-010).
+const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8').split('\r\n').join('\n');
+const viewer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'viewer.js'), 'utf8').split('\r\n').join('\n');
+const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8').split('\r\n').join('\n');
+const css = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'styles.css'), 'utf8').split('\r\n').join('\n');
 
 // --- what `build` actually DRAWS -------------------------------------------
 // Checked by building the rows against a stand-in document rather than by reading the

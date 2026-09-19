@@ -56,7 +56,8 @@ ok('tag search exposes its result list to assistive technology', html.includes('
 
 const renderTags = functionSource(renderer, 'renderLibRailTags');
 ok('active tag validity is checked against all tags', /LIB\.filter\.startsWith\('tag:'\)[\s\S]*tags\.includes\(LIB\.filter\.slice\(4\)\)/.test(renderTags));
-ok('query creates a separate matches list', /const matches = filterLibRailTags\(tags, LIB\.tagQuery\)/.test(renderTags));
+// ONL-005 task 6: the list is ordered by use before it is searched.
+ok('query creates a separate matches list', /const matches = filterLibRailTags\(sortTagsByUse\(tags, [^)]*\)\), LIB\.tagQuery\)/.test(renderTags));
 
 const listenerStart = renderer.indexOf("const tagSearchEl = $('#libTagSearch')");
 const listenerEnd = renderer.indexOf("const refreshBtn = $('#libRefresh')", listenerStart);
@@ -65,7 +66,15 @@ ok('typing rerenders only rail tags', listenerStart >= 0 && listener.includes('r
 ok('typing never substitutes the card filename query', !listener.includes('LIB.q'));
 ok('tag query is not part of the card-grid render identity', !functionSource(renderer, 'libRenderKey').includes('tagQuery'));
 
-ok('nested tag section can shrink inside the sticky rail', /\.lib-tags-section\s*\{[^}]*flex:[^}]*min-height:\s*0[^}]*overflow:\s*hidden/s.test(css));
+// ONL-005 task 6: the tag list is a collapsible rail section. Open, it takes the rest of the
+// rail; every level down to the scrolling list may shrink, and the body clips while it
+// animates.
+ok('nested tag section can shrink inside the sticky rail',
+  /\.lib-tags-section\s*\{[^}]*min-height:\s*0/s.test(css)
+  && /\.lib-tags-section\.open\s*\{[^}]*flex:\s*1 1 auto/s.test(css)
+  && /\.lib-tags-section \.lib-rail-section-body\s*\{[^}]*min-height:\s*0/s.test(css)
+  && /\.lib-tags-section \.lib-rail-section-inner\s*\{[^}]*min-height:\s*0/s.test(css)
+  && /\.lib-rail-section-inner\s*\{[^}]*min-height:\s*0[^}]*overflow:\s*hidden/s.test(css));
 ok('only the tag result list owns vertical scrolling', /\.lib-railtags\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/s.test(css));
 ok('compact rail search is bounded at narrow widths', /\.lib-tag-searchbox\s*\{[^}]*width:\s*calc\(100% - 8px\)[^}]*min-width:\s*0/s.test(css) && css.includes('flex-basis: 156px'));
 

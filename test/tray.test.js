@@ -65,4 +65,30 @@ ok('без тематических файлов остаётся общий з�
 ok('иконка ставится сразу при создании, а не только при смене темы',
   trayWith(ALL, 'dark').length >= 1 && trayWith(ALL, 'dark')[0] === 'tray-dark.ico');
 
+// ---- подсказка значка -----------------------------------------------------
+// COLLAB-003. Проверочный запуск DEV/DIAG называет свой код и в подсказке трея: значок
+// виден, даже когда окно спрятано. Обычный запуск остаётся просто «Znada».
+function tooltipsOf(extra) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-tray-'));
+  fs.writeFileSync(path.join(dir, 'tray.png'), 'x');
+  const tips = [];
+  const ctl = createTrayController({
+    Tray: class { constructor() {} setToolTip(tip) { tips.push(tip); } setContextMenu() {} on() {} destroy() {} setImage() {} },
+    Menu: { buildFromTemplate: () => ({}) },
+    nativeImage: { createFromPath: (p) => path.basename(p) },
+    assetsDir: dir,
+    t,
+    getState: () => ({ theme: 'light', slideshowEnabled: false, hasSlideshowItems: false, updateState: 'idle' }),
+    onOpen: () => {},
+    ...extra,
+  });
+  ctl.create();
+  fs.rmSync(dir, { recursive: true, force: true });
+  return tips;
+}
+ok('обычный запуск подписан в трее просто «Znada»',
+  JSON.stringify(tooltipsOf({})) === JSON.stringify(['Znada']));
+ok('проверочный запуск называет в трее свой код',
+  JSON.stringify(tooltipsOf({ tooltip: 'Znada · DEV · COLLAB-003 · aaaaaaa' })) === JSON.stringify(['Znada · DEV · COLLAB-003 · aaaaaaa']));
+
 console.log('\nAll ' + passed + ' tray tests passed.');

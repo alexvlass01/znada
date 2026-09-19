@@ -51,8 +51,12 @@ function ratingTag({ sfw = true, sketchy = true, nsfw = false } = {}) {
   return `rating:${ratings.length ? ratings.join(',') : 'g'}`;
 }
 
-function orderTag(sort) {
-  if (sort === 'toplist') return 'order:rank';
+// ONL-005 task 3. `order:rank` is a trending window of the last few days: the right front
+// page, and nothing at all for a rarer typed tag (live 2026-09-15: sameko_saba gave 0 posts
+// with order:rank, 20 with order:score). A search's Top is the tag's all-time best — the
+// meaning Top already has on Gelbooru.
+function orderTag(sort, { hasQuery = false } = {}) {
+  if (sort === 'toplist') return hasQuery ? 'order:score' : 'order:rank';
   if (sort === 'random') return 'order:random';
   if (sort === 'views') return 'order:favcount';
   return '';
@@ -77,13 +81,14 @@ function sizeTags(hints) {
 }
 
 function buildSearchTags(opts = {}) {
+  const typed = queryTags(opts.q);
   return [
-    ...queryTags(opts.q),
+    ...typed,
     ratingTag(opts.purity),
     fileTypeTag(opts.formats),
     ...sizeTags(opts.sizeHints),
     'mpixels:1..',
-    orderTag(opts.sorting),
+    orderTag(opts.sorting, { hasQuery: typed.length > 0 }),
   ].filter(Boolean).join(' ');
 }
 
@@ -263,7 +268,9 @@ const PROVIDER = Object.freeze({
     browse: true,
     textSearch: true,
     explicit: 'always',
-    // `order:rank` is a trending window rather than an all-time list.
+    // On the front page `order:rank` is a trending window rather than an all-time list, so
+    // the random slice meant for an all-time top does not apply. A typed search asks for
+    // `order:score` instead — see orderTag.
     topIsAllTime: false,
     // ONL-013. By which fingerprints this site can be asked "which post IS this exact
     // file" — see the note in src/gelbooru.js.
