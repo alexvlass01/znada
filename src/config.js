@@ -16,6 +16,7 @@ const path = require('path');
 const library = require('./library');
 const libraryStore = require('./library-store');
 const sizeFilter = require('./size-filter');
+const quickFilters = require('./online-quick-filters');
 
 const DEFAULT_CONFIG = {
   lightWallpaper: '',     // legacy global fallback (unless a slot was explicitly emptied)
@@ -41,6 +42,12 @@ const DEFAULT_CONFIG = {
   firstRunDone: false,
   telemetry: false,       // задел: анонимная статистика (пока ничего не отправляется)
   librarySort: 'added',   // сортировка в «Библиотеке»: 'added' | 'name' | 'size' | 'shuffle'
+  // DATA-006. The folder the user picked for the files Znada copies for itself. Empty =
+  // the profile's own `wallpapers` folder, which is where everyone starts. Znada creates
+  // and uses its OWN subfolder inside this one, never the folder itself (src/media-root.js).
+  // Changing it means MOVING what is already there, so it is not part of the window's
+  // settings channel: an ordinary write here would leave the files in two places.
+  mediaFolder: '',
   // Znada itself switching the Windows theme on a schedule. mode: 'off'|'time'|'sun'
   themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' },
   themeOverride: null,    // manual override from the Home theme indicator: null (Auto) | 'light' | 'dark'
@@ -64,11 +71,10 @@ const DEFAULT_CONFIG = {
   // намеренно: он лежит в config.json у пользователей. Either or both may be on; default keeps the
   // previous behavior (external only) so existing users see no change.
   onlineSources: { lumina: false, internet: true },
-  // ONL-005 task 5. Whether the site list in the Online rail is open. Collapsed until the
-  // user opens it; after that it stays the way they left it (owner, 2026-09-17).
-  onlineSourcesExpanded: false,
-  // ONL-005 task 6. The same for the local tag section of the Library rail.
+  // The local tag section remembers its open state independently of navigation width.
   libraryTagsExpanded: false,
+  // Library navigation may collapse to icons without hiding its sections.
+  librarySidebarCollapsed: false,
   // Persisted Online search params (restored on restart). sort = whSort value;
   // purity = the SFW/Sketchy/NSFW content filter.
   onlineSort: 'date_added',
@@ -88,6 +94,9 @@ const DEFAULT_CONFIG = {
   // cards in a hundred). `auto` reads the monitors that exist, `manual` uses the list
   // the user typed; both go through the same check.
   onlineSizeFilter: { enabled: false, mode: 'auto', targets: [] },
+  // DESIGN-002. Which of those existing filters sit as quick buttons under the online
+  // search; every one stays in the "Filters" menu regardless. An empty list is a choice.
+  onlineQuickFilters: ['screen', 'purity', 'sources'],
   // ONL-009. Folder the "Save as…" dialog opens in, remembered between runs at the
   // owner's request. Never used as storage the app relies on: an export leaves no
   // library record, so a folder that disappears (a removed drive) costs nothing —
@@ -215,8 +224,8 @@ function normalize(cfg) {
   cfg.onlineSources.internet = !!cfg.onlineSources.internet;
   // Never leave the Online tab with no source selected (avoids an empty page).
   if (!cfg.onlineSources.lumina && !cfg.onlineSources.internet) cfg.onlineSources.internet = true;
-  cfg.onlineSourcesExpanded = cfg.onlineSourcesExpanded === true;
   cfg.libraryTagsExpanded = cfg.libraryTagsExpanded === true;
+  cfg.librarySidebarCollapsed = cfg.librarySidebarCollapsed === true;
 
   if (!['date_added', 'toplist', 'random', 'views'].includes(cfg.onlineSort)) cfg.onlineSort = 'date_added';
   cfg.onlinePurity = {
@@ -244,6 +253,7 @@ function normalize(cfg) {
   // ONL-010. One normalizer, in the module that also does the matching — a second
   // spelling of "what a target is" would be the first place the two drift apart.
   cfg.onlineSizeFilter = sizeFilter.normalizeFilter(cfg.onlineSizeFilter);
+  cfg.onlineQuickFilters = quickFilters.normalizePins(cfg.onlineQuickFilters);
 
   if (!['ambient', 'charcoal', 'aurora', 'color'].includes(cfg.viewerBackground)) cfg.viewerBackground = 'ambient';
 

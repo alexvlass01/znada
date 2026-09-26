@@ -341,6 +341,7 @@ function refreshTexts() {
   });
   applyI18n();
   applyThemeToUI(currentTheme); // hero subtitle
+  renderCloudAccount();        // account labels and session messages
   buildMonitorMap();            // chip titles + label
   updateSingleWallRow();        // toggle row visibility + state
   renderPreviews();             // "not selected" placeholders
@@ -1033,7 +1034,7 @@ async function renderConfig() {
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
 const LIB = {
-  filter: 'all', sort: 'added', q: '', tagQuery: '', folderPath: null, crumbs: [], shuffleRank: {},
+  filter: 'all', sort: 'added', q: '', tag: '', tagQuery: '', folderPath: null, crumbs: [], shuffleRank: {},
   selection: window.CardInteraction.createSelectionModel(), aspectCache: new Map(), sizeCache: new Map(),
   poolBySelectionKey: new Map(),
 };
@@ -1077,7 +1078,7 @@ let pendingLibraryScroll = null;
 // What counts as "the same list". The Online feed's own sub-view is part of it: search
 // results and cloud favourites are two lists behind one rail button.
 function libViewKey() {
-  const parts = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || ''];
+  const parts = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LIB.tag || ''];
   if (LIB.filter === 'online') parts.push(ONLINE.view || 'search');
   return parts.join('|');
 }
@@ -1100,6 +1101,33 @@ function applyPendingLibraryScroll() {
 // The user has taken over. Whatever we were still trying to restore is now wrong.
 function cancelPendingLibraryScroll() {
   pendingLibraryScroll = null;
+}
+
+// DESIGN-007. Pressing the tab or the Library section that is already open takes the list
+// back to the top — the way home after a long scroll. Nothing else changes: not the
+// search, sort, filters, the loaded feed or the open folder. Going to ANOTHER tab or list
+// and back still restores where the user was (pageScroll and BUG-040's per-list memory);
+// only a second press on the open one means "top".
+//
+// A long way is jumped rather than animated: a smooth scroll through thousands of rows
+// makes the virtual grid build every window on the way.
+const SCROLL_TOP_SMOOTH_SCREENS = 3;
+function scrollOpenViewToTop() {
+  const page = document.querySelector('.page');
+  if (!page) return;
+  cancelPendingLibraryScroll(); // a restore still in flight would pull the list back down
+  const far = page.scrollTop > page.clientHeight * SCROLL_TOP_SMOOTH_SCREENS;
+  const still = typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (far || still || typeof page.scrollTo !== 'function') page.scrollTop = 0;
+  else page.scrollTo({ top: 0, behavior: 'smooth' });
+  if (Object.prototype.hasOwnProperty.call(pageScroll, activePage)) pageScroll[activePage] = 0;
+}
+
+// A press on a top tab: another tab opens as before, the open one goes to the top.
+function openPageOrTop(name) {
+  if (name === activePage) scrollOpenViewToTop();
+  else showPage(name);
 }
 
 // Where the list is scrolled RIGHT NOW, asked of the page itself.
@@ -1280,7 +1308,8 @@ function libraryContentSig() {
   const lib = (config && config.library) || {};
   const items = Object.keys(lib).sort().map((id) => {
     const it = lib[id] || {};
-    return id + (it.favorite ? '*' : '') + (it.type === 'folder' ? 'F' : '');
+    return id + (it.favorite ? '*' : '') + (it.type === 'folder' ? 'F' : '')
+      + (LIB.tag && libMatchesTag(it) ? 'T' : '');
   }).join(',');
   return `${items}|${(config && config.librarySort) || ''}`;
 }
@@ -1301,7 +1330,7 @@ function librarySignature() {
 // query + sort + content). When this is unchanged, a tab switch back to Library can
 // reuse the existing DOM (and its loaded thumbnails) instead of rebuilding/flashing.
 function libRenderKey() {
-  return [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', librarySignature()].join('');
+  return [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LIB.tag || '', librarySignature()].join('');
 }
 
 function libAllTags() {
@@ -1412,18 +1441,67 @@ function entrySize(x) {
   return LIB.sizeCache.get(normPathKey(x.path)) || 0;
 }
 
+function libMatchesTag(item) {
+  return !LIB.tag || !!(item && Array.isArray(item.tags) && item.tags.includes(LIB.tag));
+}
+
+function setLibraryTag(tag) {
+  if (LIB.filter === 'online' || inRemovedView() || LIB.tag === tag) return;
+  LIB.tag = tag;
+  closeLibPopup();
+  clearSelection();
+  syncSelectionUI();
+  // Unlike navigation, a filter must not exit a folder or change the selected section.
+  renderLibrary();
+}
+
+// Why an empty section is empty, when the reason is the section itself.
+const LIB_SECTION_EMPTY = { favorite: 'library.emptyFavorites', folder: 'library.emptyFolders' };
+
+// BUG-049. An empty result is not an empty library. When a search or a tag narrowed a
+// view that had something in it, say nothing matched; "your library is empty — drop
+// images here" over thousands of photos reads like they are gone. `unfiltered` is the
+// view's count before the search and the tag, and only views that apply them pass it.
+function libEmptyKey(emptyKey, unfiltered) {
+  const narrowed = !!(LIB.q.trim() || LIB.tag);
+  return narrowed && unfiltered > 0 ? 'library.noMatches' : emptyKey;
+}
+
+// The current section before a tag or a search narrows it.
+function libSectionItems() {
+  const items = Object.values(config.library || {});
+  if (LIB.filter === 'favorite') return items.filter((it) => it.favorite);
+  if (LIB.filter === 'folder') return items.filter((it) => it.type === 'folder');
+  return items;
+}
+
 function libList() {
-  let items = Object.values(config.library || {});
-  if (LIB.filter === 'favorite') items = items.filter((it) => it.favorite);
-  else if (LIB.filter === 'folder') items = items.filter((it) => it.type === 'folder');
-  else if (LIB.filter.startsWith('tag:')) {
-    const tg = LIB.filter.slice(4);
-    items = items.filter((it) => Array.isArray(it.tags) && it.tags.includes(tg));
-  }
+  let items = libSectionItems();
+  if (LIB.tag) items = items.filter(libMatchesTag);
   const q = LIB.q.trim().toLowerCase();
   if (q) items = items.filter((it) => baseName(it.path).toLowerCase().includes(q));
   sortItems(items);
   return items;
+}
+
+// The section the rail lights as open. Cloud favourites are the Online feed underneath
+// but sit behind the Favorites button, so that is the one lit — and the one whose second
+// press means "top" rather than "switch to the local favourites".
+function libOpenSection() {
+  return LIB.filter === 'online' && ONLINE.view === 'favorites' ? 'favorite' : LIB.filter;
+}
+
+// A press on a rail section: another section opens as before; the open one — even with a
+// folder, search or tag inside it — goes to the top and keeps all of that (DESIGN-007).
+function openLibrarySectionOrTop(filter) {
+  if (filter === libOpenSection()) { scrollOpenViewToTop(); return; }
+  selectLibrarySection(filter);
+}
+
+// The same for a tag row: the lit tag pressed again goes to the top (it used to do nothing).
+function openLibraryTagOrTop(tag) {
+  if (tag === LIB.tag) { scrollOpenViewToTop(); return; }
+  setLibraryTag(tag);
 }
 
 function renderLibRailTags() {
@@ -1432,23 +1510,19 @@ function renderLibRailTags() {
   const empty = $('#libTagEmpty');
   const search = $('#libTagSearch');
   if (!box || !section || !empty) return;
-  // ONL-005 task 5: the site list is Online's own rail section, local tags are the others'.
-  const sources = $('#onlineSourcesSection');
-  if (sources) sources.hidden = LIB.filter !== 'online';
-  if (LIB.filter === 'online') {
+  // Each search toolbar owns its controls; neither changes the navigation rail.
+  if (LIB.filter === 'online' || inRemovedView()) {
     section.hidden = true;
     document.querySelectorAll('#viewLibrary .lib-railbtn').forEach((b) => {
-      b.classList.toggle('active', b.dataset.filter === LIB.filter);
+      b.classList.toggle('active', b.dataset.filter === libOpenSection());
     });
     return;
   }
   const tags = libAllTags();
 
-  // Search only narrows the navigation list. The selected card filter is validated
-  // against ALL tags so a zero-result query never silently switches the grid to All.
-  if (LIB.filter.startsWith('tag:') && !tags.includes(LIB.filter.slice(4))) LIB.filter = 'all';
-  // No tags, no section — there is nothing to open (owner, 2026-09-17).
-  section.hidden = tags.length === 0;
+  // Keep an active filter clearable even if its last tagged item was removed. A tag
+  // query or metadata update must never silently broaden results or change sections.
+  section.hidden = tags.length === 0 && !LIB.tag;
   if (!tags.length) {
     LIB.tagQuery = '';
     if (search) search.value = '';
@@ -1458,16 +1532,16 @@ function renderLibRailTags() {
   const matches = filterLibRailTags(sortTagsByUse(tags, libTagCounts()), LIB.tagQuery);
   const active = $('#libActiveTag');
   if (active) {
-    active.hidden = !LIB.filter.startsWith('tag:');
-    active.textContent = active.hidden ? '' : LIB.filter.slice(4) + ' ×';
+    active.hidden = !LIB.tag;
+    active.textContent = active.hidden ? '' : LIB.tag + ' ×';
     active.title = t('library.clearTagFilter');
-    active.setAttribute('aria-label', t('library.clearTagFilter') + ': ' + LIB.filter.slice(4));
+    active.setAttribute('aria-label', t('library.clearTagFilter') + ': ' + (LIB.tag || ''));
   }
   box.innerHTML = '';
   matches.forEach((tg) => {
     const b = document.createElement('button');
     b.className = 'lib-railbtn';
-    b.dataset.filter = `tag:${tg}`;
+    b.dataset.tag = tg;
     b.title = tg;
     const ic = document.createElement('span');
     ic.className = 'lib-rail-ic lib-rail-hash';
@@ -1481,11 +1555,11 @@ function renderLibRailTags() {
   empty.hidden = matches.length !== 0;
   // The head is lit like a chosen rail row while a tag filters the grid (owner, 2026-09-17).
   // It has no count: the number of tags tells the user nothing.
-  $('#libTagsToggle')?.classList.toggle('active', LIB.filter.startsWith('tag:'));
+  $('#libTagsToggle')?.classList.toggle('active', !!LIB.tag);
   setLibTagsOpen(!!(config && config.libraryTagsExpanded));
   fitRailSectionHeads();
   document.querySelectorAll('#viewLibrary .lib-railbtn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.filter === LIB.filter);
+    b.classList.toggle('active', b.dataset.tag !== undefined ? b.dataset.tag === LIB.tag : b.dataset.filter === libOpenSection());
   });
 }
 
@@ -1498,6 +1572,8 @@ function setLibViewHeader(count = null) {
 }
 
 function renderLibrary() {
+  setLibrarySidebarCollapsed(!!config?.librarySidebarCollapsed);
+  applyFavToggleUI();
   // Budget span #8 (Library full render): thin wrapper measures the synchronous render
   // cost across every branch; lazy branches also emit per-chunk spans (#9).
   const end = diagSpan('renderer', 'library-render');
@@ -1545,11 +1621,9 @@ function renderLibraryCore() {
   const addFolder = $('#libAddFolder');
   if (addPhotos) {
     addPhotos.hidden = !showAddPhotos;
-    addPhotos.classList.toggle('suggested', showAddPhotos);
   }
   if (addFolder) {
     addFolder.hidden = !showAddFolder;
-    addFolder.classList.toggle('suggested', LIB.filter === 'folder');
   }
   if (LIB.filter === 'online') {
     allViewToken += 1; // invalidate any pending local folder/All response
@@ -1600,14 +1674,17 @@ function renderLibraryCore() {
   if (LIB.filter === 'all') { renderAllView(tok); return; }
   if (inRemovedView()) { renderRemovedView(tok); return; }
 
-  // "Папки" / favorite / tag → plain pool-items grid (folders are entities here)
+  // "Папки" / favorite → plain pool-items grid (folders are entities here)
   const sentinel = $('#libSentinel'); if (sentinel) sentinel.hidden = true;
   const grid = $('#libGrid');
   if (!grid) return;
   const items = libList();
   const assigned = assignedIds();
   const empty = $('#libEmpty');
-  if (empty) { empty.hidden = items.length > 0; if (!items.length) setLibEmptyText('library.empty'); }
+  if (empty) {
+    empty.hidden = items.length > 0;
+    if (!items.length) setLibEmptyText(libEmptyKey(LIB_SECTION_EMPTY[LIB.filter] || 'library.empty', libSectionItems().length));
+  }
   setLibViewHeader(items.length);
   renderEntriesLazily(grid, items, assigned, tok);
   // Favorites/Tags also sort by size: load pool sizes in the background and re-render
@@ -2115,6 +2192,7 @@ async function renderFolderView(tok) {
   if (tok !== allViewToken) return; // navigated away while awaiting
   const folders = (res && res.folders) || [];
   let images = (res && res.images) || []; // [{ path, addedAt, modifiedAt, aspect }]
+  const unfiltered = folders.length + images.length;
   const q = LIB.q.trim().toLowerCase();
   if (q) images = images.filter((im) => baseName(im.path).toLowerCase().includes(q));
   // Same entry shape, sorting and chunked rendering as "All": a folder image already
@@ -2122,7 +2200,7 @@ async function renderFolderView(tok) {
   // chosen sort (newest first / name / size / shuffle) and renders big folders in
   // lazy chunks with batched aspect prefetch (the old code built every card at once).
   const pmap = poolImageMap();
-  const entries = images.map((im) => {
+  let entries = images.map((im) => {
     const item = pmap.get(normPathKey(im.path));
     return item
       ? { path: im.path, item, id: item.id, aspect: im.aspect }
@@ -2135,6 +2213,8 @@ async function renderFolderView(tok) {
         aspect: im.aspect,
       };
   });
+  if (LIB.tag) entries = entries.filter((entry) => libMatchesTag(entry.item));
+  // Subfolders stay navigable; a folder's tags are not inherited by its images.
   sortItems(entries, {
     added: (x) => (x.item ? x.item.addedAt : x.addedAt),
     modified: (x) => (x.item ? x.item.modifiedAt : x.modifiedAt),
@@ -2142,7 +2222,7 @@ async function renderFolderView(tok) {
   });
   const total = folders.length + entries.length;
   setLibViewHeader(total);
-  if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText('library.emptyFolder'); }
+  if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText(libEmptyKey('library.emptyFolder', unfiltered)); }
   const folderEntries = folders.map((folder) => ({ kind: 'subfolder', folder, path: folder.path }));
   renderEntriesLazily(grid, folderEntries.concat(entries), assignedIds(), tok);
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
@@ -2227,8 +2307,10 @@ async function renderAllView(tok) {
       modifiedAt: fi.modifiedAt,
       aspect: fi.aspect,
     })));
+  const unfiltered = entries.length;
   const q = LIB.q.trim().toLowerCase();
   if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
+  if (LIB.tag) entries = entries.filter((en) => libMatchesTag(en.item));
   sortItems(entries, {
     path: (x) => x.path,
     added: (x) => x.item ? x.item.addedAt : x.addedAt,
@@ -2236,7 +2318,7 @@ async function renderAllView(tok) {
     size: entrySize,
     id: (x) => x.id,
   });
-  if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.empty'); }
+  if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText(libEmptyKey('library.empty', unfiltered)); }
   setLibViewHeader(entries.length);
   renderEntriesLazily(grid, entries, assignedIds(), tok);
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
@@ -2265,6 +2347,7 @@ async function renderRemovedView(tok) {
     kind: im.type === 'folder' ? 'subfolder' : undefined,
     folder: im.type === 'folder' ? { path: im.path, name: baseName(im.path) } : undefined,
   }));
+  const unfiltered = entries.length;
   const q = LIB.q.trim().toLowerCase();
   if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
   sortItems(entries, {
@@ -2274,7 +2357,7 @@ async function renderRemovedView(tok) {
     size: entrySize,
     id: (x) => x.id,
   });
-  if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.removedEmpty'); }
+  if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText(libEmptyKey('library.removedEmpty', unfiltered)); }
   setLibViewHeader(entries.length);
   renderEntriesLazily(grid, entries, assignedIds(), tok);
 }
@@ -4055,20 +4138,13 @@ async function runDetailsLookup(record, redraw) {
   return !!res;
 }
 
+// The card menu's "Add" and the download behind its "Assign". The same tracked add as
+// the "+" on the card (DESIGN-008), so a picture already on its way is not fetched twice.
 async function addCardToLibrary(descriptor) {
   if (!descriptor || descriptor.kind === 'local') return null;
-  let res;
-  try {
-    res = descriptor.kind === 'cloud'
-      ? await window.api.cloudAdd(descriptor.item)
-      : await window.api.internetAdd(descriptor.item, INTERNET.q);
-  } catch { res = { error: 'download' }; }
-  if (res && res.config) config = res.config;
-  if (!res || res.error) { toast(CardTransfer.errorMessage(t, res && res.error)); return null; }
-  toast(t('online.added'));
-  refreshPoolDependentChrome();
-  refreshOnlineAddedState();
-  return res.id || null;
+  return addOnlineItem(descriptor.kind, descriptor.item, () => (descriptor.kind === 'cloud'
+    ? window.api.cloudAdd(descriptor.item)
+    : window.api.internetAdd(descriptor.item, INTERNET.q)));
 }
 
 function openCardMenu(subject, card, point = null) {
@@ -4228,18 +4304,83 @@ function initSmartPanel() {
   renderSmartPanel();
 }
 
+function setLibrarySidebarCollapsed(collapsed, { persist = false, animate = false } = {}) {
+  const value = !!collapsed;
+  const view = $('#viewLibrary');
+  const changed = view && view.classList.contains('sidebar-collapsed') !== value;
+  const candidate = changed ? activeLibraryGrid() : null;
+  const grid = candidate && candidate.isConnected && candidate.offsetParent !== null ? candidate : null;
+  // A sidebar changes available width without a window resize event. Preserve the
+  // old card anchor BEFORE CSS can wrap rows, then use the existing resize lifecycle.
+  if (grid) beginLibraryResizeAnchor(grid);
+  // Only the button animates; a restored preference is simply there at start-up.
+  if (!(animate && changed && startRailAnimation(view, value))) {
+    view?.classList.toggle('sidebar-collapsed', value);
+  }
+  if (grid) {
+    layoutLibGrid(grid);
+    scheduleLibraryResizeFinish(grid);
+  }
+  const toggle = $('#libSidebarToggle');
+  if (toggle) {
+    const label = value ? t('library.expandSidebar') : t('library.collapseSidebar');
+    toggle.title = label;
+    toggle.setAttribute('aria-label', label);
+    toggle.setAttribute('aria-expanded', String(!value));
+    toggle.dataset.i18nTitle = value ? 'library.expandSidebar' : 'library.collapseSidebar';
+  }
+  if (!persist || !config || config.librarySidebarCollapsed === value) return;
+  config.librarySidebarCollapsed = value;
+  // Persist only the preference; keep the current feed and search untouched.
+  Promise.resolve(window.api.setConfig({ librarySidebarCollapsed: value })).catch(() => {});
+}
+
+// DESIGN-009. How long the panel takes to narrow or widen: long enough to see where the
+// labels went, too short to wait for. The same value is the CSS `--rail-motion`.
+const RAIL_ANIMATION_MS = 200;
+let railAnimationTimer = null;
+
+// DESIGN-009. The panel moves instead of jumping, and the gallery beside it is NOT
+// re-packed on every frame: the main column takes its final width at once (one layout,
+// through the usual resize lifecycle) and simply rides along with the panel's edge;
+// `overflow-x: clip` hides what is briefly past the right edge. Returns false when it
+// does not animate (reduced motion asked, the view not laid out, the narrow layout where
+// the panel is a strip on top) and the caller switches instantly, as before.
+function startRailAnimation(view, collapsed) {
+  const lib = view && typeof view.querySelector === 'function' ? view.querySelector('.lib') : null;
+  const main = lib ? lib.querySelector('.lib-main') : null;
+  if (!main || typeof window.matchMedia !== 'function') return false;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  const box = lib.getBoundingClientRect();
+  const libStyle = getComputedStyle(lib);
+  if (!(box.width > 0) || libStyle.flexDirection !== 'row') return false;
+  clearTimeout(railAnimationTimer);
+  view.classList.add('rail-animating');
+  view.classList.toggle('sidebar-collapsed', collapsed);
+  const rail = parseFloat(getComputedStyle(view).getPropertyValue('--rail-width'));
+  const gap = parseFloat(libStyle.columnGap) || 0;
+  if (rail > 0) main.style.flex = `0 0 ${Math.max(0, box.width - gap - rail)}px`;
+  railAnimationTimer = setTimeout(() => {
+    railAnimationTimer = null;
+    main.style.flex = '';
+    view.classList.remove('rail-animating');
+  }, RAIL_ANIMATION_MS + 40);
+  return true;
+}
+
 function initLibrary() {
-  // Delegated so dynamically-rendered tag buttons work too.
-  const rail = document.querySelector('#viewLibrary .lib-rail');
+  initLibraryAccountPopover();
+  refreshLibraryAccount();
+  // Tags live by the search now; delegate at the common Library root.
+  const rail = document.querySelector('#viewLibrary');
   if (rail) rail.addEventListener('click', (e) => {
     const btn = e.target.closest('.lib-railbtn');
     if (!btn) return;
-    closeLibPopup();
-    clearSelection();
-    syncSelectionUI();
-    LIB.filter = btn.dataset.filter;
-    exitFolderState(); // switching rail leaves any open folder
-    renderLibrary();
+    if (btn.dataset.tag !== undefined) { openLibraryTagOrTop(btn.dataset.tag); return; }
+    openLibrarySectionOrTop(btn.dataset.filter);
+  });
+  $('#libSidebarToggle')?.addEventListener('click', () => {
+    setLibrarySidebarCollapsed(!config.librarySidebarCollapsed, { persist: true, animate: true });
   });
 
   // Click on empty space in library clears selection
@@ -4358,7 +4499,16 @@ function initLibrary() {
     });
   }
   const searchEl = $('#libSearch');
-  if (searchEl) searchEl.addEventListener('input', () => { LIB.q = searchEl.value; renderLibrary(); });
+  if (searchEl) {
+    // Native clear can emit both events; rebuild only when the query changes.
+    const applySearch = () => {
+      if (LIB.q === searchEl.value) return;
+      LIB.q = searchEl.value;
+      renderLibrary();
+    };
+    searchEl.addEventListener('input', applySearch);
+    searchEl.addEventListener('search', applySearch);
+  }
   const tagSearchEl = $('#libTagSearch');
   if (tagSearchEl) tagSearchEl.addEventListener('input', () => {
     LIB.tagQuery = tagSearchEl.value;
@@ -4371,8 +4521,7 @@ function initLibrary() {
     setLibTagsOpen(!(config && config.libraryTagsExpanded), { persist: true });
   });
   $('#libActiveTag')?.addEventListener('click', () => {
-    LIB.filter = 'all';
-    renderLibrary();
+    setLibraryTag('');
   });
   if (refreshBtn) refreshBtn.addEventListener('click', async () => {
     if (refreshBtn.classList.contains('spinning')) return;
@@ -4404,20 +4553,14 @@ function initLibrary() {
   });
 
   // One listener set for the lifetime of the window; renders only update the rows.
-  // ONL-005 task 5: a rail section, not a popover — it stays as the user left it and does
-  // not close when the pointer or focus goes elsewhere.
-  $('#onlineSourcesToggle')?.addEventListener('click', () => {
-    setOnlineSourcesOpen(!(config && config.onlineSourcesExpanded), { persist: true });
-  });
   $('#onlineSourceOptions')?.addEventListener('change', (event) => {
     const id = event.target.dataset.provider;
     if (id) toggleOnlineSource(id);
   });
   watchRailSectionHeads();
 
-  // Znada Cloud favorites toggle (C5) — shares the unified search bar.
-  const favToggle = $('#onlineFavToggle');
-  if (favToggle) favToggle.addEventListener('click', toggleFavoritesView);
+  $('#libFavoriteLocal')?.addEventListener('click', () => selectLibrarySection('favorite'));
+  $('#libFavoriteCloud')?.addEventListener('click', () => selectLibrarySection('favorite', 'cloud'));
 
   // Unified online search. The wh* DOM ids are retained for compatibility.
   const whSearchBtn = $('#whSearch');
@@ -4447,22 +4590,11 @@ function initLibrary() {
     persistOnlineParams();
     if (ONLINE.loaded) doOnlineSearch(true);
   });
-  const whFilterToggle = $('#whFilterToggle');
-  const whFiltersRow = $('#whFiltersRow');
-  const whSizeRow = $('#whSizeRow');
-  if (whFilterToggle && whFiltersRow) {
-    whFilterToggle.addEventListener('click', () => {
-      whFiltersRow.hidden = !whFiltersRow.hidden;
-      // ONL-010. The size filter lives behind the same button: it is the same kind of
-      // thing — the user's own answer to "what am I willing to see" — and a second
-      // disclosure control for one more row would be clutter.
-      if (whSizeRow) whSizeRow.hidden = whFiltersRow.hidden;
-      whFilterToggle.classList.toggle('suggested', !whFiltersRow.hidden);
-    });
-  }
-
   // ONL-010. Switch, mode, and — in manual mode — the list of screen sizes to accept.
+  // DESIGN-002: these, the content purity and the sources now live in one "Filters"
+  // menu, with quick buttons for them under the search.
   bindSizeFilterControls();
+  initOnlineFilterMenu();
 
   document.querySelectorAll('.wh-purity-cb').forEach(cb => {
     cb.addEventListener('change', () => {
@@ -4479,6 +4611,7 @@ function initLibrary() {
         INTERNET.purity[p] = true;
         return;
       }
+      renderOnlineQuickFilters();
       persistOnlineParams();
       if (ONLINE.loaded) doOnlineSearch(true);
     });
@@ -4564,6 +4697,7 @@ function renderSizeFilterControls() {
       ? SizeFilter.formatTargets(list)
       : (state.enabled ? t('online.sizeNoTargets') : '');
   }
+  renderOnlineQuickFilters();
 }
 
 async function saveSizeFilter(patch) {
@@ -4605,6 +4739,105 @@ function updatePurityToggle() {
       }
     }
   });
+  renderOnlineQuickFilters();
+}
+
+// ---- DESIGN-002: quick buttons for the existing online filters, and one menu ----
+// The owner chose the buttons on 2026-09-23: "fits my screen", content purity and
+// sources, each of which the user pins or unpins. Every button and "Filters" open the
+// SAME popover: "Filters" shows every section, a quick button only its own. The
+// controls inside keep their ids and handlers, so nothing about what a filter does
+// changes here — only where it is reached from.
+const ONLINE_FILTER_MENU = { invoker: null };
+
+function initOnlineFilterMenu() {
+  const popover = $('#onlineFilterPopover');
+  if (!popover) return;
+  bindAnchoredPopover(popover, () => ONLINE_FILTER_MENU.invoker || $('#whFilterToggle'));
+  document.querySelectorAll('[popovertarget="onlineFilterPopover"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const open = popover.matches(':popover-open');
+      if (open && ONLINE_FILTER_MENU.invoker === button) return; // the native toggle closes it
+      ONLINE_FILTER_MENU.invoker = button;
+      popover.dataset.scope = button.dataset.scope || 'all';
+      if (!open) return; // the native toggle opens it next, already scoped
+      // Another button of the same menu while it is open: switch in place. Closing it
+      // instead would make the second button need two clicks.
+      event.preventDefault();
+      placeAnchoredPopover(popover, button);
+    });
+  });
+  $('#onlineQuickScreen')?.addEventListener('click', () => saveSizeFilter({ enabled: !sizeFilterState().enabled }));
+  $('#onlineQuickPins')?.addEventListener('change', (event) => {
+    const key = event.target.dataset.pin;
+    if (key) toggleOnlineQuickPin(key, event.target.checked);
+  });
+  // A narrower row pushes buttons into "Filters"; a wider one brings them back.
+  const row = $('#onlineQuickFilters');
+  if (row && typeof ResizeObserver === 'function') new ResizeObserver(() => fitOnlineQuickFilters()).observe(row);
+  renderOnlineQuickFilters();
+}
+
+function onlineQuickFilterState() {
+  const sources = config && config.onlineSources;
+  const external = OnlineSources.available(INTERNET.providers || []).filter((p) => !OnlineSources.isCloud(p));
+  return {
+    sizeEnabled: sizeFilterState().enabled,
+    purity: INTERNET.purity,
+    sourcesNarrowed: external.some((p) => !OnlineSources.enabled(sources, p)),
+  };
+}
+
+function renderOnlineQuickFilters() {
+  const pins = OnlineQuickFilters.normalizePins(config && config.onlineQuickFilters);
+  const active = OnlineQuickFilters.activeKeys(onlineQuickFilterState());
+  const label = $('#onlineQuickPurityLabel');
+  if (label) label.textContent = OnlineQuickFilters.purityLabel(INTERNET.purity);
+  document.querySelectorAll('#onlineQuickFilters [data-quick]').forEach((button) => {
+    const key = button.dataset.quick;
+    button.dataset.pinned = String(pins.includes(key));
+    button.classList.toggle('active', active.includes(key));
+    if (key === 'screen') button.setAttribute('aria-pressed', String(active.includes(key)));
+  });
+  document.querySelectorAll('#onlineQuickPins input[data-pin]').forEach((input) => {
+    input.checked = pins.includes(input.dataset.pin);
+  });
+  fitOnlineQuickFilters(active);
+}
+
+// Pinned buttons that do not fit the row leave it, last first; "Filters" then counts
+// the changed settings the row no longer shows, pinned or not.
+function fitOnlineQuickFilters(active = OnlineQuickFilters.activeKeys(onlineQuickFilterState())) {
+  const row = $('#onlineQuickFilters');
+  if (!row) return;
+  const buttons = Array.from(row.querySelectorAll('[data-quick]'));
+  const pinned = buttons.filter((button) => button.dataset.pinned !== 'false');
+  buttons.forEach((button) => { button.hidden = button.dataset.pinned === 'false'; });
+  let shown = pinned;
+  // A row out of sight (another section is open) has no width to measure; it keeps
+  // every pinned button and is measured again when it appears.
+  if (row.clientWidth > 0) {
+    const style = getComputedStyle(row);
+    const gap = parseFloat(style.columnGap) || 0;
+    // The padding only holds the focus ring; buttons get the width inside it.
+    const room = row.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    const fit = OnlineQuickFilters.fitCount(pinned.map((button) => button.getBoundingClientRect().width), room, gap);
+    shown = pinned.slice(0, fit);
+    pinned.slice(fit).forEach((button) => { button.hidden = true; });
+  }
+  const count = OnlineQuickFilters.hiddenActiveCount(active, shown.map((button) => button.dataset.quick));
+  const badge = $('#onlineFilterCount');
+  if (badge) { badge.hidden = !count; badge.textContent = String(count); }
+  const toggle = $('#whFilterToggle');
+  if (toggle) toggle.title = count ? t('online.filtersHidden', { n: count }) : '';
+}
+
+async function toggleOnlineQuickPin(key, on) {
+  const current = OnlineQuickFilters.normalizePins(config && config.onlineQuickFilters);
+  const next = OnlineQuickFilters.normalizePins(on ? current.concat(key) : current.filter((k) => k !== key));
+  try { config = await window.api.setConfig({ onlineQuickFilters: next }); }
+  catch { /* refused or not written: the row below goes back to what is stored */ }
+  renderOnlineQuickFilters();
 }
 
 function onlineTagToken(input) {
@@ -4852,7 +5085,7 @@ async function ensureCloudCapability() {
   CLOUD.fetched = true;
 }
 
-// Reflect the source selection in the rail section: rows, the keep-one rule, and which sites are on.
+// Reflect the source selection in the Filters menu: rows, the keep-one rule, and which sites are on.
 function applyOnlineSourceUI(sources) {
   const host = $('#onlineSourceOptions');
   const providers = OnlineSources.available(INTERNET.providers || []);
@@ -4888,15 +5121,14 @@ function applyOnlineSourceUI(sources) {
   // The rule is shown only while it actually holds something back.
   const hint = $('#onlineSourcesHint');
   if (hint) hint.hidden = selected !== 1;
-  const toggle = $('#onlineSourcesToggle');
+  const toggle = $('#onlineQuickSources');
   if (toggle) {
     toggle.disabled = !providers.length;
-    // Collapsed, the head still says which sites are on. It shows no count: "3/4" was the
-    // normal state (the Znada catalogue is off by default) and told the user nothing.
+    // The button names the sites that are on. It shows no count: "3/4" was the normal
+    // state (the Znada catalogue is off by default) and told the user nothing.
     toggle.title = providers.filter((p) => OnlineSources.enabled(sources, p)).map((p) => p.name).join(', ');
   }
-  setOnlineSourcesOpen(!!(config && config.onlineSourcesExpanded));
-  fitRailSectionHeads();
+  renderOnlineQuickFilters();
   if (!sources.internet) hideOnlineTagSuggest();
 }
 
@@ -4937,13 +5169,6 @@ function setRailSectionOpen(spec, open, { persist = false } = {}) {
   Promise.resolve(spec.save(value)).catch(() => {});
 }
 
-function setOnlineSourcesOpen(open, options) {
-  setRailSectionOpen({
-    section: '#onlineSourcesSection', toggle: '#onlineSourcesToggle', setting: 'onlineSourcesExpanded',
-    save: (value) => window.api.setConfig({ onlineSourcesExpanded: value }),
-  }, open, options);
-}
-
 function setLibTagsOpen(open, options) {
   setRailSectionOpen({
     section: '#libTagSection', toggle: '#libTagsToggle', setting: 'libraryTagsExpanded',
@@ -4961,13 +5186,129 @@ async function ensureCloudSession(force) {
 }
 
 
-// Account strip atop the Znada Cloud panel: sign-in button / signing-in / profile + sign-out.
+// A native popover attached to the control that opened it: the account menu and the
+// online "Filters" menu. Reuses the select menu's tested edge/flip geometry. Native
+// popover still owns Escape, outside clicks and focus return.
+function placeAnchoredPopover(popover, trigger) {
+  if (!popover?.matches(':popover-open')) return;
+  // Leaving the section hides the trigger; a detached top-layer surface must go too.
+  if (!trigger?.isConnected || trigger.offsetParent === null) { popover.hidePopover(); return; }
+  const height = popover.scrollHeight + 2; // include the existing one-pixel borders
+  const placement = window.SelectPopup.placeMenu(trigger.getBoundingClientRect(),
+    { width: popover.offsetWidth, height },
+    { width: document.documentElement.clientWidth, height: window.innerHeight },
+    { gap: 8, minRoom: height });
+  popover.style.left = `${placement.left}px`;
+  popover.style.top = `${placement.top}px`;
+  popover.style.maxHeight = `${placement.maxHeight}px`;
+}
+
+// Resize/scroll/observer listeners exist only while the popover is open.
+function bindAnchoredPopover(popover, getTrigger) {
+  const reposition = () => placeAnchoredPopover(popover, getTrigger());
+  const onScroll = (event) => { if (!popover.contains(event.target)) reposition(); };
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(reposition) : null;
+  popover.addEventListener('beforetoggle', (event) => {
+    if (event.newState === 'open') {
+      // Do not flash at the UA's default location before the first measurement.
+      popover.style.visibility = 'hidden';
+    } else {
+      window.removeEventListener('resize', reposition);
+      document.removeEventListener('scroll', onScroll, true);
+      observer?.disconnect();
+      popover.style.visibility = '';
+    }
+  });
+  popover.addEventListener('toggle', () => {
+    if (!popover.matches(':popover-open')) return;
+    window.addEventListener('resize', reposition);
+    document.addEventListener('scroll', onScroll, true);
+    const trigger = getTrigger();
+    if (trigger) observer?.observe(trigger);
+    observer?.observe(popover);
+    reposition();
+    popover.style.visibility = '';
+  });
+}
+
+function initLibraryAccountPopover() {
+  const popover = $('#libAccountPopover');
+  if (!popover || !$('#libAccountToggle')) return;
+  bindAnchoredPopover(popover, () => $('#libAccountToggle'));
+}
+
+// Initials for an account without a picture, like GNOME's AdwAvatar: first letters
+// of the first and last word. Letters/digits only, so no punctuation becomes a badge.
+function accountInitials(name) {
+  const letters = String(name || '').split(/\s+/)
+    .map((word) => (word.match(/[\p{L}\p{N}]/u) || [''])[0])
+    .filter(Boolean);
+  if (!letters.length) return '';
+  const picked = letters.length > 1 ? [letters[0], letters[letters.length - 1]] : letters;
+  return picked.join('').toLocaleUpperCase();
+}
+
+function paintAccountAvatar(el, initials) {
+  if (!el) return;
+  el.classList.toggle('is-guest', !initials);
+  if (initials) el.textContent = initials;
+  else el.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="5.6" r="2.6"/><path d="M3.2 13.2a4.8 4.8 0 0 1 9.6 0"/></svg>';
+}
+
+function renderLibraryAccountTrigger() {
+  const state = CLOUDAUTH.state || {};
+  const user = state.signedIn ? (state.user || {}) : null;
+  const signingIn = !!(CLOUDAUTH.signingIn || state.signingIn);
+  const name = $('#libAccountName');
+  const status = $('#libAccountStatus');
+  if (name) name.textContent = user
+    ? (user.display_name || user.email || t('online.account')) : t('online.account');
+  // Being signed in is shown by the avatar; a second line appears only while something runs.
+  if (status) {
+    status.textContent = signingIn ? t('online.signingIn') : '';
+    status.hidden = !signingIn;
+  }
+  paintAccountAvatar($('#libAccountAvatar'), user ? accountInitials(user.display_name || user.email) : '');
+  $('#libAccountToggle')?.classList.toggle('needs-attention', !user && !!state.expired);
+}
+
+async function refreshLibraryAccount() {
+  await ensureCloudCapability();
+  if (cloudAvailable()) await ensureCloudSession();
+  renderCloudAccount();
+  applyFavToggleUI();
+}
+
+function handleCloudSessionChange(state) {
+  const previous = CLOUDAUTH.state;
+  CLOUDAUTH.state = state;
+  CLOUDAUTH.fetched = true;
+  if (!state?.signedIn || previous?.user?.id !== state.user?.id) {
+    CLOUDFAV.ids = new Set();
+    CLOUDFAV.fetched = false;
+  }
+  renderCloudAccount();
+  applyFavToggleUI();
+  // Incrementing the loader generation also prevents an old account's response
+  // from painting after expiry/sign-out or after switching to another account.
+  if (LIB.filter === 'online' && ONLINE.view === 'favorites') loadFavoritesFeed();
+}
+
+// Existing auth actions live in a native popover, independently of the search sources.
 function renderCloudAccount() {
+  renderLibraryAccountTrigger();
   const host = $('#libCloudAccount');
   if (!host) return;
   host.hidden = false;
   host.innerHTML = '';
   const s = CLOUDAUTH.state || { signedIn: false };
+  if (!cloudAvailable()) {
+    const msg = document.createElement('p');
+    msg.className = 'lib-cloud-acc-msg';
+    msg.textContent = t('online.accountUnavailable');
+    host.append(msg);
+    return;
+  }
 
   // BUG-031. Main's answer counts, not only this window's own press: a window created
   // during a sign-in pressed nothing, and drew a Sign in button beside the running one.
@@ -4983,7 +5324,7 @@ function renderCloudAccount() {
     // strip sat here for five minutes with no control on it at all, and the only cure
     // was quitting the app.
     const cancel = document.createElement('button');
-    cancel.className = 'pill ghost';
+    cancel.className = 'menu-item';
     cancel.textContent = t('online.signinCancel');
     cancel.addEventListener('click', async () => {
       if (cancel.disabled) return;
@@ -5000,14 +5341,28 @@ function renderCloudAccount() {
   if (s.signedIn && s.user) {
     const info = document.createElement('div');
     info.className = 'lib-cloud-acc-user';
-    const name = document.createElement('strong'); name.textContent = s.user.display_name || s.user.email || '';
-    const email = document.createElement('small'); email.textContent = s.user.email || '';
-    info.append(name, email);
+    const avatar = document.createElement('span');
+    avatar.className = 'lib-avatar';
+    avatar.setAttribute('aria-hidden', 'true');
+    paintAccountAvatar(avatar, accountInitials(s.user.display_name || s.user.email));
+    const text = document.createElement('div');
+    text.className = 'lib-cloud-acc-text';
+    const name = document.createElement('strong'); name.className = 'row-title'; name.textContent = s.user.display_name || s.user.email || '';
+    text.append(name);
+    // Without a display name the email is already the title; do not print it twice.
+    if (s.user.display_name && s.user.email) {
+      const email = document.createElement('small'); email.className = 'row-sub'; email.textContent = s.user.email;
+      email.title = s.user.email;
+      text.append(email);
+    }
+    info.append(avatar, text);
+    const sep = document.createElement('div');
+    sep.className = 'menu-sep';
     const out = document.createElement('button');
-    out.className = 'pill ghost';
+    out.className = 'menu-item';
     out.textContent = t('online.signOut');
     out.addEventListener('click', doCloudSignout);
-    host.append(info, out);
+    host.append(info, sep, out);
     return;
   }
 
@@ -5035,18 +5390,19 @@ async function doCloudSignin() {
   CLOUDAUTH.signingIn = false;
   if (res && res.ok) {
     CLOUDAUTH.state = res.state; CLOUDAUTH.fetched = true;
+    renderCloudAccount();
+    applyFavToggleUI();
     if (LIB.filter === 'online') {
-      renderCloudAccount();
-      applyFavToggleUI();
       await ensureCloudFavorites(true); // heart states before the feed renders
       if (LIB.filter === 'online') {
         ONLINE.loaded = false;
-        doOnlineSearch(true); // session may unlock the explicit tier / personalize
+        if (ONLINE.view === 'favorites') loadFavoritesFeed();
+        else doOnlineSearch(true); // session may unlock the explicit tier / personalize
       }
     }
     toast(t('online.signedIn'));
   } else {
-    if (LIB.filter === 'online') renderCloudAccount();
+    renderCloudAccount();
     if (!res || res.error !== 'cancelled') toast(t('online.signinFailed'));
   }
 }
@@ -5062,22 +5418,20 @@ async function doCloudSignout() {
     // cleared on a guess.
     if (res && res.state) CLOUDAUTH.state = res.state;
     CLOUDAUTH.fetched = true;
-    if (LIB.filter === 'online') {
-      renderCloudAccount();
-      applyFavToggleUI();
-    }
+    renderCloudAccount();
+    applyFavToggleUI();
     toast(CardTransfer.errorMessage(t, (res && res.error) || 'network'));
     return;
   }
   CLOUDAUTH.state = (res && res.state) || { available: true, signedIn: false, user: null, entitlements: [] };
   CLOUDAUTH.fetched = true;
   CLOUDFAV.ids = new Set(); CLOUDFAV.fetched = false;
-  ONLINE.view = 'search';
+  renderCloudAccount();
+  applyFavToggleUI();
   if (LIB.filter === 'online') {
-    renderCloudAccount();
-    applyFavToggleUI();
     ONLINE.loaded = false;
-    doOnlineSearch(true);
+    if (ONLINE.view === 'favorites') loadFavoritesFeed();
+    else doOnlineSearch(true);
   }
   toast(t('online.signedOut'));
 }
@@ -5091,24 +5445,42 @@ function cloudAvailable() {
 // ONL-014c. Translating the shared content filter into the catalogue’s own three ratings
 // moved into that site’s own file, along with everything else peculiar to it.
 
-// "Избранное" toggle in the search bar — only when Znada Cloud is on and signed in.
+// The two collections keep their original storage and loaders; this is navigation only.
 function applyFavToggleUI() {
-  const btn = $('#onlineFavToggle');
-  if (!btn) return;
-  const sources = onlineSources();
-  const show = sources.lumina && cloudAvailable() && cloudSignedIn();
-  btn.hidden = !show;
-  if (!show && ONLINE.view === 'favorites') ONLINE.view = 'search';
-  const isFav = ONLINE.view === 'favorites';
-  btn.classList.toggle('active', isFav);
-  btn.setAttribute('aria-pressed', isFav ? 'true' : 'false');
+  const isCloud = LIB.filter === 'online' && ONLINE.view === 'favorites';
+  const visible = LIB.filter === 'favorite' || isCloud;
+  const views = $('#libFavoriteViews');
+  if (views) views.hidden = !visible;
+  $('#viewLibrary')?.classList.toggle('cloud-favorites-view', isCloud);
+  for (const [id, selected] of [['#libFavoriteLocal', !isCloud], ['#libFavoriteCloud', isCloud]]) {
+    const button = $(id);
+    button?.classList.toggle('active', selected);
+    button?.setAttribute('aria-pressed', String(selected));
+  }
+  const signin = $('#libFavoriteSignin');
+  if (signin) signin.hidden = !(isCloud && cloudAvailable() && !cloudSignedIn());
 }
 
-function toggleFavoritesView() {
-  ONLINE.view = ONLINE.view === 'favorites' ? 'search' : 'favorites';
-  applyFavToggleUI();
-  if (ONLINE.view === 'favorites') loadFavoritesFeed();
-  else { ONLINE.loaded = false; doOnlineSearch(true); }
+function selectLibrarySection(filter, favorites = 'local') {
+  const view = filter === 'favorite' && favorites === 'cloud' ? 'favorites' : 'search';
+  if (ONLINE.view !== view) {
+    // Invalidate either loader before changing its destination. Do not change query,
+    // source selection or local favorites when crossing the collection boundary.
+    ONLINE.generation += 1;
+    ONLINE.renderEpoch += 1;
+    ONLINE.loading = false;
+    ONLINE.loaded = false;
+    ONLINE.entries = [];
+  }
+  ONLINE.view = view;
+  const nextFilter = view === 'favorites' ? 'online' : filter;
+  if (LIB.filter !== nextFilter) LIB.tag = '';
+  LIB.filter = nextFilter;
+  closeLibPopup();
+  clearSelection();
+  syncSelectionUI();
+  exitFolderState();
+  renderLibrary();
 }
 
 // --- Cloud favorites (C5): account-synced, distinct from the local Library "Избранное" ---
@@ -5117,10 +5489,15 @@ function cloudSignedIn() { const s = CLOUDAUTH.state; return !!(s && s.signedIn)
 async function ensureCloudFavorites(force) {
   if (!cloudSignedIn()) { CLOUDFAV.ids = new Set(); CLOUDFAV.fetched = false; return; }
   if (CLOUDFAV.fetched && !force) return;
+  const session = CLOUDAUTH.state;
   try {
     const res = await window.api.cloudFavorites();
+    if (CLOUDAUTH.state !== session) return;
     CLOUDFAV.ids = new Set(((res && res.items) || []).map((it) => it.id));
-  } catch { CLOUDFAV.ids = new Set(); }
+  } catch {
+    if (CLOUDAUTH.state !== session) return;
+    CLOUDFAV.ids = new Set();
+  }
   CLOUDFAV.fetched = true;
 }
 
@@ -5204,6 +5581,12 @@ async function loadFavoritesFeed() {
   if (more) more.hidden = true;
   replaceOnlineEntries([], { fresh: true });
   if (note) note.textContent = t('online.loading');
+  if (!cloudAvailable() || !cloudSignedIn()) {
+    ONLINE.loading = false;
+    setLibViewHeader(0);
+    if (note) note.textContent = t(cloudAvailable() ? 'online.favSignin' : 'online.accountUnavailable');
+    return;
+  }
   let res;
   try { res = await window.api.cloudFavorites(); } catch { res = { error: 'network' }; }
   if (LIB.filter !== 'online' || generation !== ONLINE.generation || ONLINE.view !== 'favorites') return;
@@ -5249,9 +5632,11 @@ function attachOnlineAddButton(card, kind, item, addFn) {
   btn.append(glyph, undoGlyph);
 
   const sync = (pool) => {
-    const state = OnlineAdd.buttonState(pool || (config && config.library) || {}, kind, item);
+    const state = OnlineAdd.buttonState(pool || (config && config.library) || {}, kind, item, ONLINE_ADDING);
     glyph.textContent = state.glyph;
     btn.classList.toggle('added', state.added);
+    btn.classList.toggle('adding', state.adding);
+    btn.setAttribute('aria-busy', state.adding ? 'true' : 'false');
     btn.title = t(state.titleKey);
     btn.setAttribute('aria-label', btn.title);
     btn.setAttribute('aria-pressed', state.added ? 'true' : 'false');
@@ -5267,10 +5652,13 @@ function attachOnlineAddButton(card, kind, item, addFn) {
     e.stopPropagation();
     if (btn.disabled) return;
     const state = sync();
+    // DESIGN-008. Already on its way — from this card, a copy of it drawn earlier, or
+    // the menu. The spinner says so; a second click must not fetch it again.
+    if (state.action === 'wait') return;
     btn.disabled = true;
     try {
       if (state.action === 'remove') await removeOnlineFromLibrary(state.pooled);
-      else await addOnlineToLibrary(addFn);
+      else await addOnlineItem(kind, item, addFn);
     } finally {
       btn.disabled = false;
       refreshOnlineAddedState();
@@ -5280,14 +5668,43 @@ function attachOnlineAddButton(card, kind, item, addFn) {
   return btn;
 }
 
-async function addOnlineToLibrary(addFn) {
+// DESIGN-008. The online pictures being added right now, by OnlineAdd.addingKey. Kept per
+// picture and not per button: the grid redraws its cards as it scrolls, and a card drawn
+// in the middle of a download has to show the same spinner as the one that started it.
+const ONLINE_ADDING = new Map();
+
+// Every online add in this window goes through here: the "+", the menu's "Add" and the
+// download behind "Assign". A second request for a picture already on its way gets the
+// same answer instead of a second download. Resolves to the new pool id, or null.
+function addOnlineItem(kind, item, download) {
+  const key = OnlineAdd.addingKey(kind, item);
+  const running = key ? ONLINE_ADDING.get(key) : null;
+  if (running) return running;
+  const run = (async () => {
+    try { return await addOnlineToLibrary(download); }
+    finally {
+      if (key) {
+        ONLINE_ADDING.delete(key);
+        refreshOnlineAddedState();
+      }
+    }
+  })();
+  if (key) {
+    ONLINE_ADDING.set(key, run);
+    refreshOnlineAddedState();
+  }
+  return run;
+}
+
+async function addOnlineToLibrary(download) {
   let res;
-  try { res = await addFn(); } catch { res = { error: 'download' }; }
+  try { res = await download(); } catch { res = { error: 'download' }; }
   if (res && res.config) config = res.config;
-  if (!res || res.error) { toast(CardTransfer.errorMessage(t, res && res.error)); return false; }
+  if (!res || res.error) { toast(CardTransfer.errorMessage(t, res && res.error)); return null; }
   toast(t('online.added'));
   refreshPoolDependentChrome();
-  return true;
+  refreshOnlineAddedState();
+  return res.id || null;
 }
 
 async function removeOnlineFromLibrary(pooled) {
@@ -5391,6 +5808,7 @@ async function renderOnline() {
   applyOnlineSourceUI(sources);
   await refreshOnlineAccount(sources, isCurrent);
   if (!isCurrent()) return;
+  if (ONLINE.view === 'favorites') { loadFavoritesFeed(); return; }
   // ONL-016. Asked whichever source is switched on, not only for the public sites: this
   // answer also carries what each site is CALLED, and "Details" has to name the site
   // even for a card from our own catalogue. Nothing here goes out to the network — main
@@ -5409,7 +5827,6 @@ async function renderOnline() {
   applyOnlineSourceUI(sources);
   updatePurityToggle();
   const sortEl = $('#whSort'); if (sortEl && sortEl.value !== INTERNET.sort) sortEl.value = INTERNET.sort;
-  if (ONLINE.view === 'favorites') { loadFavoritesFeed(); return; }
   if (!ONLINE.loaded) { doOnlineSearch(true); return; }
   // BUG-040. The feed survived the trip to another rail, but its grid did not — the DOM
   // is torn down on the way out. Rebuild it from the cards we kept, then the remembered
@@ -5420,9 +5837,8 @@ async function renderOnline() {
 
 // Account chip + favorites toggle reflect the session (only when Znada Cloud is reachable).
 async function refreshOnlineAccount(sources, isCurrent = () => true) {
-  const acc = $('#libCloudAccount');
-  if (!(sources.lumina && cloudAvailable())) {
-    if (acc) acc.hidden = true;
+  if (!cloudAvailable()) {
+    renderCloudAccount();
     applyFavToggleUI();
     return;
   }
@@ -5430,7 +5846,7 @@ async function refreshOnlineAccount(sources, isCurrent = () => true) {
   if (!isCurrent()) return;
   renderCloudAccount();
   applyFavToggleUI();
-  if (cloudSignedIn()) {
+  if (sources.lumina && cloudSignedIn() && ONLINE.view !== 'favorites') {
     await ensureCloudFavorites();
     if (!isCurrent()) return;
   }
@@ -5720,11 +6136,32 @@ function showPage(name) {
     layoutMonitors();   // stages just became visible — refit thumbnails
   } else if (name === 'prefs') {
     renderEventLog();   // journal is cheap to refresh on every visit
+    renderMediaFolderRow(); // DATA-006: where Znada's own copies live right now
   }
 
   if (page) page.scrollTop = pageScroll[name] || 0;
   syncHomeCountdownTimer(); // уход с Главной гасит отсчёт, возврат — поднимает
   endSwitch({ label: name });
+}
+
+// DATA-006 (settings page): where Znada keeps its own copies. Asked of main rather than
+// read out of the config, because the answer includes whether that place is reachable
+// right now — a folder on a drive that is not plugged in is a different state from a
+// folder that is simply the default one.
+async function renderMediaFolderRow(known = null) {
+  const row = $('#mediaFolderPath');
+  if (!row) return;
+  let state = known;
+  if (!state) {
+    try { state = await window.api.mediaFolderState(); } catch { state = null; }
+  }
+  const label = MediaFolder.pathLabel(state);
+  row.textContent = label.key ? t(label.key) : label.text;
+  row.title = label.key ? '' : label.text;
+  row.classList.toggle('media-folder-away', !!state && state.state === 'unavailable');
+  // The way back exists only when there is somewhere to come back from.
+  const back = $('#btnMediaFolderBack');
+  if (back) back.hidden = !(state && state.custom);
 }
 
 // Event journal (settings page): recent background failures/recoveries. Entries store
@@ -6361,7 +6798,7 @@ async function init() {
   document.querySelectorAll('.navbtn').forEach((b) => {
     // Blur after a mouse click so the tab doesn't keep keyboard focus — otherwise pressing a
     // modifier (e.g. Shift for range-select) would light up its focus ring out of nowhere.
-    b.addEventListener('click', () => { showPage(b.dataset.page); b.blur(); });
+    b.addEventListener('click', () => { openPageOrTop(b.dataset.page); b.blur(); });
   });
   $('#btnPrefs').addEventListener('click', (e) => {
     // BUG-041. Та же кнопка закрывает. Запоминаем вкладку ДО перехода — после
@@ -6448,6 +6885,7 @@ async function init() {
   const btnOpenRemoved = $('#btnOpenRemoved');
   if (btnOpenRemoved) btnOpenRemoved.addEventListener('click', () => {
     LIB.filter = 'removed';
+    LIB.tag = '';
     LIB.folderPath = '';
     LIB.q = '';
     const search = $('#libSearch');
@@ -6455,6 +6893,32 @@ async function init() {
     showPage('library');
     renderLibrary();
   });
+
+  // ---- settings: the folder Znada keeps its own copies in (DATA-006) ----
+  // The row shows where they are now; the button runs the whole flow — pick, ask, move,
+  // report — in one window, because changing this setting IS a move.
+  const btnMediaFolder = $('#btnMediaFolder');
+  const btnMediaFolderBack = $('#btnMediaFolderBack');
+  // Both buttons run the same window; "back" only skips the picker. Both are disabled while
+  // it is being set up, so a double click cannot open two; once shown, its backdrop covers them.
+  const openMediaMove = async (appFolder) => {
+    for (const button of [btnMediaFolder, btnMediaFolderBack]) if (button) button.disabled = true;
+    try {
+      await MediaFolder.openMoveDialog({
+        t,
+        formatSize: formatFileSize,
+        api: window.api,
+        toast,
+        appFolder,
+        onState: (state) => renderMediaFolderRow(state),
+      });
+    } finally {
+      for (const button of [btnMediaFolder, btnMediaFolderBack]) if (button) button.disabled = false;
+      renderMediaFolderRow();
+    }
+  };
+  if (btnMediaFolder) btnMediaFolder.addEventListener('click', () => openMediaMove(false));
+  if (btnMediaFolderBack) btnMediaFolderBack.addEventListener('click', () => openMediaMove(true));
 
   // ---- settings: re-open the welcome screen ----
   $('#btnShowWelcome').addEventListener('click', () => enterFirstRun());
@@ -6768,7 +7232,7 @@ async function init() {
       if (libraryContentSig() !== prevContentSig) {
         if (document.hidden) deferredLiveRefresh.mark('library');
         else if (LIB.filter !== 'favorite' && isFavoriteOnlyLibraryChange(prevLibrary, config.library)) refreshFavoriteHighlights();
-        else if (!tryUpgradeMaterializedCards(prevPoolIds)) renderLibrary();
+        else if (LIB.tag || !tryUpgradeMaterializedCards(prevPoolIds)) renderLibrary();
       } else if (assignedSig() !== prevAssignedSig && !document.hidden) {
         refreshAssignedHighlights();
       }
@@ -6815,23 +7279,8 @@ async function init() {
 
   window.api.onUpdate((st) => renderUpdate(st));
 
-  // Cloud session changed in main (e.g. a 401 dropped an expired session) → refresh
-  // the account chip + favorites toggle if the Online tab is open.
-  window.api.onCloudSession((s) => {
-    CLOUDAUTH.state = s; CLOUDAUTH.fetched = true;
-    if (LIB.filter === 'online' && onlineSources().lumina) {
-      const wasFavorites = ONLINE.view === 'favorites';
-      renderCloudAccount();
-      applyFavToggleUI();
-      // Session expiry hides account favorites. If their request was still in
-      // flight, immediately replace that now-invalid feed with ordinary search.
-      if (wasFavorites && ONLINE.view !== 'favorites') {
-        ONLINE.loading = false;
-        ONLINE.loaded = false;
-        doOnlineSearch(true);
-      }
-    }
-  });
+  // The account is available from every Library section, not only one search source.
+  window.api.onCloudSession(handleCloudSessionChange);
 
   // keep thumbnails fitted when the window (and thus cards) resize
   let resizeT = null;

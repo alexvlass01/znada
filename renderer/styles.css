@@ -1129,7 +1129,8 @@ body.single-theme .wallpaper-schedule-row { display: none !important; }
 .pill:hover { background: var(--btn-bg-hover); }
 .pill:active { transform: scale(0.98); }
 .pill:disabled { opacity: 0.55; cursor: default; }
-.pill.done { color: var(--accent); box-shadow: inset 0 0 0 1px rgba(53, 132, 228, 0.4); background: transparent; }
+.pill.done,
+.pill.lib-filter-btn.active { color: var(--accent); box-shadow: inset 0 0 0 1px rgba(53, 132, 228, 0.4); background: transparent; }
 .pill.suggested { background: var(--accent); color: var(--accent-fg); }
 .pill.suggested:hover { background: #2b75d0; }
 .pill.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--card-border); }
@@ -1412,25 +1413,135 @@ select option {
 }
 
 /* ---------- Library (content pool, GNOME Files-inspired) ---------- */
-.lib { display: flex; gap: 22px; align-items: flex-start; min-height: 100%; }
+#viewLibrary { --rail-width: 174px; --rail-gap: 22px; --rail-motion: 200ms cubic-bezier(.2, 0, 0, 1); }
+.lib { display: flex; gap: var(--rail-gap); align-items: flex-start; min-height: 100%; }
 .lib-rail {
-  flex: 0 0 174px;
+  flex: 0 0 var(--rail-width);
+  /* Account text must not raise the flex item's automatic minimum: a fractional
+     overflow here leaves the gallery narrower than its integer clientWidth. */
+  min-width: 0;
   display: flex; flex-direction: column; gap: 2px;
-  /* Always-visible left rail: pinned while the grid scrolls under it, regardless of
-     folder size. align-self keeps it from stretching (so sticky engages); max-height
-     bounds it to the viewport. The rail itself never scrolls — the fixed filter
-     buttons stay put and only the tag list (.lib-railtags) scrolls internally. */
+  /* Navigation alone stays pinned; expandable search controls never move its rows. */
   position: sticky; top: 0;
   align-self: flex-start;
   max-height: calc(100vh - 80px);
+  height: calc(100vh - 98px);
+  min-height: 270px;
+  overflow: visible;
+}
+/* The rail reserves the same width; only the navigation gets a card surface. */
+.lib-navigation {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 0 0 auto;
   padding: 7px 8px 10px;
   background: var(--sidebar-bg);
   border: 1px solid var(--card-border);
   border-radius: 12px;
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.3);
-  overflow: hidden;
 }
-html.dark .lib-rail { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
+html.dark .lib-navigation { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
+/* DESIGN-009. The collapse control is the card's first row: icon only, the icon on the
+   section icons' axis (same padding as a row), so it does not move when the card narrows.
+   It used to be a bordered tab hanging half outside the card's edge. */
+.lib-rail-toggle {
+  display: flex; align-items: center; align-self: flex-start; flex: 0 0 auto;
+  min-height: 32px; padding: 7px 10px; margin-bottom: 2px;
+  border: none; border-radius: 7px; background: transparent; color: var(--text-dim);
+  cursor: pointer; transition: background .12s ease, color .12s ease;
+}
+.lib-rail-toggle:hover { background: var(--row-hover); color: var(--text); }
+.lib-rail-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lib-rail-toggle .lib-rail-ic { opacity: 1; }
+/* The icon shows the panel's own state: its left column narrows with the panel. */
+.lib-rail-toggle-divider { transition: transform var(--rail-motion); }
+.sidebar-collapsed .lib-rail-toggle-divider { transform: translateX(-1.8px); }
+/* DESIGN-009. The panel narrows and widens instead of jumping (renderer.js
+   startRailAnimation). Only while the class is on: a window resize that crosses a width
+   breakpoint must not animate. The labels fade, the icons do not move. */
+.rail-animating .lib { overflow-x: clip; }
+.rail-animating .lib-rail { transition: flex-basis var(--rail-motion); }
+.rail-animating .lib-navigation { overflow: hidden; }
+.rail-animating .lib-statusbar { transition: margin-left var(--rail-motion), max-width var(--rail-motion); }
+.lib-navigation > .lib-railbtn span,
+.lib-account-caption { transition: opacity 120ms ease; }
+.rail-animating:not(.sidebar-collapsed) .lib-navigation > .lib-railbtn span,
+.rail-animating:not(.sidebar-collapsed) .lib-account-caption { transition-delay: 70ms; }
+/* Collapsed rows keep the expanded padding: in the 54px card that leaves 10px either side
+   of a 16px icon, so every icon stays exactly where it was and only the labels go. */
+#viewLibrary.sidebar-collapsed { --rail-width: 54px; }
+.sidebar-collapsed .lib-navigation > .lib-railbtn span { opacity: 0; }
+.sidebar-collapsed:not(.rail-animating) .lib-navigation > .lib-railbtn { gap: 0; }
+/* Keep the localized accessible name when only the icon is visible. */
+.sidebar-collapsed:not(.rail-animating) .lib-navigation > .lib-railbtn span {
+  position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden;
+}
+/* Padding keeps the avatar centre on the navigation icons' axis (~27px) in both rail
+   widths while leaving the name as much of the fixed 174px as possible. */
+.lib-account-dock { margin-top: auto; padding: 12px 2px 0; min-width: 0; }
+/* Same row language as the navigation: flat until hovered, never a grey button block. */
+.lib-account-toggle {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; min-width: 0; min-height: 40px;
+  padding: 5px 4px 5px 10px;
+  border: none; border-radius: 8px; background: transparent;
+  color: var(--text); font-family: inherit; font-size: 13px; font-weight: 600; text-align: left;
+  cursor: pointer; transition: background .12s ease;
+}
+.lib-account-toggle:hover,
+.lib-account-dock:has(.lib-account-popover:popover-open) .lib-account-toggle { background: var(--row-hover); }
+.lib-account-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lib-account-caption { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.lib-account-caption > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-account-caption small { color: var(--text-dim); font-size: 11.5px; font-weight: 500; }
+.lib-account-caption small[hidden] { display: none; }
+/* The account row keeps its padding too, so the avatar stays on the icons' axis. */
+.sidebar-collapsed .lib-account-caption { opacity: 0; }
+.sidebar-collapsed:not(.rail-animating) .lib-account-caption { display: none; }
+/* GNOME shows a user without a picture as initials in a circle (AdwAvatar). */
+.lib-avatar {
+  position: relative; flex: 0 0 auto;
+  display: inline-grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-fg);
+  font-size: 11.5px; font-weight: 700; line-height: 1; letter-spacing: .02em;
+  user-select: none;
+}
+.lib-avatar.is-guest { background: var(--btn-bg); color: var(--text-dim); }
+.lib-avatar svg { width: 16px; height: 16px; }
+/* An expired session is the one account state worth noticing without opening the menu. */
+.lib-account-toggle.needs-attention .lib-avatar::after {
+  content: ''; position: absolute; top: -1px; right: -1px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--destructive); box-shadow: 0 0 0 2px var(--bg);
+}
+.lib-account-popover {
+  inset: auto; margin: 0; width: 264px;
+  max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto;
+  color: var(--text);
+}
+/* A dialog keeps its accessible name without a visible caption that only repeats its button. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; white-space: nowrap;
+}
+#libCloudAccount { display: flex; flex-direction: column; align-items: stretch; }
+.lib-account-popover .lib-cloud-acc-user {
+  flex-direction: row; align-items: center; gap: 11px; padding: 8px 10px;
+}
+.lib-account-popover .lib-cloud-acc-user .lib-avatar { width: 38px; height: 38px; font-size: 14px; }
+.lib-cloud-acc-text { display: flex; flex-direction: column; min-width: 0; }
+.lib-cloud-acc-text .row-title { overflow-wrap: anywhere; }
+/* An address split mid-word reads as two; keep one line, the full text is in the tooltip. */
+.lib-cloud-acc-text .row-sub { margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-account-popover .menu-sep { margin: 4px 6px; }
+.lib-account-popover .lib-cloud-acc-msg { line-height: 1.4; margin: 0; padding: 8px 10px; }
+.lib-account-popover .pill { margin: 4px; white-space: normal; }
+.lib-favorite-views { display: flex; gap: 4px; margin-bottom: 12px; }
+.lib-favorite-views .pill { background: transparent; }
+.lib-favorite-views .pill.active { background: var(--accent-soft); color: var(--accent); }
+.lib-favorite-views[hidden], #libFavoriteSignin[hidden] { display: none; }
+.cloud-favorites-view #onlineSearchBar,
+.cloud-favorites-view #whFiltersRow,
+.cloud-favorites-view #whSizeRow { display: none; }
+#libFavoriteSignin { margin-bottom: 16px; }
 .lib-railbtn {
   display: flex; align-items: center; gap: 9px;
   min-width: 0; min-height: 35px; flex: 0 0 auto;
@@ -1555,7 +1666,10 @@ html.dark .lib-rail { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
   box-shadow: inset 0 0 0 1px var(--input-border);
 }
 .lib-toolbar .select-wrap select:hover { background: var(--row-hover); }
-.lib-add-btn { height: 36px; padding: 0 13px; border-radius: 8px; }
+/* Filter controls use the same button chrome and dimensions as import actions. */
+.lib-add-btn,
+.lib-filter-btn { height: 36px; padding: 0 13px; border-radius: 8px; }
+.lib-filter-btn { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .lib-add-btn svg { width: 16px; height: 16px; }
 
 /* Toolbar icon button (e.g. library refresh) — matches the search/select chrome. */
@@ -1707,11 +1821,16 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-empty[hidden] { display: none; }
 .lib-empty-icon { width: 68px; height: 68px; color: var(--text-dim); opacity: .55; }
 
-.lib-popup {
+.lib-popup,
+.lib-account-popover,
+.online-filter-popover {
   position: fixed; z-index: 200;
   background: var(--card); border: 1px solid var(--card-border);
   border-radius: 10px; box-shadow: var(--shadow);
-  padding: 6px; min-width: 224px;
+  padding: 6px;
+}
+.lib-popup {
+  min-width: 224px;
   /* BUG-038. Without a ceiling the tag chips set the width: measured on a real profile,
      the same window was 309px wide on a photo with no tags and 932px — almost the whole
      app — on one with 25. Two windows that far apart do not read as the same window, and
@@ -1932,25 +2051,17 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-context-item.danger:focus { background: rgba(224, 27, 36, 0.12); }
 
 /* tags */
-/* ONL-005 task 6. Local tags are the rail's second collapsible section (see
-   .lib-rail-section). Open, the section takes what is left of the rail and the tag cloud
-   scrolls inside it, so the rail never grows past the window — the same fill the full
-   tag panel had before the three-tag cut. */
+/* The full tag list lives under search. Bound only the list, never truncate its contents. */
 .lib-tags-section { min-height: 0; }
-.lib-tags-section.open { flex: 1 1 auto; }
-.lib-tags-section .lib-rail-section-body { flex: 1 1 auto; min-height: 0; }
+.lib-tags-section .lib-rail-section-body { flex: 1 1 100%; min-height: 0; }
 .lib-tags-section .lib-rail-section-inner { display: flex; flex-direction: column; min-height: 0; }
 /* The chosen tag, above the body: visible and clearable while the section is collapsed. */
 .lib-active-tag {
-  flex: 0 0 auto; margin: 2px 4px 4px; padding: 6px 8px;
-  border: 0; border-radius: 6px; color: var(--accent);
-  background: var(--accent-soft); font: inherit; font-size: 12px; line-height: 1.3;
-  text-align: left; cursor: pointer; overflow-wrap: anywhere;
+  height: auto; min-height: 36px; padding-block: 8px;
+  text-align: left; overflow-wrap: anywhere;
 }
-.lib-active-tag:hover { background: var(--accent-soft-hover); }
 .lib-active-tag[hidden] { display: none; }
-/* Filled and borderless. The rail is a flat list of transparent rows, so an outlined
-   input was the only framed control in it and read as a widget bolted onto the sidebar. */
+/* Filled secondary search, distinct from the card query above. */
 .lib-tag-searchbox {
   display: flex; flex: 0 0 auto; align-items: center; gap: 8px;
   width: calc(100% - 8px); min-width: 0; height: 32px;
@@ -2065,65 +2176,43 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-online-more { display: flex; justify-content: center; padding: 16px 0 4px; }
 .lib-online-more .pill[hidden] { display: none; }
 
-/* The query and "Search" share the first toolbar row; everything else wraps below. */
+/* Search occupies the first row; only Online needs an explicit query action. */
+.lib-local-query-row,
 .lib-online-query-row { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
+.lib-local-query-row > .lib-searchbox,
 .lib-online-query-row .lib-search-wrap { flex: 1 1 0; min-width: 0; }
 .lib-online-query-row #whSearch { flex: 0 0 auto; }
 
-/* ONL-005 task 5. A collapsible rail section — the first of several the owner plans for
-   this rail, so it is written as a general one. The head reads like the rail rows above
-   it; the body opens by animating its row height, so nothing in the grid next to it moves.
-   `visibility` keeps the collapsed checkboxes out of the tab order. */
-.lib-rail-section { display: flex; flex-direction: column; flex: 0 0 auto; min-width: 0; }
+/* Existing filter identities are retained. The head joins the toolbar actions; only an
+   explicitly opened body takes a full row. Hidden controls are outside the tab order. */
+.lib-rail-section { display: contents; }
 .lib-rail-section[hidden] { display: none; }
-/* The icon and the gap after it match the rows above, so the title lines up with theirs.
-   The title takes the free room and the arrow sits at the right edge. A head has no count:
-   neither the number of tags nor of sites told the user anything (owner, 2026-09-17). */
-.lib-rail-section-head {
-  display: flex; align-items: center; gap: 9px;
-  min-width: 0; min-height: 35px; width: 100%;
-  margin: 0; padding: 7px 6px 7px 10px; border: none; border-radius: 7px;
-  background: transparent; color: var(--text);
-  font-family: inherit; font-size: 13px; font-weight: 500; text-align: left;
-  cursor: pointer;
-  transition: background .12s ease, color .12s ease;
-}
-.lib-rail-section-head:hover { background: var(--row-hover); }
-.lib-rail-section-head:disabled { cursor: default; opacity: .6; }
-.lib-rail-section-head:disabled:hover { background: transparent; }
-.lib-rail-section-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-/* Owner, 2026-09-17: the rail highlights what the grid shows. A chosen tag lights the
-   "Tags" head exactly like a chosen row above it; the chip below names the tag. */
-.lib-rail-section-head.active {
-  background: var(--accent-soft);
-  box-shadow: inset 3px 0 var(--accent);
-  font-weight: 650;
-}
-.lib-rail-section-head.active:hover { background: var(--accent-soft-hover); }
-.lib-rail-section-head.active .lib-rail-ic { color: var(--accent); opacity: 1; }
+/* These are toolbar buttons now, not rail rows. All button states come from .pill;
+   keep only wrapping and chevron behavior here, never a second font/palette. */
+.lib-rail-section-head.tight { height: auto; min-height: 36px; padding-block: 8px; }
 /* A section title is never cut (owner, 2026-09-17: "Источн…" in the narrow rail). While it
    fits it stays on one line; when it does not, fitRailSectionHeads() marks the head `tight`
    and the title wraps instead of being clipped. The rail never grows wider for it. */
-.lib-rail-section-title { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; line-height: 1.25; }
+.lib-rail-section-title { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
 .lib-rail-section-head.tight .lib-rail-section-title { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 .lib-rail-chevron {
   width: 11px; height: 11px; flex: 0 0 auto; margin-left: -4px;
   opacity: .7; transition: transform .16s ease;
 }
 .lib-rail-section-head[aria-expanded="true"] .lib-rail-chevron { transform: rotate(90deg); }
-.lib-rail-section-body {
-  display: grid; grid-template-rows: 0fr; visibility: hidden;
-  transition: grid-template-rows .16s ease, visibility .16s;
-}
-.lib-rail-section.open .lib-rail-section-body { grid-template-rows: 1fr; visibility: visible; }
+.lib-rail-section-body { display: none; flex: 1 1 100%; order: 2; min-width: 0; }
+.lib-rail-section.open .lib-rail-section-body { display: block; }
+.lib-tags-section.open .lib-rail-section-body { display: flex; }
+.lib-tags-section .lib-rail-section-inner { width: 100%; max-height: 190px; }
 .lib-rail-section-inner { min-height: 0; overflow: hidden; }
 .lib-rail-section-note { margin: 2px 10px 4px 35px; color: var(--text-dim); font-size: 11.5px; line-height: 1.35; }
 .lib-rail-section-note[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .lib-rail-section-body, .lib-rail-chevron { transition: none; }
+  /* DESIGN-009: the panel itself switches instantly then (startRailAnimation). */
+  .lib-rail-toggle-divider, .lib-navigation > .lib-railbtn span, .lib-account-caption { transition: none; }
 }
-/* A site row: the checkbox sits in the rail's icon column, so the names line up with the
-   section title. Same native checkbox as the content filters above the grid. */
+/* The same native checkbox as the content filters above the grid. */
 .online-source-option {
   display: flex; align-items: center; gap: 9px;
   min-height: 30px; padding: 4px 10px 4px 11px; border-radius: 7px;
@@ -2134,6 +2223,55 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .online-source-option input:disabled { cursor: default; }
 /* Same rule for a site's name: wrap, never cut. */
 .online-source-option span { min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
+
+/* DESIGN-002. Quick buttons for existing online filters, then "Filters" at the row's end.
+   The row takes only free space (basis 0), so what it holds never changes its width and
+   the fit measured in fitOnlineQuickFilters() cannot feed back into itself. */
+.online-quick {
+  display: flex; align-items: center; gap: inherit;
+  flex: 1 1 0; min-width: 0; overflow: hidden;
+  /* overflow:hidden would cut the keyboard focus ring (2px outline + 2px offset), so the
+     row keeps 4px of room inside and gives it back outside: same place, whole ring. */
+  padding: 4px; margin: -4px;
+}
+.online-quick-btn { flex: 0 0 auto; max-width: none; }
+.online-quick-btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.online-quick-btn .online-quick-chevron { width: 12px; height: 12px; margin-right: -3px; opacity: .7; }
+#whFilterToggle { flex: 0 0 auto; }
+#whFilterToggle svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.online-filter-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--accent); color: var(--accent-fg);
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+.online-filter-count[hidden] { display: none; }
+
+/* One surface for every invoker; a quick button shows only its own section. */
+.online-filter-popover {
+  inset: auto; margin: 0; width: 300px;
+  max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto;
+  color: var(--text);
+}
+.online-filter-popover:not([data-scope="all"]) { width: 230px; }
+.online-filter-popover[data-scope="purity"] .online-filter-section:not([data-section="purity"]),
+.online-filter-popover[data-scope="sources"] .online-filter-section:not([data-section="sources"]) { display: none; }
+.online-filter-popover[data-scope="all"] .online-filter-section + .online-filter-section {
+  margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--card-border);
+}
+.online-filter-options { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+/* In the full menu short choices share a line, so the whole menu fits a small window;
+   a quick button's own menu keeps the plain one-per-line list of a dropdown. */
+.online-filter-popover[data-scope="all"] #onlineSourceOptions { display: grid; grid-template-columns: 1fr 1fr; }
+.online-filter-popover[data-scope="all"] #whFiltersRow { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; }
+.online-filter-note { margin: 2px 11px 4px 35px; color: var(--text-dim); font-size: 11.5px; line-height: 1.35; }
+.online-filter-note[hidden] { display: none; }
+/* The size mode, typed sizes and the note sit under their checkbox, aligned to its text. */
+#whSizeRow .select-wrap,
+#whSizeRow .lib-size-input,
+#whSizeRow .lib-size-note { margin: 3px 11px 3px 35px; }
+#whSizeRow .select-wrap select { width: 100%; }
+#whSizeRow .lib-size-input { flex: 0 0 auto; min-width: 0; }
+#whSizeRow .lib-size-note:empty { display: none; }
 
 .lib-online-section { padding: 16px 2px 24px; }
 .lib-online-section + .lib-online-section { border-top: 1px solid var(--card-border); }
@@ -2178,8 +2316,8 @@ html.dark .lib-folder-front { fill: #d99a34; }
   flex-wrap: wrap;
 }
 .lib-cloud-acc-user { display: flex; flex-direction: column; min-width: 0; }
-.lib-cloud-acc-user strong { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
-.lib-cloud-acc-user small { color: var(--text-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.lib-cloud-acc-user strong:not(.row-title) { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+.lib-cloud-acc-user small:not(.row-sub) { color: var(--text-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .lib-cloud-acc-msg { color: var(--text-dim); font-size: 13px; }
 .lib-cloud-empty {
   display: grid;
@@ -2209,6 +2347,14 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-card .wh-add { opacity: 0; font-size: 18px; line-height: 26px; }
 .lib-card:hover .wh-add { opacity: 1; }
 .lib-card .wh-add.added { opacity: 1; background: var(--accent); }
+/* DESIGN-008: the picture is being downloaded. Visible without the pointer, like the
+   "added" badge, and the glyph becomes a spinner until the download is done. */
+.lib-card .wh-add.adding { opacity: 1; cursor: progress; }
+.lib-card .wh-add.adding .wh-add-glyph {
+  display: inline-block; width: 12px; height: 12px; vertical-align: -1px;
+  border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: #fff; border-radius: 50%;
+  animation: lib-spin .7s linear infinite;
+}
 /* ONL-008: the "added" badge is also the way back out. Under the pointer (or keyboard
    focus) the ✓ turns into a − and the chip turns red, so the second direction is
    discoverable without putting a second control on the card. */
@@ -2257,7 +2403,8 @@ html.dark .lib-folder-front { fill: #d99a34; }
    CARD: sitting at the page's left edge it covered the last rows of the tag list. */
 .lib-statusbar {
   position: sticky; bottom: 10px;
-  width: fit-content; margin-left: 196px; max-width: calc(100% - 196px);
+  width: fit-content; margin-left: calc(var(--rail-width) + var(--rail-gap));
+  max-width: calc(100% - var(--rail-width) - var(--rail-gap));
   margin-top: 12px; padding: 5px 12px;
   font-size: 11.5px; color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2483,12 +2630,11 @@ html.dark .lib-folder-front { fill: #d99a34; }
 
 @media (max-width: 900px) {
   .page.library-page { padding: 18px 18px 26px; }
-  .lib { gap: 14px; }
-  .lib-rail { flex-basis: 156px; }
+  #viewLibrary { --rail-width: 156px; --rail-gap: 18px; }
   /* Narrower rail and gap, so the status pill's offset shrinks with them. */
-  .lib-statusbar { margin-left: 170px; max-width: calc(100% - 170px); }
   .lib-toolbar { gap: 6px; }
-  .lib-add-btn { padding: 0 10px; }
+  .lib-add-btn,
+  .lib-filter-btn { padding-inline: 10px; }
 }
 
 @media (max-width: 720px) {
@@ -2496,40 +2642,23 @@ html.dark .lib-folder-front { fill: #d99a34; }
   .lib { flex-direction: column; align-items: stretch; gap: 13px; }
   .lib-rail {
     position: sticky; top: -1px; z-index: 20;
+    height: auto; min-height: 0;
     width: 100%; max-width: 100%; flex: 0 0 auto;
     flex-direction: row; align-items: center;
-    overflow-x: auto; overflow-y: hidden;
-    padding: 6px;
-    border-radius: 10px;
-    scrollbar-width: none;
+    padding: 0;
   }
-  .lib-rail::-webkit-scrollbar { display: none; }
+  .lib-navigation {
+    flex: 1 1 auto; flex-direction: row; align-items: center; padding: 6px;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .lib-navigation::-webkit-scrollbar { display: none; }
+  .lib-account-dock { margin: 0 0 0 auto; padding: 0; flex: 0 0 auto; }
+  .lib-account-caption { display: none; }
+  .lib-account-toggle { min-height: 36px; padding: 4px; }
+  .lib-rail-toggle { align-self: center; margin: 0 2px 0 0; }
   .lib-railbtn { flex: 0 0 auto; min-height: 34px; padding: 6px 10px; }
-  .lib-railbtn.active, .lib-rail-section-head.active { box-shadow: inset 0 -3px var(--accent); }
+  .lib-railbtn.active { box-shadow: inset 0 -3px var(--accent); }
   .lib-rail-separator { width: 1px; height: 22px; margin: 0 4px; flex: 0 0 auto; }
-  .lib-tags-section, .lib-tags-section.open { flex: 0 0 auto; min-width: 0; overflow: visible; }
-  .lib-tags-section .lib-rail-section-inner { flex-direction: row; align-items: center; }
-  .lib-active-tag { margin: 0 4px; white-space: nowrap; }
-  .lib-tag-searchbox { flex: 0 0 132px; width: 132px; margin: 0 4px; }
-  /* Collapsed to a single horizontal strip: chips must not wrap into a second row
-     here, and this is the one place the tag list is allowed to scroll sideways. */
-  .lib-railtags {
-    flex: 0 1 auto; flex-flow: row nowrap; gap: 4px; padding: 0;
-    max-width: 42vw; overflow-x: auto; overflow-y: hidden; min-height: 0;
-  }
-  .lib-railtags .lib-railbtn { flex: 0 0 auto; min-height: 0; height: 26px; }
-  .lib-railtags::-webkit-scrollbar { display: none; }
-  .lib-tag-empty { padding: 0 8px; white-space: nowrap; }
-  /* A rail section lies down with the strip: head and site rows in one line. The height
-     animation means nothing sideways, so the body simply appears. */
-  .lib-rail-section { flex-direction: row; align-items: center; }
-  .lib-rail-section-head { width: auto; min-height: 34px; padding: 6px 10px; }
-  .lib-rail-section-body { display: none; }
-  .lib-rail-section.open .lib-rail-section-body { display: block; }
-  .lib-rail-section-inner { overflow: visible; }
-  #onlineSourceOptions { display: flex; align-items: center; }
-  .online-source-option { flex: 0 0 auto; }
-  .lib-rail-section-note { display: none; }
   /* The rail is a horizontal strip on top here, so nothing sits left of the grid. */
   .lib-statusbar { margin-left: 0; max-width: 100%; }
   .lib-toolbar { margin-bottom: 12px; }
@@ -2552,3 +2681,36 @@ html.dark .lib-folder-front { fill: #d99a34; }
   .lib-online-section-head { flex-direction: column; }
   .lib-cloud-account { width: 100%; margin-left: 0; justify-content: flex-start; }
 }
+
+/* DATA-006. Moving Znada's own files: one window for the question, the work and the
+   result. Deliberately plain — it is read while something slow is happening, and the
+   only thing that must stand out is that it is moving. */
+.media-move-body { gap: 10px; }
+.media-move-text { margin: 0; font-size: 13px; line-height: 1.45; }
+.media-move-notes { display: flex; flex-direction: column; gap: 6px; }
+.media-move-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+.media-move-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--btn-bg-hover);
+  overflow: hidden;
+}
+.media-move-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width .2s ease;
+}
+.media-move-count { margin: 0; font-size: 12px; color: var(--text-dim); }
+.media-folder-path {
+  margin-top: 4px;
+  font-size: 12.5px;
+  word-break: break-all;
+}
+.media-folder-away { color: var(--warn, #e5a50a); }

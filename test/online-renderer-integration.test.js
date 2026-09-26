@@ -191,6 +191,8 @@ const loadInternetResults = vm.runInNewContext(`(${match[0]})`, context);
         LIB: { filter: 'online' },
         ONLINE: { generation: 0, loading: false, loaded: false, view: 'favorites', entries: [] },
         CLOUDFAV: { ids: new Set(), fetched: false },
+        cloudAvailable: () => true,
+        cloudSignedIn: () => true,
         console: { error: () => {} },
         t: (k) => k,
         $: (sel) => ({ '#whNote': note, '#whMore': { hidden: false, disabled: false } }[sel] || null),

@@ -930,6 +930,8 @@ function withinASecond(promise) {
         document: { createElement: node },
         t: (key) => key,
         CLOUDAUTH: auth,
+        cloudAvailable: () => true,
+        renderLibraryAccountTrigger: () => {},
         window: { api: { cloudSigninCancel: async () => { cancels.push(true); return { ok: true, cancelled: true }; } } },
         doCloudSignin: () => {},
         doCloudSignout: () => {},

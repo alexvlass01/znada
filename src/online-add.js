@@ -60,12 +60,28 @@
     return null;
   }
 
-  function buttonState(pool, kind, item) {
+  // DESIGN-008. What an add in progress is remembered by. The same marker that will
+  // recognise the picture once it is in the pool, so "being added" and "added" are one
+  // question about one picture; the original's address covers a card without a page.
+  function addingKey(kind, item) {
+    const marker = sourceMarkers(kind, item)[0];
+    if (marker) return marker;
+    const full = item && typeof item.full === 'string' ? item.full : '';
+    return full ? `full:${full}` : '';
+  }
+
+  // `adding` is whatever holds the adds in progress (a Map or a Set of addingKey()s).
+  // An add that already landed wins: the pool is the truth, the flag only fills the wait.
+  function buttonState(pool, kind, item, adding) {
     const pooled = pooledItem(pool, kind, item);
-    if (!pooled) {
-      return { added: false, pooled: null, glyph: '+', titleKey: 'online.add', action: 'add' };
+    if (pooled) {
+      return { added: true, adding: false, pooled, glyph: '✓', titleKey: 'online.remove', action: 'remove' };
     }
-    return { added: true, pooled, glyph: '✓', titleKey: 'online.remove', action: 'remove' };
+    const key = addingKey(kind, item);
+    if (key && adding && typeof adding.has === 'function' && adding.has(key)) {
+      return { added: false, adding: true, pooled: null, glyph: '', titleKey: 'online.adding', action: 'wait' };
+    }
+    return { added: false, adding: false, pooled: null, glyph: '+', titleKey: 'online.add', action: 'add' };
   }
 
   // The payload for `library-remove-many` — the same shape the Library tab sends, so
@@ -80,5 +96,5 @@
     return [{ id, path, type: pooled.type === 'folder' ? 'folder' : 'image' }];
   }
 
-  return { sourceMarkers, sourceIndex, pooledItem, buttonState, removalPayload };
+  return { sourceMarkers, sourceIndex, pooledItem, addingKey, buttonState, removalPayload };
 }));

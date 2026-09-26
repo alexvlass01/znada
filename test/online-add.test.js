@@ -111,6 +111,37 @@ const record = (id, source, extra = {}) => ({
   ok('a photo that IS in the library offers to take it back out',
     on.added === true && on.action === 'remove' && on.glyph === '✓'
     && on.titleKey === 'online.remove' && on.pooled === library.a1);
+
+  // DESIGN-008. While the photo is on its way the button waits, and says so.
+  const adding = new Map([[OnlineAdd.addingKey('cloud', { id: '999' }), Promise.resolve()]]);
+  const busy = OnlineAdd.buttonState(library, 'cloud', { id: '999' }, adding);
+  ok('a photo being added shows a spinner and does nothing on a click',
+    busy.adding === true && busy.added === false && busy.action === 'wait'
+    && busy.glyph === '' && busy.titleKey === 'online.adding');
+
+  ok('only the photo being added waits; the next card still offers to add',
+    OnlineAdd.buttonState(library, 'cloud', { id: '998' }, adding).action === 'add');
+
+  ok('an add that already landed wins over the flag it has not cleared yet',
+    OnlineAdd.buttonState(library, 'cloud', { id: '42' },
+      new Set([OnlineAdd.addingKey('cloud', { id: '42' })])).action === 'remove');
+
+  ok('without a record of adds in progress the button behaves as before',
+    OnlineAdd.buttonState(library, 'cloud', { id: '999' }).action === 'add'
+    && OnlineAdd.buttonState(library, 'cloud', { id: '999' }, null).action === 'add');
+}
+
+// --- what an add in progress is remembered by ------------------------------
+{
+  ok('an add is remembered by the marker that will find the photo in the pool',
+    OnlineAdd.addingKey('cloud', { id: '5' }) === 'znada:5'
+    && OnlineAdd.addingKey('internet', { page: 'https://x/1', full: 'https://cdn/1.jpg' }) === 'https://x/1');
+
+  ok('a card without a page is remembered by its original instead',
+    OnlineAdd.addingKey('internet', { page: '', full: 'https://cdn/1.jpg' }) === 'full:https://cdn/1.jpg');
+
+  ok('a card with nothing to go by is not remembered at all, so it cannot block another',
+    OnlineAdd.addingKey('internet', {}) === '' && OnlineAdd.addingKey('cloud', null) === '');
 }
 
 // --- the removal payload ---------------------------------------------------

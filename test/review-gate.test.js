@@ -82,6 +82,7 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
     const text = fs.readFileSync(file, 'utf8');
     assert.ok(text.includes('{{REL}}'), stage.id + ': шаблон не говорит, куда писать результат');
     assert.ok(text.includes('{{STAGE_ID}}'), stage.id + ': в шаблоне нет команды сдачи');
+    assert.ok(text.includes('{{LEAD_CHECKS}}'), stage.id + ': в задании нет места для списка ведущего');
   }
 }
 
@@ -335,6 +336,100 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
     + ' указывала на 05-release, хотя снимки принёс 04-runtime');
   assert.ok(/duplicateGroups\(evidenceEntries\(id\)\)/.test(warnBody),
     'предупреждение читает только записанное поле: этапы, сданные раньше правила, останутся немыми');
+}
+
+/*
+ * QA-012. Этап живого приложения обязан держать проверяющего подальше от системы владельца.
+ *
+ * 2026-09-19 проверяющий `04` сделал ровно то, что велело старое задание («перетащить файл…
+ * файл добавлен», «светлая и тёмная тема»): добавил файл в библиотеку DIAG и переключил тему
+ * Windows туда и обратно. DIAG в это время ставил обои по теме Windows — на настоящий рабочий
+ * стол. Задание ничего не запрещало, потому что ничего не объясняло.
+ */
+{
+  const stage04 = fs.readFileSync(path.join(TEMPLATES, 'stage-04-runtime.md'), 'utf8');
+  assert.ok(/Не переключай тему Windows/.test(stage04), 'задание не запрещает переключать тему Windows');
+  assert.ok(/Не ставь обои сам/.test(stage04), 'задание не запрещает ставить обои вручную');
+  assert.ok(/Не меняй данные профиля/.test(stage04), 'задание не запрещает менять данные профиля');
+  assert.ok(!/файл добавлен/.test(stage04), 'задание снова требует добавить файл в библиотеку профиля');
+  assert.ok(/НЕ отпуская кнопку мыши, нажми Esc/.test(stage04),
+    'перетаскивание снова заканчивается броском файла в окно, а не отменой');
+  assert.ok(/владелец сам переключит/.test(stage04),
+    'вторая тема снова проверяется сменой темы Windows руками проверяющего');
+
+  // Проверка до запуска: таблица полей обязана говорить правду о том, что делает запуск.
+  assert.ok(/только прочитай/.test(stage04), 'задание не велит проверить профиль до запуска');
+  // Решение владельца 2026-09-24: обои, поставленные самим запуском, не повод блокировать проверку
+  // на реалистичном профиле; тема Windows — повод.
+  assert.ok(/Обои, которые приложение ставит само, разрешены/.test(stage04),
+    'задание снова блокирует реалистичный профиль из-за обоев, которые владелец разрешил');
+  assert.ok(/`themeSchedule\.mode` не `off` — не запускай/.test(stage04),
+    'задание больше не останавливает запуск, который сам переключит тему Windows');
+  for (const field of ['slideshow.enabled', 'separateThemes', 'wallpaperSchedule.mode', 'themeSchedule.mode']) {
+    assert.ok(stage04.includes('`' + field + '`'), 'в проверке до запуска нет поля ' + field);
+  }
+  const { wallpaperStartupAction } = require('../src/schedule');
+  const quiet = { slideshow: { enabled: false }, separateThemes: true, wallpaperSchedule: { mode: 'off' } };
+  assert.strictEqual(wallpaperStartupAction(quiet), 'none',
+    'профиль, который задание называет безопасным, всё равно ставит обои при запуске');
+  for (const [name, patch] of [
+    ['slideshow.enabled', { slideshow: { enabled: true } }],
+    ['separateThemes', { separateThemes: false }],
+    ['wallpaperSchedule.mode system', { wallpaperSchedule: { mode: 'system' } }],
+    ['wallpaperSchedule.mode time', { wallpaperSchedule: { mode: 'time' } }],
+    ['wallpaperSchedule.mode sun', { wallpaperSchedule: { mode: 'sun' } }],
+  ]) {
+    assert.notStrictEqual(wallpaperStartupAction({ ...quiet, ...patch }), 'none',
+      'задание пугает полем ' + name + ', а запуск с ним обоев не ставит — таблица разошлась с кодом');
+  }
+
+  const brief = fs.readFileSync(path.join(TEMPLATES, 'brief.md'), 'utf8');
+  assert.ok(/Не переключать тему Windows и не ставить обои вручную/.test(brief),
+    'бриф не запрещает трогать тему и обои владельца');
+  assert.ok(/Список ведущего/.test(brief), 'бриф не говорит, где искать список ведущего');
+}
+
+/*
+ * QA-012. Список ведущего должен попадать в само задание: 2026-09-19 он до проверяющего `04`
+ * не дошёл, потому что в передаче ему не было места. Проверяется настоящая сборка текста
+ * пакета во временном каталоге, а не наличие слов в исходнике.
+ */
+{
+  const os = require('os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'review-gate-checks-'));
+  const next = fs.mkdtempSync(path.join(os.tmpdir(), 'review-gate-checks-next-'));
+  try {
+    const run = {
+      base: 'v0', head: 'abc1234', stat: '', fileCount: 1, dirtyCount: 0,
+      stages: gate.STAGES.map((s) => ({ id: s.id, title: s.title, needs: s.needs, cost: s.cost })),
+    };
+    const list = '1. Меню карточки: пункт «Докладніше…» открывает лист.';
+    fs.mkdirSync(path.join(tmp, 'checks'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'checks', '04-runtime.md'), list + '\n');
+    gate.writePacketText(tmp, 'test-run', run, ['renderer/renderer.js']);
+
+    const stage = (dir, id) => fs.readFileSync(path.join(dir, 'stages', id + '.md'), 'utf8');
+    assert.ok(stage(tmp, '04-runtime').includes(list), 'список ведущего не попал в задание своего этапа');
+    assert.ok(/Обязателен каждый пункт/.test(stage(tmp, '04-runtime')), 'список не назван обязательным');
+    assert.ok(!stage(tmp, '02-diff').includes(list), 'список одного этапа попал в задание другого');
+    assert.ok(/отдельного списка для этого этапа не передал/.test(stage(tmp, '02-diff')),
+      'без списка задание молчит — проверяющий не отличит «списка нет» от «его потеряли»');
+
+    // Пересборка с той же базой (next, дерево ушло вперёд, никто не отчитывался) список не теряет.
+    const carried = gate.copyLeadChecks(tmp, next, run.stages.map((s) => s.id));
+    assert.deepStrictEqual(carried, ['04-runtime'], 'при пересборке пакета список ведущего потерялся');
+    gate.writePacketText(next, 'test-run-2', run, ['renderer/renderer.js']);
+    assert.ok(stage(next, '04-runtime').includes(list), 'перенесённый список не попал в новое задание');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(next, { recursive: true, force: true });
+  }
+
+  const source = fs.readFileSync(GATE, 'utf8');
+  assert.ok(/carryChecksFrom: step\.from === 'base' \? id : ''/.test(source),
+    'next пересобирает пакет с той же базой, но список ведущего с собой не берёт');
+  assert.ok(source.includes("'  в задании есть список проверок от ведущего — каждый его пункт обязателен'"),
+    'текст передачи не говорит, что в задании есть список ведущего');
 }
 
 console.log('review-gate: ok');

@@ -388,9 +388,12 @@ ok('Online results are published through one guarded path, and stale ones are re
   && online.includes("return LIB.filter === 'online'"));
 ok('fresh Online feeds cancel the previous feed resize lifecycle',
   online.includes('if (opts.fresh) resetLibObservers(grid)'));
-ok('session expiry replaces an invalid in-flight favorites feed',
-  renderer.includes("if (wasFavorites && ONLINE.view !== 'favorites')")
-  && renderer.includes('ONLINE.loaded = false;\n        doOnlineSearch(true);'));
+// Expiry now stays in Favorites with a guest state instead of switching to Search.
+// The executable race regression is in library-account-navigation.test.js.
+ok('session changes reload favorites through the guarded feed loader',
+  renderer.includes('window.api.onCloudSession(handleCloudSessionChange)')
+  && renderer.includes("if (LIB.filter === 'online' && ONLINE.view === 'favorites') loadFavoritesFeed();")
+  && renderer.includes("note.textContent = t(cloudAvailable() ? 'online.favSignin' : 'online.accountUnavailable')"));
 
 // Owner QA 2026-08-30: dragging a file onto an EMPTY library drew a hairline dashed
 // strip floating above the placeholder instead of highlighting it. The card is a SIBLING

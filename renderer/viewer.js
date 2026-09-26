@@ -633,12 +633,30 @@ function prefetchNeighbors(center) {
 function syncAddAction(entry, add) {
   if (!entry || !add) return;
   const removable = !!(entry.added && entry.pooled && (entry.pooled.id || entry.pooled.path));
-  // Added but unidentifiable: an honest dead end is better than a button that would
-  // remove the wrong thing. In practice this only happens if the add reported no record.
-  add.textContent = t(entry.added ? (removable ? 'online.remove' : 'online.added') : 'online.add');
+  // DESIGN-008. A download takes seconds, and a button that merely went grey for that
+  // long read as a frozen app. While this picture is being added — however the add was
+  // started: the button, the menu or "Assign" — the button says so and takes no second
+  // click. Numbers are not shown: the download is read in one piece, nothing counts it.
+  const adding = !!entry.adding && !entry.added;
+  add.classList.toggle('busy', adding);
+  add.setAttribute('aria-busy', adding ? 'true' : 'false');
+  if (adding) {
+    add.textContent = '';
+    const spin = document.createElement('span');
+    spin.className = 'spin';
+    spin.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = t('online.adding');
+    add.appendChild(spin);
+    add.appendChild(label);
+  } else {
+    // Added but unidentifiable: an honest dead end is better than a button that would
+    // remove the wrong thing. In practice this only happens if the add reported no record.
+    add.textContent = t(entry.added ? (removable ? 'online.remove' : 'online.added') : 'online.add');
+  }
   add.classList.toggle('suggested', !entry.added);
   add.classList.toggle('danger', removable);
-  add.disabled = !!entry.added && !removable;
+  add.disabled = adding || (!!entry.added && !removable);
 }
 
 // The Library tab already offers Undo in its toast. The fullscreen viewer is a
@@ -896,7 +914,26 @@ function closeViewerPopup() {
 
 // One place this window turns an online card into a library record, so the menu and
 // the action button cannot disagree about what "added" means.
-async function addViewerCardToLibrary(entry, descriptor) {
+//
+// DESIGN-008. The add belongs to the picture, not to the button. The button is rebuilt on
+// every step through the gallery, so a download started here must still show, and still
+// refuse a second click, when the user comes back to this picture. The menu's "Add" or
+// "Assign" pressed meanwhile waits for the same download instead of starting another.
+function addViewerCardToLibrary(entry, descriptor) {
+  if (entry.adding) return entry.adding;
+  const run = (async () => {
+    try { return await downloadViewerCard(entry, descriptor); }
+    finally {
+      entry.adding = null;
+      syncCurrentAddAction(entry);
+    }
+  })();
+  entry.adding = run;
+  syncCurrentAddAction(entry);
+  return run;
+}
+
+async function downloadViewerCard(entry, descriptor) {
   let res;
   try {
     res = descriptor.kind === 'cloud'
@@ -909,7 +946,9 @@ async function addViewerCardToLibrary(entry, descriptor) {
   }
   entry.added = true;
   entry.pooled = res.id ? { id: res.id, path: '', type: 'image' } : null;
-  syncCurrentAddAction(entry);
+  // On screen the button itself turns into "Remove". If the user has moved on to another
+  // picture, nothing on screen would say that this one made it.
+  if (currentEntry() !== entry) showViewerMessage(t('online.added'));
   return res.id || '';
 }
 
@@ -1038,13 +1077,17 @@ function renderActions(entry) {
   syncAddAction(entry, add);
   add.addEventListener('click', async () => {
     if (add.disabled) return;
-    const removing = !!entry.added;
-    // Re-adding is a new decision. Leaving an older Undo action on screen would make
-    // it unclear whether the user is undoing the removal or the fresh add.
-    if (!removing) dismissViewerNotice();
+    if (!entry.added) {
+      // Re-adding is a new decision. Leaving an older Undo action on screen would make
+      // it unclear whether the user is undoing the removal or the fresh add.
+      dismissViewerNotice();
+      // The add keeps its own state on the entry (see addViewerCardToLibrary): this
+      // button may be rebuilt several times before the download is done.
+      await addViewerCardToLibrary(entry, CardActions.descriptorFor(viewerSubjectFor(entry)));
+      return;
+    }
     add.disabled = true;
-    if (removing) await removeViewerCard(entry);
-    else await addViewerCardToLibrary(entry, CardActions.descriptorFor(viewerSubjectFor(entry)));
+    await removeViewerCard(entry);
     add.disabled = false;
     syncAddAction(entry, add);
   });

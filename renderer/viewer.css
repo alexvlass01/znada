@@ -155,6 +155,23 @@ body {
   opacity: 0.62;
 }
 
+/* DESIGN-008: the picture is being added. Not dimmed like a dead button — it is busy,
+   and the spinner next to the words says so. */
+.media-action.busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.media-action.busy .spin {
+  flex: 0 0 auto;
+}
+
+.media-action.busy:disabled {
+  cursor: progress;
+  opacity: 1;
+}
+
 .media-close {
   width: 38px;
   height: 38px;
@@ -379,7 +396,8 @@ body {
   display: none;
 }
 
-.media-hd .spin {
+.media-hd .spin,
+.media-action .spin {
   width: 13px;
   height: 13px;
   border: 2px solid rgba(255, 255, 255, 0.25);

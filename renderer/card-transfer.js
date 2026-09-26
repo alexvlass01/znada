@@ -100,6 +100,11 @@
     timeout: 'online.timeout',
     session_changed: 'online.sessionChanged',
     storage: 'online.storageFailed',
+    // DATA-006. The main window is behind its own modal while a move runs, but the
+    // viewer is a window of its own and keeps taking clicks. Saying why beats a card
+    // that silently does nothing.
+    media_move_running: 'mediaFolder.frozen',
+    media_root_unavailable: 'mediaFolder.blockedSourceMissing',
   };
   function errorMessage(t, code) {
     const key = CODE_KEYS[String(code || '')];

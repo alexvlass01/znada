@@ -280,12 +280,12 @@ ok('bad onlineSort → date_added; all-off purity → sfw forced on', (() => {
   return c.onlineSort === 'date_added' && c.onlinePurity.sfw === true;
 })());
 
-// ONL-005 task 5: the Online site list starts collapsed; only a real `true` keeps it open.
-ok('fresh default: the site list is collapsed', fresh.onlineSourcesExpanded === false);
-fs.writeFileSync(p('sources_open.json'), JSON.stringify({ onlineSourcesExpanded: true }));
-ok('an opened site list stays open after a restart', C.load(p('sources_open.json')).onlineSourcesExpanded === true);
-fs.writeFileSync(p('sources_bad.json'), JSON.stringify({ onlineSourcesExpanded: 'yes' }));
-ok('a non-boolean open state reads as collapsed', C.load(p('sources_bad.json')).onlineSourcesExpanded === false);
+// DESIGN-002: the site list moved into the Filters menu; which quick buttons show is kept.
+ok('fresh default: every quick online filter is pinned', JSON.stringify(fresh.onlineQuickFilters) === '["screen","purity","sources"]');
+fs.writeFileSync(p('quick_pins.json'), JSON.stringify({ onlineQuickFilters: ['sources'] }));
+ok('a chosen quick filter row stays after a restart', JSON.stringify(C.load(p('quick_pins.json')).onlineQuickFilters) === '["sources"]');
+fs.writeFileSync(p('quick_bad.json'), JSON.stringify({ onlineQuickFilters: 'sources' }));
+ok('a malformed quick filter row reads as the default', C.load(p('quick_bad.json')).onlineQuickFilters.length === 3);
 // ONL-005 task 6: the local tag section follows the same rule.
 ok('fresh default: the tag section is collapsed', fresh.libraryTagsExpanded === false);
 fs.writeFileSync(p('tags_open.json'), JSON.stringify({ libraryTagsExpanded: true }));
@@ -294,6 +294,12 @@ fs.writeFileSync(p('tags_bad.json'), JSON.stringify({ libraryTagsExpanded: 1 }))
 ok('a non-boolean tag section state reads as collapsed', C.load(p('tags_bad.json')).libraryTagsExpanded === false);
 
 // viewerBackground: fresh default is ambient; valid values pass; bad → ambient
+ok('fresh default: navigation labels remain visible', fresh.librarySidebarCollapsed === false);
+fs.writeFileSync(p('sidebar.json'), JSON.stringify({ librarySidebarCollapsed: true }));
+ok('collapsed navigation survives reload', C.load(p('sidebar.json')).librarySidebarCollapsed === true);
+fs.writeFileSync(p('sidebar_bad.json'), JSON.stringify({ librarySidebarCollapsed: 'true' }));
+ok('sidebar collapse accepts only boolean true', C.load(p('sidebar_bad.json')).librarySidebarCollapsed === false);
+
 ok('fresh default: viewerBackground ambient', fresh.viewerBackground === 'ambient');
 fs.writeFileSync(p('viewerbg_ok.json'), JSON.stringify({ viewerBackground: 'aurora' }));
 ok('valid viewerBackground passes through', C.load(p('viewerbg_ok.json')).viewerBackground === 'aurora');

@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain: electronIpcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification, clipboard, protocol } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain: electronIpcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification, clipboard, protocol, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -22,8 +22,10 @@ const online = require('./src/online');
 const sizeFilter = require('./src/size-filter'); // ONL-010: подходит ли картинка под экран
 const onlineResume = require('./src/online-resume'); // ONL-014b: где какой сайт остановился // смешивание и дедуп результатов внешних провайдеров
 const mediaProxy = require('./src/media-proxy'); // PERF-008: адресация потокового прокси картинок
+const originalStoreMod = require('./src/original-store'); // PERF-010: оригинал, который уже скачан
 const providerRegistry = require('./src/provider-registry'); // ONL-011/012: единый список сайтов и их объявления
 const onlineSources = require('./src/online-sources');
+const onlineQuickFilters = require('./src/online-quick-filters'); // DESIGN-002: закреплённые быстрые фильтры
 const mediaFormats = require('./src/media-type'); // ONL-015: единый список форматов картинок
 const tagSuggest = require('./src/tag-suggest'); // ONL-014: строка поиска (написание тега, токен под курсором)
 const itemDetails = require('./src/item-details'); // bounded metadata reader + URL/path validation
@@ -53,6 +55,9 @@ const devLaunchGate = require('./src/dev-launch-gate'); // COLLAB-003: is this a
 const galleryPayloadMod = require('./src/gallery-payload'); // viewer payload sanitizing/windowing
 const hotkey = require('./src/hotkey'); // accelerator parsing + atomic globalShortcut replacement
 const windowsLaunch = require('./src/windows-launch');
+const mediaRoot = require('./src/media-root'); // DATA-006: где лежат собственные копии Znada
+const mediaMove = require('./src/media-move'); // DATA-006: копирование, проверка и уборка при переезде
+const profileMigrationMod = require('./src/profile-migration'); // DATA-006: пересчёт путей под новый корень
 const applyOutcome = require('./src/apply-outcome'); // пустой слот против исчезнувшего источника
 const poolConsistency = require('./src/pool-consistency'); // ссылки слотов против содержимого пула // stable Squirrel launch targets for Run/.lnk
 
@@ -430,18 +435,79 @@ function openDiagnosticsControlWindow() {
 // Config
 // ---------------------------------------------------------------------------
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
-const WALLPAPERS_DIR = path.join(app.getPath('userData'), 'wallpapers');
 const FOLDER_STATE_PATH = path.join(app.getPath('userData'), 'folder-state.json');
+
+// DATA-006. Where Znada's own copies live is a SETTING, so it cannot be a constant
+// resolved while this file loads — at that moment config.json has not been read yet.
+// Everything asks wallpapersDir() instead, and the answer changes only through
+// refreshManagedRoot(). Capturing it in another module-level const would quietly
+// reintroduce the bug this replaces, which is what test/media-root-main.test.js checks.
+const USER_DATA_PATH = app.getPath('userData');
+let managedRoot = mediaRoot.resolveManagedRoot({ userDataPath: USER_DATA_PATH, mediaFolder: '' });
+function wallpapersDir() { return managedRoot.root; }
+function trashDirPath() { return path.join(managedRoot.root, '.trash'); }
+
+function refreshManagedRoot() {
+  managedRoot = mediaRoot.resolveManagedRoot({
+    userDataPath: USER_DATA_PATH,
+    mediaFolder: config && config.mediaFolder,
+  });
+  return managedRoot;
+}
+
+function systemRootsForFolderCheck() {
+  const roots = [
+    process.env.SystemRoot, process.env.windir, process.env.ProgramFiles,
+    process.env['ProgramFiles(x86)'], process.env.ProgramData,
+  ];
+  try { roots.push(path.dirname(app.getPath('exe'))); } catch {}
+  return roots.filter(Boolean);
+}
+
+// Asked live, never cached: a removable drive can leave between two user actions, and a
+// cached "ready" would let a write land somewhere the user did not choose.
+// A saved folder the rules refuse today (a hand-edited setting, or one written before a
+// rule existed). Pure string checks, no disk: it is also asked for every path a window
+// wants to read.
+function managedRootInvalid() {
+  return managedRoot.custom && !!mediaRoot.folderProblem({
+    folder: managedRoot.parent,
+    userDataPath: USER_DATA_PATH,
+    systemRoots: systemRootsForFolderCheck(),
+  });
+}
+
+function managedRootStatus() {
+  return mediaRoot.rootState({
+    rootExists: dirExists(managedRoot.root),
+    anchorExists: dirExists(managedRoot.anchor),
+    invalid: managedRootInvalid(),
+  });
+}
+
+// The single rule behind every guard below: while our folder is not there, Znada writes
+// nothing, deletes nothing and declares nothing missing. Owner's decision 2026-09-09 —
+// a disk that is absent means the files are temporarily unreachable, not gone.
+function managedRootReady() {
+  return managedRootStatus().state !== 'unavailable';
+}
+
+function managedRootUnavailableError() {
+  return new Error('Managed media folder is unavailable');
+}
 
 // Copy a chosen image into the app's own data dir so it survives app updates and
 // the original being moved/deleted. Content-addressed name (wp-<md5>) → identical
 // images dedupe automatically and re-adding the same file is a no-op. Returns path.
 async function importWallpaper(srcPath) {
-  await fs.promises.mkdir(WALLPAPERS_DIR, { recursive: true });
+  // DATA-006. mkdir would happily CREATE the chosen folder on a drive that is merely
+  // missing its letter today, and the copy would land somewhere the user never picked.
+  if (!managedRootReady()) throw managedRootUnavailableError();
+  await fs.promises.mkdir(wallpapersDir(), { recursive: true });
   const buf = await fs.promises.readFile(srcPath); // async: не блокируем main-поток на больших файлах
   const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 16);
   const ext = (path.extname(srcPath) || '.img').toLowerCase();
-  const dest = path.join(WALLPAPERS_DIR, `wp-${hash}${ext}`);
+  const dest = path.join(wallpapersDir(), `wp-${hash}${ext}`);
   if (!fs.existsSync(dest)) await fs.promises.writeFile(dest, buf);
   return dest;
 }
@@ -453,8 +519,10 @@ async function importWallpaper(srcPath) {
 async function stageDownloadImage(dir, url, fetchOptions = {}) {
   await fs.promises.mkdir(dir, { recursive: true });
   const options = fetchOptions && typeof fetchOptions === 'object' ? fetchOptions : {};
-  const { expectedFormat = '', ...requestOptions } = options;
-  const res = await fetch(url, requestOptions);
+  // PERF-010. `fetchImpl` says where the bytes come from (see originalFetchFor). Whatever
+  // answers, the checks below are the same ones: there is no second, trusting branch.
+  const { expectedFormat = '', fetchImpl = fetch, ...requestOptions } = options;
+  const res = await fetchImpl(url, requestOptions);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   if (expectedFormat) {
     const responseType = res.headers && typeof res.headers.get === 'function'
@@ -537,7 +605,8 @@ async function downloadImageTo(dir, url, fetchOptions = {}) {
 // library does not own — an export or a clipboard copy must not leave an orphan file
 // inside wallpapers/ for the sweeper to find — hence the split above.
 async function downloadWallpaperFromUrl(url, fetchOptions = {}) {
-  return downloadImageTo(WALLPAPERS_DIR, url, fetchOptions);
+  if (!managedRootReady()) throw managedRootUnavailableError();
+  return downloadImageTo(wallpapersDir(), url, fetchOptions);
 }
 
 // Дефолты + load/migrate/save вынесены в ./src/config.js (тестируется: test/config.test.js).
@@ -629,6 +698,10 @@ function enterLibraryWriteDegradedMode() {
 function loadConfig() {
   config = configMod.load(CONFIG_PATH);
   config.onlineSources = onlineSources.normalize(config.onlineSources, providerRegistry.PROVIDERS);
+  // DATA-006. Straight after the settings are in memory and before anything can reach
+  // for a file: every later caller asks wallpapersDir(), and until this runs that answer
+  // is still the profile default.
+  refreshManagedRoot();
 
   // BUG-023. Decided FIRST, and before any of the early returns below: a settings file
   // that could not be read must not be written over no matter what the pool file turns
@@ -920,6 +993,129 @@ function saveSettingsOnly() {
   broadcastConfig();
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// DATA-006 step 2: moving the folder of Znada's own copies
+// ---------------------------------------------------------------------------
+// The copying, verifying and cleaning up live in src/media-move.js; the arithmetic of
+// what every record is called afterwards lives in src/profile-migration.js. What main
+// owns is the part only main can answer: which documents are the live ones, and what
+// "written" means. There is no way to start this from a window yet — the progress
+// window and the picker are steps 3 and 4.
+let mediaMoveRunning = false;
+
+// The pool and the trash are one in-memory model here, but the remap expects them in
+// the shape they have on disk. Handed over live, not copied: remapMediaRoot deep-clones
+// its input and returns new documents, so nothing here is mutated behind our back.
+function mediaMoveDocuments() {
+  return {
+    config,
+    store: {
+      version: 1,
+      library: config.library,
+      trash: Array.isArray(config.libraryTrash) ? config.libraryTrash : [],
+    },
+    folderState: liveFolderState,
+  };
+}
+
+// What stops a move before anything is counted or copied. Shared by the question the
+// window asks and by the move itself, so the two cannot disagree.
+//
+// `toAppFolder` is the way back to `<profile>\wallpapers`. It is its own flag rather
+// than an empty folder, so an empty or broken value can never read as "move it all back".
+function mediaMoveBlockers(targetFolder, { toAppFolder = false } = {}) {
+  if (toAppFolder) {
+    if (targetFolder) return [{ code: mediaRoot.PROBLEMS.RELATIVE }];
+  } else {
+    const problem = mediaRoot.folderProblem({
+      folder: targetFolder, userDataPath: USER_DATA_PATH, systemRoots: systemRootsForFolderCheck(),
+    });
+    if (problem) return [{ code: problem }];
+  }
+  // Moving OUT of a folder the rules refuse is no safer than moving into it: if that
+  // folder is the profile, "everything in it" is the settings and the sign-in.
+  if (managedRootInvalid()) return [{ code: 'source-invalid' }];
+  return [];
+}
+
+// THE point of no return. Everything before it can be undone by deleting the files we
+// made; after it the library names the new, verified copies.
+function commitManagedFolderMove(targetFolder, documents) {
+  config.library = documents.store.library;
+  config.libraryTrash = documents.store.trash;
+  config.monitors = documents.config.monitors;
+  config.lightWallpaper = documents.config.lightWallpaper;
+  config.darkWallpaper = documents.config.darkWallpaper;
+  config.slideshowCurrentPath = documents.config.slideshowCurrentPath;
+  if (typeof documents.config.lastSaveDir === 'string') config.lastSaveDir = documents.config.lastSaveDir;
+  config.mediaFolder = targetFolder;
+  if (documents.folderState) {
+    liveFolderState = documents.folderState;
+    invalidateHiddenPaths();
+    folderStateDirty = true;
+    flushLiveFolderState();
+  }
+  // From here on every caller asks for the new folder.
+  refreshManagedRoot();
+  // saveConfig() writes the pool atomically and only then the settings that name it
+  // (DATA-005). A refusal here has to stop the move while the originals are still
+  // there, so it throws rather than reporting success.
+  if (!saveConfig()) throw new Error('settings could not be written; the move was not committed');
+}
+
+/**
+ * Move everything Znada copied for itself into `targetFolder` (the folder the user
+ * picks; Znada uses its own subfolder inside it).
+ *
+ * Runs inside the library mutation queue, so an assignment, a removal or a download
+ * cannot interleave with the copy and the commit. Nothing else needs a lock of its own:
+ * that queue is already what every route which can move a photo between active and
+ * removed goes through.
+ */
+async function moveManagedFolder(targetFolder, {
+  onProgress = () => {}, shouldStop = () => false, toAppFolder = false,
+} = {}) {
+  if (mediaMoveRunning) return { status: 'busy', blockers: [] };
+  // A pool that could not be read or written is no basis for rewriting every path in
+  // it. The move waits for a restart rather than building on a degraded copy.
+  if (libraryUnsafeToWrite || configUnsafeToWrite) {
+    return { status: 'blocked', blockers: [{ code: 'library-degraded' }] };
+  }
+  const blockers = mediaMoveBlockers(targetFolder, { toAppFolder });
+  if (blockers.length) return { status: 'blocked', blockers };
+
+  const target = mediaRoot.resolveManagedRoot({ userDataPath: USER_DATA_PATH, mediaFolder: targetFolder });
+  const from = wallpapersDir();
+  // BUG-050. Where our folder is meant to live: with the place there and the folder not
+  // yet made, there is simply nothing to carry.
+  const fromAnchor = managedRoot.anchor;
+  mediaMoveRunning = true;
+  let report;
+  try {
+    report = await withLibraryLock(() => mediaMove.runMove({
+      from,
+      fromAnchor,
+      to: target.root,
+      anchor: target.anchor,
+      remap: () => profileMigrationMod.remapMediaRoot({
+        oldRoot: from, newRoot: target.root, ...mediaMoveDocuments(),
+      }),
+      commit: (documents) => commitManagedFolderMove(targetFolder, documents),
+      onProgress,
+      shouldStop,
+    }));
+  } finally {
+    mediaMoveRunning = false;
+  }
+  if (report.status === 'done') {
+    // What is on the desktop right now came from a file that no longer exists under
+    // that name. Applying again from the new paths keeps the next change honest.
+    try { await applyForTheme(null, true); } catch (err) { console.error('move: re-apply failed', err); }
+  }
+  return report;
+}
+
 
 // Stable, anonymised install id for Znada Cloud usage stats (anonymous users).
 // Generated once (32 hex chars), persisted in config; never contains personal data.
@@ -1813,13 +2009,12 @@ function referencedFiles() {
 // ПЕРЕМЕЩАЕТ в подпапку .trash (восстановимо). Раньше тут был fs.rmSync + запуск на каждом
 // СТАРТЕ → если keep-набор хоть на миг оказывался неполным (миграция/смена состояния), файлы
 // пользователя удалялись безвозвратно. Теперь: только move-в-корзину, и НЕ на старте.
-const TRASH_DIR = path.join(WALLPAPERS_DIR, '.trash');
 
 // True when the file is Znada's own copy (import / Online download) rather than
 // something of the user's that merely happens to be in the library. Only those go to
 // wallpapers/.trash, and only those need remembering to be restorable from it.
 function isOwnWallpaperCopy(p) {
-  return isDirectChildPath(p, WALLPAPERS_DIR);
+  return isDirectChildPath(p, wallpapersDir());
 }
 function gcWallpapers() {
   // Never sweep against a pool that failed to load: the keep-set would be wrong and
@@ -1830,18 +2025,26 @@ function gcWallpapers() {
   // own-copy that nothing else references look like an orphan. Measured, not assumed:
   // without this line the regression test's photo really is moved to .trash.
   if (libraryUnsafeToWrite || configUnsafeToWrite) return;
+  // DATA-006. Same rule, one level up: with the folder itself absent, readdir returns
+  // nothing and the sweep would be a no-op today — but the moment it came back as a
+  // freshly created empty folder, every own-copy would look like an orphan.
+  if (!managedRootReady()) return;
+  // And never while a move is under way: between the library write and the cleanup the
+  // old folder is full of files nothing references any more, which is exactly what this
+  // sweeps. It would move them into the old trash a moment before the move deletes them.
+  if (mediaMoveRunning) return;
   try {
     // Предохранитель: если пул пуст (переходное/битое состояние) — НЕ трогаем ничего,
     // иначе keep свёлся бы к одним глобалам и всё остальное уехало бы в корзину.
     if (!config.library || Object.keys(config.library).length === 0) return;
     const keep = referencedFiles();
-    fs.mkdirSync(TRASH_DIR, { recursive: true });
-    for (const f of fs.readdirSync(WALLPAPERS_DIR)) {
+    fs.mkdirSync(trashDirPath(), { recursive: true });
+    for (const f of fs.readdirSync(wallpapersDir())) {
       if (f === '.trash') continue;
-      const full = path.join(WALLPAPERS_DIR, f);
+      const full = path.join(wallpapersDir(), f);
       try { if (!fs.statSync(full).isFile()) continue; } catch { continue; }
       if (!keep.has(pathKey(full))) {
-        try { fs.renameSync(full, path.join(TRASH_DIR, f)); } catch { /* оставляем как есть, не удаляем */ }
+        try { fs.renameSync(full, path.join(trashDirPath(), f)); } catch { /* оставляем как есть, не удаляем */ }
       }
     }
   } catch {}
@@ -2616,6 +2819,8 @@ const IPC_MAIN_ONLY = [
   'library-assign-records', 'library-delete-forever', 'library-ensure-sizes',
   'library-hidden-list', 'library-materialize', 'library-path-sizes', 'library-recent',
   'library-refresh', 'library-remove-tag', 'library-restore', 'library-toggle-favorite',
+  'media-folder-move', 'media-folder-pick', 'media-folder-plan', 'media-folder-state',
+  'media-folder-stop',
   'next-change-get', 'next-wallpaper', 'open-releases', 'open-website', 'quit-app',
   'remove-slot-item', 'set-autostart', 'set-config', 'set-hotkey', 'set-hotkey-recording',
   'set-slideshow', 'set-slideshow-index', 'set-slideshow-to-path', 'set-start-minimized',
@@ -2660,10 +2865,47 @@ for (const channel of IPC_VIEWER_ONLY) IPC_ROLES[channel] = ['viewer'];
 for (const channel of IPC_DIAGNOSTICS_ONLY) IPC_ROLES[channel] = ['diagnostics'];
 for (const channel of IPC_DIAGNOSTICS_PROBE) IPC_ROLES[channel] = ['main', 'viewer'];
 
+// DATA-006. While a move is rewriting every path in the library, nothing may change the
+// library underneath it. The owner's decision (2026-09-09) is that the window explains
+// this and the MAIN PROCESS enforces it: a modal cannot stop the tray, a second window
+// or a hotkey, and a restart mid-move would drop a window-side guard entirely.
+//
+// Declared as data, at the same door as the authority table, so the refusal happens once
+// instead of in twenty handlers — and so a new editing channel is one line here.
+// test/media-move-freeze.test.js holds this list against the handlers that actually
+// touch the pool, so a channel added without a thought about the move is a red test.
+//
+// Only EDITS are frozen. Wallpaper changes, the tray, browsing and the viewer keep
+// working: they change nothing the move is rewriting, and stopping them would annoy the
+// user for no safety at all.
+const LIBRARY_EDIT_CHANNELS = new Set([
+  'add-slot-folder', 'add-slot-images', 'add-slot-paths', 'clear-slot', 'cloud-add',
+  'internet-add', 'library-add-folder', 'library-add-images', 'library-add-paths',
+  'library-add-tag', 'library-assign', 'library-assign-record', 'library-assign-records',
+  'library-delete-forever', 'library-ensure-sizes', 'library-materialize', 'library-refresh',
+  'library-remove-many',
+  'library-remove-tag', 'library-restore', 'library-toggle-favorite', 'library-undo-remove',
+  'remove-slot-item', 'set-slideshow-to-path',
+]);
+
+// The shape a refused edit comes back as. Callers read different fields — `added`,
+// `removed`, `restored` — and every one of them means "nothing happened" here.
+function libraryEditFrozenResult() {
+  return {
+    config, error: 'media_move_running',
+    added: 0, removed: 0, restored: 0, deleted: 0, hidden: 0, warning: null, undo: null,
+  };
+}
+
 const ipcAuthority = ipcAuthorityMod.create({ ipcMain: electronIpcMain, roles: IPC_ROLES });
 // Every `ipcMain.handle` below is that guarded door. The name is kept so the call sites read
 // as they always did — and so the contract test keeps finding them where it expects.
-const ipcMain = { handle: (channel, fn) => ipcAuthority.handle(channel, fn) };
+const ipcMain = {
+  handle: (channel, fn) => ipcAuthority.handle(channel, (event, ...args) => {
+    if (mediaMoveRunning && LIBRARY_EDIT_CHANNELS.has(channel)) return libraryEditFrozenResult();
+    return fn(event, ...args);
+  }),
+};
 
 // SEC-002. One place that says what a window of ours is allowed to become. A renderer that
 // can be navigated somewhere else, open a window of its own, or be granted a device
@@ -2950,19 +3192,29 @@ function loopbackHtml(okCode) {
 
 // Download a catalog image into the local Library — fetches a FRESH signed URL at
 // click time (never a stale catalog thumb URL), then reuses the existing safe import.
-ipcMain.handle('cloud-add', async (e, item) => {
+// PERF-010: the grid and the viewer adding the same catalogue picture at once share one
+// signed URL and one download.
+ipcMain.handle('cloud-add', (e, item) => addsInFlight.run(
+  item && item.id ? 'cloud:' + String(item.id) : '',
+  () => cloudAddOnce(item),
+));
+
+async function cloudAddOnce(item) {
   const client = cloudClient();
   if (!client) return { config, error: 'unavailable' };
   if (!item || !item.id) return { config, error: 'badItem' };
+  // DATA-006. Checked before the network call, not after: asking the catalogue for a
+  // signed URL we cannot write anywhere is a request spent for nothing.
+  if (!managedRootReady()) return { config, error: 'media_root_unavailable' };
   const session = cloudSessionSnapshot();
   let stagedArtifact = null;
   try {
     const dl = await client.getDownload(item.id, { token: session.token || undefined });
     if (!cloudSessionIsCurrent(session)) return { config, error: 'session_changed' };
     if (!dl.ok) { cloudHandleAuthError(dl, session); return { config, error: dl.error.code }; }
-    stagedArtifact = await stageDownloadImage(WALLPAPERS_DIR, dl.data.url);
+    stagedArtifact = await stageDownloadImage(wallpapersDir(), dl.data.url);
     if (!cloudSessionIsCurrent(session)) {
-      discardDownloadArtifact(stagedArtifact, WALLPAPERS_DIR);
+      discardDownloadArtifact(stagedArtifact, wallpapersDir());
       stagedArtifact = null;
       return { config, error: 'session_changed' };
     }
@@ -2971,11 +3223,11 @@ ipcMain.handle('cloud-add', async (e, item) => {
     // "delete from disk" may be aiming at right now.
     return await withLibraryLock(async () => {
       if (!cloudSessionIsCurrent(session)) {
-        discardDownloadArtifact(stagedArtifact, WALLPAPERS_DIR);
+        discardDownloadArtifact(stagedArtifact, wallpapersDir());
         stagedArtifact = null;
         return { config, error: 'session_changed' };
       }
-      const artifact = commitDownloadArtifact(stagedArtifact, WALLPAPERS_DIR);
+      const artifact = commitDownloadArtifact(stagedArtifact, wallpapersDir());
       stagedArtifact = null;
       const aspect = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
       const id = addToPool('image', artifact.path, { aspect });
@@ -2990,9 +3242,9 @@ ipcMain.handle('cloud-add', async (e, item) => {
     console.error('cloud add:', err);
     return { config, error: 'download' };
   } finally {
-    discardDownloadArtifact(stagedArtifact, WALLPAPERS_DIR);
+    discardDownloadArtifact(stagedArtifact, wallpapersDir());
   }
-});
+}
 
 // Current auth state (renderer-safe). If a stored token exists but the profile isn't
 // loaded yet, validate it against /v1/me (a dead/expired token is dropped silently).
@@ -3210,9 +3462,11 @@ const SETTINGS_FIELDS = {
   viewerBackground: asOneOf('ambient', 'charcoal', 'aurora', 'color'),
   onlineSort: asOneOf('date_added', 'toplist', 'random', 'views'),
   onlineSources: (value, current) => onlineSources.patch(value, current, providerRegistry.PROVIDERS) || REJECT_SETTING,
-  onlineSourcesExpanded: asBool,
   libraryTagsExpanded: asBool,
+  librarySidebarCollapsed: asBool,
   onlinePurity: asMergedObject({ sfw: asBool, sketchy: asBool, nsfw: asBool }),
+  // DESIGN-002. The whole list at once, validated by the module the window also uses.
+  onlineQuickFilters: (v) => (onlineQuickFilters.isValidPins(v) ? onlineQuickFilters.normalizePins(v) : REJECT_SETTING),
   // ONL-010. The target list is validated by the module that also matches against it —
   // a second spelling of "what a target is" is where the two would drift apart. A list
   // that normalizes to nothing is refused rather than silently stored as empty, which
@@ -3553,6 +3807,110 @@ ipcMain.handle('library-add-images', async () => {
 });
 
 // Добавить папку-источник в пул (живое сканирование, файлы не копируем).
+// ---------------------------------------------------------------------------
+// DATA-006 step 3: the window's side of the move
+// ---------------------------------------------------------------------------
+// The window asks four things — where are we now, where would you like to put it, what
+// would that involve, and go — plus a way to stop. Nothing here decides anything: the
+// answers come from the same functions the move itself uses, so the number the user is
+// shown and the number the move works from cannot drift apart.
+let mediaMoveStopRequested = false;
+
+function mediaFolderState() {
+  const status = managedRootStatus();
+  return {
+    folder: (config && config.mediaFolder) || '',
+    root: wallpapersDir(),
+    custom: managedRoot.custom,
+    state: status.state,
+    reason: status.reason,
+    moving: mediaMoveRunning,
+  };
+}
+
+function broadcastMediaMove(progress) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('media-move-progress', progress);
+}
+
+ipcMain.handle('media-folder-state', () => mediaFolderState());
+
+ipcMain.handle('media-folder-pick', async () => {
+  if (mediaMoveRunning) return { folder: '', error: 'media_move_running' };
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: tMain('mediaFolder.pickTitle'),
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths.length) return { folder: '', canceled: true };
+  return { folder: res.filePaths[0], canceled: false };
+});
+
+// The window names a target one of two ways: a folder the user picked (a string), or
+// `{ appFolder: true }` for the way back to the app's own folder. Anything else is a
+// folder that failed to normalize, and the rules then refuse it as not a folder at all.
+function mediaMoveTarget(raw) {
+  if (raw && typeof raw === 'object' && raw.appFolder === true) return { folder: '', toAppFolder: true };
+  return { folder: mediaRoot.normalizeFolder(typeof raw === 'string' ? raw : ''), toAppFolder: false };
+}
+
+// What the user is asked to agree to: how much, where to, and whether anything stands in
+// the way. Read-only: nothing moves before the person has seen this and agreed.
+ipcMain.handle('media-folder-plan', (e, rawTarget) => {
+  const { folder, toAppFolder } = mediaMoveTarget(rawTarget);
+  const blockers = mediaMoveBlockers(folder, { toAppFolder });
+  if (blockers.length) return { ok: false, blockers };
+  const target = mediaRoot.resolveManagedRoot({ userDataPath: USER_DATA_PATH, mediaFolder: folder });
+  const plan = mediaMove.planMove({
+    from: wallpapersDir(), fromAnchor: managedRoot.anchor, to: target.root, anchor: target.anchor,
+  });
+  return {
+    ok: !plan.blockers.length,
+    folder,
+    toAppFolder,
+    from: plan.from,
+    to: plan.to,
+    count: plan.count,
+    // The sweeper's own `.trash` travels too, so nothing restorable stays behind. It is
+    // not the library's trash, and a count many times the visible library needs saying so.
+    trashCount: plan.files.filter((file) => file.relative.split(/[\\/]/)[0] === '.trash').length,
+    bytes: plan.bytes,
+    free: plan.free,
+    blockers: plan.blockers,
+  };
+});
+
+ipcMain.handle('media-folder-move', async (e, rawTarget) => {
+  const { folder, toAppFolder } = mediaMoveTarget(rawTarget);
+  if (!folder && !toAppFolder) return { status: 'blocked', blockers: [{ code: mediaRoot.PROBLEMS.RELATIVE }] };
+  mediaMoveStopRequested = false;
+  const report = await moveManagedFolder(folder, {
+    toAppFolder,
+    onProgress: (progress) => broadcastMediaMove({ ...progress, folder }),
+    shouldStop: () => mediaMoveStopRequested,
+  });
+  // The window has the result as the answer to this call; the broadcast is for any other
+  // window that was watching the progress and has to stop watching.
+  broadcastMediaMove({ phase: 'finished', folder, status: report.status });
+  return {
+    status: report.status,
+    blockers: report.blockers || [],
+    copied: report.copied || 0,
+    alreadyThere: report.alreadyThere || 0,
+    removed: report.removed || 0,
+    bytes: (report.plan && report.plan.bytes) || 0,
+    // An error object does not survive IPC in a useful shape, and its message can carry
+    // a path. The window gets a short reason; the console keeps the detail.
+    error: report.error ? String(report.error.message || report.error).slice(0, 200) : '',
+    folder: mediaFolderState(),
+  };
+});
+
+ipcMain.handle('media-folder-stop', () => {
+  // Stopping is free before the library is written and impossible after it; the move
+  // itself decides which side of that line it is on.
+  mediaMoveStopRequested = true;
+  return { ok: true, moving: mediaMoveRunning };
+});
+
 ipcMain.handle('library-add-folder', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: tMain('library.addFolder'),
@@ -4111,8 +4469,11 @@ ipcMain.handle('library-hidden-list', () => {
 // user the photo is unrecoverable. Never overwrites an existing file.
 function restoreOwnCopyFile(item) {
   if (!item || !item.path || !isOwnWallpaperCopy(item.path)) return false;
+  // DATA-006. With the folder away, "the file is not at its path" says nothing about
+  // whether it still exists, and the trash to bring it back from is out of reach too.
+  if (!managedRootReady()) return false;
   if (fs.existsSync(item.path)) return true;
-  const trashed = path.join(TRASH_DIR, path.basename(item.path));
+  const trashed = path.join(trashDirPath(), path.basename(item.path));
   try {
     if (!fs.existsSync(trashed)) return false;
     fs.mkdirSync(path.dirname(item.path), { recursive: true });
@@ -4154,6 +4515,9 @@ ipcMain.handle('feature-flags', () => ({ physicalDelete: physicalDeleteEnabled }
 
 ipcMain.handle('library-delete-forever', async (e, rawPaths) => {
   if (!physicalDeleteEnabled) return { config, deleted: 0, error: 'disabled' };
+  // DATA-006. Whatever re-enables this later must not be able to erase files while the
+  // folder holding them is unreachable: "not there right now" is not "safe to delete".
+  if (!managedRootReady()) return { config, deleted: 0, error: 'media_root_unavailable' };
   const asked = (Array.isArray(rawPaths) ? rawPaths : []).filter((p) => typeof p === 'string' && p);
   if (!asked.length) return { config, deleted: 0, error: 'bad_request' };
 
@@ -4326,7 +4690,15 @@ ipcMain.handle('library-restore', async (e, rawPaths) => withLibraryLock(async (
   for (const entry of (config.libraryTrash || []).slice()) {
     if (!entry || !entry.item) continue;
     if (!wanted.has(pathKey(entry.item.path)) && !cameWithRestoredFolder(entry)) continue;
-    restoreOwnCopyFile(entry.item);
+    // Znada's own copy has to actually come back before its record does. Ignoring the
+    // answer here was a real gap (found reviewing DATA-006 step 1): with the folder
+    // away, `recordTargetLost` correctly says "cannot tell", so the record returned to
+    // the active pool while the file stayed unreachable in the trash. The undo path
+    // beside this one has always been strict; now both are.
+    if (isOwnWallpaperCopy(entry.item.path) && !restoreOwnCopyFile(entry.item)) {
+      console.error('restore: копия не восстановлена, запись корзины сохранена:', entry.item.path);
+      continue;
+    }
     if (recordTargetLost(entry.item.path)) continue;  // nothing to point the record at
     const activeItem = config.library[entry.item.id] || entry.item;
     markRecordRevived(activeItem);
@@ -4369,6 +4741,11 @@ ipcMain.handle('library-toggle-favorite', (e, id) => {
 // Refresh discovery metadata and drop missing standalone images. Folder sources are
 // never removed merely because a disk is currently offline or access is denied.
 ipcMain.handle('library-refresh', async () => {
+  // DATA-006. This drops every record whose file is gone. With the managed folder
+  // absent — an unplugged drive, a share that does not answer — that is EVERY own copy
+  // at once, and the honest answer to "is this file missing" is "cannot tell". The
+  // owner's rule for an absent disk is: nothing is cleaned up, nothing is marked gone.
+  if (!managedRootReady()) return { config, removed: 0, error: 'media_root_unavailable' };
   await refreshLiveFolders(null, true);
   liveFolderLastFullScanAt = Date.now();
   scheduleLiveFolderFullScan('hourly', LIVE_FOLDER_FULL_SCAN_MS);
@@ -4480,7 +4857,8 @@ let thumbnailAttempts = 0;
 function isAuthorizedMediaPath(p) {
   if (!itemDetails.isValidAbsolutePath(p)) return false;
   if (isAuthorizedItemPath(p)) return true;
-  if (itemDetails.isSameOrDescendant(p, WALLPAPERS_DIR)) return true;
+  // Not while the saved folder is one the rules refuse: that folder may be the profile.
+  if (!managedRootInvalid() && itemDetails.isSameOrDescendant(p, wallpapersDir())) return true;
   if (pathGrants.allows(p)) return true;
   noteMediaRefusal();
   return false;
@@ -4639,7 +5017,10 @@ function resolveCardPageUrl(descriptor) {
 // about to take responsibility for; an unmanaged one is a throwaway for export.
 async function ensureCardFile(descriptor, opts = {}) {
   const managed = !!opts.managed;
-  const dir = managed ? WALLPAPERS_DIR : CARD_EXPORT_DIR;
+  // DATA-006. Only the managed side depends on the chosen folder; an export still works
+  // while it is away, because it writes into the profile's own cache.
+  if (managed && !managedRootReady()) return { path: '', error: 'media_root_unavailable' };
+  const dir = managed ? wallpapersDir() : CARD_EXPORT_DIR;
 
   // Already ours and still on disk: nothing to fetch, whatever the card claims.
   const pooled = pooledImageFor(descriptor);
@@ -4668,10 +5049,7 @@ async function ensureCardFile(descriptor, opts = {}) {
 
     if (descriptor.kind === 'internet') {
       if (!usableInternetDownload(descriptor.item)) return { path: '', error: 'badItem' };
-      const stored = await downloadImageTo(dir, descriptor.item.full, {
-        headers: internetRequestHeaders(descriptor.item),
-        expectedFormat: descriptor.item.format,
-      });
+      const stored = await downloadImageTo(dir, descriptor.item.full, onlineOriginalOptions(descriptor.item));
       return { path: stored, error: null };
     }
 
@@ -5419,6 +5797,64 @@ function internetRequestHeaders(item) {
   return { 'User-Agent': INTERNET_USER_AGENT, ...((descriptor && descriptor.requestHeaders) || {}) };
 }
 
+/* ------------------------------------- PERF-010: the original main already has ---- */
+
+/*
+ * "Add to Library" used to download the original again although the viewer was showing
+ * it. Where the bytes already are depends on the site, and the same declaration that
+ * decides how the window loads the picture (`loadsDirectly`) decides it here:
+ *   - booru originals reach the window through main's streaming proxy, so they passed
+ *     through main; the proxy now keeps the last few complete ones (`recentOriginals`);
+ *   - Wallhaven the window loads itself, so the original is in Chromium's HTTP cache of
+ *     the same session, and main asks for it there with `force-cache`. Measured
+ *     2026-09-25: 4.5 MB in 7 ms, against 253 ms for a new download.
+ * A kept original is handed back as an ordinary Response, so the format check and the
+ * content-addressed write in stageDownloadImage are the same code as before.
+ */
+const recentOriginals = originalStoreMod.createOriginalStore();
+// The same picture added from the grid and from the viewer at once is downloaded once.
+const addsInFlight = originalStoreMod.createInFlight();
+// How long an add waits for an original the proxy is still fetching for the window
+// before it fetches for itself. The proxy gives the site the same time.
+const ORIGINAL_JOIN_WAIT_MS = 30000;
+
+function originalFetchFor(item) {
+  const descriptor = item ? providerRegistry.byId(item.provider) : null;
+  if (descriptor && descriptor.loadsDirectly) {
+    // A miss is not an error: force-cache then goes to the network the way the window does.
+    return (url, init) => session.defaultSession.fetch(url, { ...init, cache: 'force-cache' });
+  }
+  return async (url, init) => {
+    const kept = await recentOriginals.get(url, { waitMs: ORIGINAL_JOIN_WAIT_MS });
+    if (kept) {
+      return new Response(kept.bytes, { status: 200, headers: { 'Content-Type': kept.contentType } });
+    }
+    return fetch(url, init);
+  };
+}
+
+// How to download the original of an online card, from wherever main already has it.
+// The add and ensureCardFile (save as, copy, assign) take it the same way.
+function onlineOriginalOptions(item) {
+  return {
+    headers: internetRequestHeaders(item),
+    expectedFormat: item.format,
+    fetchImpl: originalFetchFor(item),
+  };
+}
+
+// Everything an add needs from the network, fetched together: the original and the
+// site's extra request for tags (ONL-012). The tags used to be asked only after the
+// download, with the library lock held across the request; now both run at once and
+// neither is inside the lock, since neither touches anything shared.
+async function fetchOnlineForAdd(item) {
+  const [stored, extra] = await Promise.all([
+    downloadWallpaperFromUrl(item.full, onlineOriginalOptions(item)),
+    enrichProviderItem(item),
+  ]);
+  return { stored, extra };
+}
+
 // Can adult content be reached at all in THIS build?
 //
 // This used to be the constant `true` with a comment reasoning about which site covers
@@ -5499,18 +5935,49 @@ function registerMediaProxy() {
      * Потолок проверяется ПО МЕРЕ чтения, а не после. В этом весь смысл потока: «после
      * загрузки» не наступает, пока файл не доехал, — а рвать соединение надо раньше.
      * Заголовку `content-length` доверять нельзя: его может не быть или он может лгать.
+     *
+     * PERF-010. Оригинал (и только он — не промежуточная ступень) заодно остаётся у главного
+     * процесса: «Додати» той же картинки возьмёт эти байты, а не скачает их второй раз.
+     * Сохраняется лишь ЦЕЛИКОМ дошедший ответ; оборванный, сбойный или перешедший потолок —
+     * `fail`, и ждущее добавление скачает само. Поэтому поток читается вручную: у него есть
+     * `cancel`, по которому видно, что окно бросило загрузку (ушло на другое фото).
      */
+    const keep = asked.field === 'full' ? recentOriginals.begin(asked.url) : null;
+    const kept = [];
     let seen = 0;
-    const capped = upstream.body.pipeThrough(new TransformStream({
-      transform(chunk, controller) {
+    const reader = upstream.body.getReader();
+    const capped = new ReadableStream({
+      async pull(controller) {
+        let step;
+        try {
+          step = await reader.read();
+        } catch (err) {
+          if (keep) keep.fail();
+          controller.error(err);
+          return;
+        }
+        if (step.done) {
+          if (keep) keep.finish(Buffer.concat(kept), mime);
+          controller.close();
+          return;
+        }
+        const chunk = step.value;
         seen += chunk.byteLength;
         if (mediaProxy.overLimit(seen, asked.limit)) {
+          if (keep) keep.fail();
+          reader.cancel().catch(() => {});
           controller.error(new Error('too large'));
           return;
         }
+        // A copy: what is enqueued belongs to the window's side from here on.
+        if (keep) kept.push(Buffer.from(chunk));
         controller.enqueue(chunk);
       },
-    }));
+      cancel(reason) {
+        if (keep) keep.fail();
+        return reader.cancel(reason);
+      },
+    });
 
     return new Response(capped, {
       status: 200,
@@ -5549,10 +6016,11 @@ ipcMain.handle('internet-add', async (e, item, query) => {
     // The download itself is outside the lock — it is slow and touches nothing shared.
     // Everything from "this file is now ours" onwards is inside it: a re-download lands
     // on the same content-addressed path a "delete from disk" may be aiming at.
-    const stored = await downloadWallpaperFromUrl(item.full, {
-      headers: internetRequestHeaders(item),
-      expectedFormat: item.format,
-    });
+    // PERF-010: the grid and the viewer adding this picture at once share one download.
+    const { stored, extra } = await addsInFlight.run(
+      'internet:' + String(item.full).trim(),
+      () => fetchOnlineForAdd(item),
+    );
     return await withLibraryLock(async () => {
       const width = Number(item.width); const height = Number(item.height);
       const aspect = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 0;
@@ -5569,10 +6037,9 @@ ipcMain.handle('internet-add', async (e, item, query) => {
           library.updateItem(config.library, id, { author: item.artist.trim().slice(0, 120) });
         }
         // Some sites hide part of the metadata behind a per-item endpoint. ONL-012: the
-        // extra request is a hook the site declares, asked here on the explicit download
-        // and never for a card in the feed. A site without one simply has nothing more
-        // to give, and nothing here needs to know which site that is.
-        const extra = await enrichProviderItem(item);
+        // extra request is a hook the site declares, asked on the explicit download
+        // (fetchOnlineForAdd) and never for a card in the feed. A site without one simply
+        // has nothing more to give, and nothing here needs to know which site that is.
         if (!it.author && extra.author) {
           library.updateItem(config.library, id, { author: extra.author });
         }
@@ -7046,6 +7513,7 @@ module.exports = {
     CONFIG_PATH,
     loadConfig,
     registerMediaProxy,
+    recentOriginals,
     getConfig: () => config,
     isUnsafeToWrite: () => libraryUnsafeToWrite,
     // SEC-002 slice 2: what the media guard let through, and the grant side of it.
@@ -7139,6 +7607,25 @@ module.exports = {
     checkLiveFolderReachability: () => checkLiveFolderReachability(),
     addToPool: (type, p, extra) => addToPool(type, p, extra),
     saveConfig: () => saveConfig(),
+    // DATA-006. Where this profile's own copies live RIGHT NOW, as main resolved it,
+    // plus the live state of that folder. A test that recomputed the path itself would
+    // prove its own arithmetic instead of main's.
+    managedRoot: () => ({
+      root: wallpapersDir(), trash: trashDirPath(), custom: managedRoot.custom,
+      parent: managedRoot.parent, anchor: managedRoot.anchor, ...managedRootStatus(),
+    }),
+    importWallpaper: (src) => importWallpaper(src),
+    // DATA-006 step 2. No window can start a move yet, and the part worth testing is
+    // exactly the part a window would not see: which documents are handed over, what a
+    // commit writes, and what the app believes afterwards.
+    moveManagedFolder: (folder, options) => moveManagedFolder(folder, options),
+    // DATA-006 step 3. The freeze is a property of the DOOR, not of twenty handlers, so
+    // a test can take this list and try every channel on it for real.
+    libraryEditChannels: () => [...LIBRARY_EDIT_CHANNELS],
+    mediaFolderState: () => mediaFolderState(),
+    // The sweeper runs on user actions rather than a channel, and its whole job is
+    // moving files — so the freeze in front of it has to be provable.
+    gcWallpapers: () => gcWallpapers(),
     // META-001. The IPC guard is exercised through the real handler (an untrusted
     // sender must be refused); this entry drives everything AFTER it, so the test sees
     // the actual order — fingerprint, journal, provider, merge, save — rather than the

@@ -63,6 +63,7 @@ const DUAL_MODE_FILES = [
   'src/next-change.js',
   'src/online-add.js',
   'src/online-sources.js',
+  'src/online-quick-filters.js',
   'src/online-identity.js',
   'src/media-proxy.js',
   'src/path-key.js',
@@ -76,8 +77,8 @@ const DUAL_MODE_FILES = [
 // name. Declared here so a MISSPELLED one is still reported - which is the whole point.
 const RENDERER_SHARED = [
   'AssignRows', 'AutoLoad', 'CardActions', 'CardDetails', 'CardInteraction', 'CardMenu', 'CardMetadata', 'ViewScroll',
-  'CardTransfer', 'DeferredRefresh', 'JustifiedLayout', 'NextChange', 'OnlineAdd',
-  'OnlineBrowse', 'OnlineSources', 'OnlineIdentity', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
+  'CardTransfer', 'DeferredRefresh', 'JustifiedLayout', 'MediaFolder', 'NextChange', 'OnlineAdd',
+  'OnlineBrowse', 'OnlineSources', 'OnlineQuickFilters', 'OnlineIdentity', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
   'VirtualWindow', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaMediaProxy', 'ZnadaPathKey',
 ].reduce((all, name) => Object.assign(all, { [name]: 'readonly' }), {});
 

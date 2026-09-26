@@ -168,8 +168,8 @@ function settingKeysUsedByRenderer() {
       singleWallpaper: true,
       viewerBackground: 'charcoal',
       onlineSort: 'toplist',
-      onlineSourcesExpanded: true,
       libraryTagsExpanded: true,
+      librarySidebarCollapsed: true,
     };
     for (const [key, value] of Object.entries(sent)) {
       await m.invoke('set-config', { [key]: value });
@@ -255,6 +255,18 @@ function settingKeysUsedByRenderer() {
     // Nothing above may have changed what was stored by the accepted call.
     live = m.__test.getConfig();
     assert.strictEqual(live.onlineSizeFilter.targets.length, 1);
+  });
+
+  await test('the quick filter row is stored as the list the window sends', async (dir) => {
+    seedProfile(dir);
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    await m.invoke('set-config', { onlineQuickFilters: ['sources', 'screen'] });
+    assert.deepStrictEqual(m.__test.getConfig().onlineQuickFilters, ['screen', 'sources'], 'stored in the fixed row order');
+    await m.invoke('set-config', { onlineQuickFilters: [] });
+    assert.deepStrictEqual(m.__test.getConfig().onlineQuickFilters, [], 'an emptied row is a choice, not a reset');
+    const onDisk = JSON.parse(fs.readFileSync(cfgFile(dir), 'utf8'));
+    assert.deepStrictEqual(onDisk.onlineQuickFilters, []);
   });
 
   await test('wallpaperSchedule keeps its normalisation and its autoSwitch mirror', async (dir) => {
@@ -366,6 +378,10 @@ function settingKeysUsedByRenderer() {
     // on the back of a key that is allowed.
     await assert.rejects(() => m.invoke('set-config', { triggers: { madeUp: true } }), REJECTED);
     await assert.rejects(() => m.invoke('set-config', { onlinePurity: { everything: true } }), REJECTED);
+    // DESIGN-002. The quick filter row names existing filters, once each.
+    await assert.rejects(() => m.invoke('set-config', { onlineQuickFilters: ['screen', 'screen'] }), REJECTED);
+    await assert.rejects(() => m.invoke('set-config', { onlineQuickFilters: ['video'] }), REJECTED);
+    await assert.rejects(() => m.invoke('set-config', { onlineQuickFilters: 'screen' }), REJECTED);
     await assert.rejects(
       () => m.invoke('set-config', { triggers: { stealth: { timeoutMin: 'soon' } } }),
       REJECTED,

@@ -30,6 +30,32 @@ function ownedRoot(profileRoot) {
   return path.win32.join(canonicalWindowsPath(profileRoot), OWNED_SUBDIR);
 }
 
+// DATA-006 reuses everything below for a different move: the profile stays where it is
+// and only the folder of Znada's own copies goes somewhere else. The arithmetic is the
+// same — every id is a hash of a path — so the two cases differ in one place only:
+// which folder is "ours" and which folder the result must no longer mention.
+//
+//   profile mode: the roots are profile folders, ours is <root>\wallpapers;
+//   media mode:   the roots ARE the folders of copies.
+function resolveRoots({ oldRoot, newRoot, mode }) {
+  const from = String(oldRoot || '');
+  const to = String(newRoot || '');
+  if (!from || !to) throw new Error('remap: нужны oldRoot и newRoot');
+  if (isUnderPath(to, from) || isUnderPath(from, to)) {
+    throw new Error('remap: один корень лежит внутри другого');
+  }
+  const media = mode === 'media';
+  return {
+    oldOwned: media ? canonicalWindowsPath(from) : ownedRoot(from),
+    newOwned: media ? canonicalWindowsPath(to) : ownedRoot(to),
+    // What must not survive anywhere in the result — in both modes, the root that is
+    // about to be emptied. In profile mode that is wider than "ours": a reference into
+    // the old profile that is NOT a wallpaper cannot travel with the move, and the old
+    // profile is deleted afterwards, so the remap refuses instead of guessing.
+    scanRoot: canonicalWindowsPath(from),
+  };
+}
+
 // `path-key` deliberately understands the extended Windows spellings, but
 // `path.win32.relative()` does not: relative(plain, "\\\\?\\C:\\...") produces a
 // path containing `?\\C:`. Strip only the two pass-through prefixes Windows uses,
@@ -42,21 +68,29 @@ function canonicalWindowsPath(value) {
   return path.win32.normalize(p);
 }
 
-// Путь принадлежит профилю? Сравнение через общий канонический ключ проекта,
+// Путь лежит в нашей папке? Сравнение через общий канонический ключ проекта,
 // а не строкой: иначе `C:\x\wallpapers2` посчитается лежащим в `C:\x\wallpapers`.
-function isOwned(p, oldRoot) {
+function ownsPath(p, oldOwned) {
   if (typeof p !== 'string' || !p) return false;
-  return isUnderPath(p, ownedRoot(oldRoot));
+  return isUnderPath(p, oldOwned);
+}
+
+function movedWithinOwned(p, oldOwned, newOwned) {
+  const source = canonicalWindowsPath(p);
+  const rel = path.win32.relative(oldOwned, source);
+  if (rel === '..' || rel.startsWith(`..${path.win32.sep}`) || path.win32.isAbsolute(rel)) {
+    throw new Error(`movedPath: путь не принадлежит нашей папке: ${p}`);
+  }
+  return path.win32.join(newOwned, rel);
+}
+
+// Прежние имена для вызовов, которые рассуждают в корнях ПРОФИЛЯ.
+function isOwned(p, oldRoot) {
+  return ownsPath(p, ownedRoot(oldRoot));
 }
 
 function movedPath(p, oldRoot, newRoot) {
-  const source = canonicalWindowsPath(p);
-  const oldOwned = ownedRoot(oldRoot);
-  const rel = path.win32.relative(oldOwned, source);
-  if (rel === '..' || rel.startsWith(`..${path.win32.sep}`) || path.win32.isAbsolute(rel)) {
-    throw new Error(`movedPath: путь не принадлежит профилю: ${p}`);
-  }
-  return path.win32.join(ownedRoot(newRoot), rel);
+  return movedWithinOwned(p, ownedRoot(oldRoot), ownedRoot(newRoot));
 }
 
 function isPlainObject(value) {
@@ -216,12 +250,7 @@ function validateSourceProfile({ config, store, folderState = null } = {}) {
  * в один, — это молчаливая потеря данных, а её нельзя допускать «на всякий случай».
  */
 function remapProfile(input) {
-  const oldRoot = String(input.oldRoot || '');
-  const newRoot = String(input.newRoot || '');
-  if (!oldRoot || !newRoot) throw new Error('remapProfile: нужны oldRoot и newRoot');
-  if (isUnderPath(newRoot, oldRoot) || isUnderPath(oldRoot, newRoot)) {
-    throw new Error('remapProfile: один профиль лежит внутри другого');
-  }
+  const roots = resolveRoots(input);
 
   validateSourceProfile(input);
 
@@ -241,12 +270,12 @@ function remapProfile(input) {
   const seenNewIds = new Map(); // новый id → старый, для поиска коллизий
 
   const move = (p) => {
-    if (!isOwned(p, oldRoot)) {
+    if (!ownsPath(p, roots.oldOwned)) {
       if (typeof p === 'string' && p) report.keptExternal++;
       return p;
     }
     report.movedPaths++;
-    return movedPath(p, oldRoot, newRoot);
+    return movedWithinOwned(p, roots.oldOwned, roots.newOwned);
   };
 
   // ---- пул -----------------------------------------------------------------
@@ -314,7 +343,9 @@ function remapProfile(input) {
   }
 
   // ---- прочие пути в настройках -------------------------------------------
-  for (const key of ['lightWallpaper', 'darkWallpaper']) {
+  // lastSaveDir тоже путь: если человек сохранял картинку внутрь нашей папки, запись
+  // про неё должна переехать, а не остаться ссылкой в опустевший корень.
+  for (const key of ['lightWallpaper', 'darkWallpaper', 'lastSaveDir']) {
     if (typeof config[key] === 'string' && config[key]) config[key] = move(config[key]);
   }
   for (const perTheme of Object.values(config.slideshowCurrentPath || {})) {
@@ -348,7 +379,7 @@ function remapProfile(input) {
   const leftovers = [];
   const scan = (value, where) => {
     if (typeof value === 'string') {
-      if (isUnderPath(value, oldRoot)) leftovers.push(`${where}: ${value}`);
+      if (isUnderPath(value, roots.scanRoot)) leftovers.push(`${where}: ${value}`);
       return;
     }
     if (Array.isArray(value)) return value.forEach((v, i) => scan(v, `${where}[${i}]`));
@@ -395,8 +426,17 @@ function remapProfile(input) {
   return { config, store, folderState, report };
 }
 
+/**
+ * DATA-006: тот же пересчёт, но переезжает ОДНА папка собственных копий, а профиль
+ * остаётся на месте. `oldRoot`/`newRoot` здесь — сами папки копий, а не профили.
+ */
+function remapMediaRoot(input) {
+  return remapProfile({ ...input, mode: 'media' });
+}
+
 module.exports = {
   remapProfile,
+  remapMediaRoot,
   validateSourceProfile,
   canonicalWindowsPath,
   isOwned,

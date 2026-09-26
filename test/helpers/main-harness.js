@@ -53,6 +53,7 @@ function makeElectronStub(userData, options = {}) {
     windows: [],
     trayTooltips: [],
     appUserModelIds: [],
+    sessionFetches: [],
   };
   const listeners = new Map();
   const on = (map) => (event, fn) => {
@@ -236,6 +237,17 @@ function makeElectronStub(userData, options = {}) {
         handle(scheme, handler) { this.handlers.set(scheme, handler); },
       },
       webContents: { getAllWebContents: () => [] },
+      // PERF-010. main asks Chromium's HTTP cache for a picture the window loaded itself.
+      // The stand-in has no cache: it records the request and hands it to whatever `fetch`
+      // the test installed, so a test that fakes the network keeps faking it.
+      session: {
+        defaultSession: {
+          fetch: (url, init) => {
+            calls.sessionFetches.push({ url: String(url), init: init || {} });
+            return globalThis.fetch(url, init);
+          },
+        },
+      },
     },
   };
 }

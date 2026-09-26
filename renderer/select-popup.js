@@ -254,7 +254,11 @@
     menu.style.visibility = 'hidden';
     menu.style.left = '0px';
     menu.style.top = '0px';
-    document.body.appendChild(menu);
+    // A <select> inside a popover (the online "Filters" menu) sits in the top layer. A
+    // list mounted on <body> would paint UNDER it, and a click on the list would count
+    // as a click outside that light-dismisses the popover. So the list joins its layer.
+    const layer = typeof select.closest === 'function' ? select.closest('[popover]') : null;
+    (layer || document.body).appendChild(menu);
 
     const anchor = select.getBoundingClientRect();
     const viewport = {

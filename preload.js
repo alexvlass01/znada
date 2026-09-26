@@ -79,6 +79,22 @@ contextBridge.exposeInMainWorld('api', {
   libraryRestore: (paths) => ipcRenderer.invoke('library-restore', paths),
   libraryDeleteForever: (paths) => ipcRenderer.invoke('library-delete-forever', paths),
   libraryRefresh: () => ipcRenderer.invoke('library-refresh'),
+
+  // DATA-006. The folder Znada keeps its own copies in, and moving everything into a
+  // new one. `plan` only counts and checks — nothing is written until `move`.
+  mediaFolderState: () => ipcRenderer.invoke('media-folder-state'),
+  mediaFolderPick: () => ipcRenderer.invoke('media-folder-pick'),
+  mediaFolderPlan: (folder) => ipcRenderer.invoke('media-folder-plan', folder),
+  mediaFolderMove: (folder) => ipcRenderer.invoke('media-folder-move', folder),
+  mediaFolderStop: () => ipcRenderer.invoke('media-folder-stop'),
+  // Returns a disposer: the move window is opened and closed repeatedly, and a listener
+  // left behind would report progress into a dialog that is no longer on screen.
+  onMediaMoveProgress: (cb) => {
+    const handler = (_e, progress) => cb(progress);
+    ipcRenderer.on('media-move-progress', handler);
+    return () => ipcRenderer.removeListener('media-move-progress', handler);
+  },
+
   libraryToggleFavorite: (id) => ipcRenderer.invoke('library-toggle-favorite', id),
   libraryAddTag: (id, tag) => ipcRenderer.invoke('library-add-tag', id, tag),
   libraryRemoveTag: (id, tag) => ipcRenderer.invoke('library-remove-tag', id, tag),
