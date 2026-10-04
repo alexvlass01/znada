@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme-banner.png" alt="Znada — anime wallpapers in one click, free for Windows" width="100%">
+  <img src="assets/readme-showcase.png?v=source-pixels" alt="Znada: home, online art search and wallpaper settings in light and dark themes" width="100%">
 </p>
 
 <p align="center">
