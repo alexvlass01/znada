@@ -1,4 +1,16 @@
-# Znada
+<p align="center">
+  <img src="assets/readme-banner.png" alt="Znada — anime wallpapers in one click, free for Windows" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/alexvlass01/znada/releases/latest/download/Znada-Setup.exe"><img src="https://img.shields.io/badge/%E2%86%93%20%20Download%20for%20Windows-3858F4?style=for-the-badge" alt="Download for Windows"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/alexvlass01/znada/releases/latest"><img src="https://img.shields.io/github/v/release/alexvlass01/znada?label=latest&amp;color=3858F4" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/platform-Windows-3858F4" alt="Platform: Windows">
+  <img src="https://img.shields.io/badge/languages-30-3858F4" alt="30 languages">
+</p>
 
 **Znada** is a wallpaper app for Windows. Find anime art and other wallpapers online,
 keep your favourites in a library, and choose what goes on each monitor.
