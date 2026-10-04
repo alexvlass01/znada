@@ -1,17 +1,21 @@
 # Znada
 
-**Znada** automatically changes your Windows desktop wallpaper when you switch between
-**light and dark mode** — a different wallpaper for day and night, and a separate one for
-each monitor. It lives quietly in the system tray and runs in the background. The interface
-is styled after GNOME's Adwaita, with light and dark themes.
+**Znada** is a wallpaper app for Windows. Find anime art and other wallpapers online,
+keep your favourites in a library, and choose what goes on each monitor.
+
+Search **Gelbooru, Danbooru and Wallhaven** from inside the app — including art of your
+favourite characters. You can also add your own pictures and folders, rotate a collection
+as a slideshow, and use different wallpapers for day and night.
 
 > **Windows only.**
 
 ## ⬇️ Download
 
-**[Download the latest version »](https://github.com/alexvlass01/znada/releases/latest)**
+**[Download Znada for Windows »](https://github.com/alexvlass01/znada/releases/latest/download/Znada-Setup.exe)**
 
-1. On the release page, download **`Znada-Setup.exe`**.
+[Release notes and other downloads](https://github.com/alexvlass01/znada/releases/latest)
+
+1. Download **`Znada-Setup.exe`** using the link above.
 2. Double-click it — Znada installs and opens automatically (no setup wizard, like Discord or VS Code).
 3. A short welcome screen helps you choose a language, turn on automatic switching and autostart, and create shortcuts.
 
@@ -21,15 +25,14 @@ That's it. The app keeps running in the **system tray** after you close the wind
 
 ## Features
 
-- 🌗 **Separate wallpapers for day and night** — one for the light theme, another for dark.
-- 🖥 **A different wallpaper per monitor**, with a visual monitor map.
-- ⚡ **Automatic** — the wallpaper changes the moment Windows switches theme.
+- 🌐 **Find art inside the app** — search Gelbooru, Danbooru and Wallhaven by tags, browse results, and download pictures to your library.
 - 📚 **Wallpaper library** — keep all your wallpapers in one place: mark favourites, add tags, and browse folders. Open a folder to see what's inside, step into sub-folders, and find your way back with breadcrumbs.
+- 🖥 **A different wallpaper per monitor**, with a visual monitor map.
+- 🌗 **Separate wallpapers for day and night** — one for the light theme, another for dark. Switch them automatically with the Windows theme.
 - 🗂 **Live folders** — connect a folder and Znada will pick up new wallpapers you add there.
 - 🔀 **Slideshow** — let a set of wallpapers rotate on a timer instead of showing just one picture.
-- 🌐 **Online wallpapers** — search by tags and download fresh wallpapers right inside the app.
 - 🖱 **Drag & drop** — drop an image straight onto the app to add it.
-- 🌓 **Can switch the Windows theme itself** on a schedule — by fixed time or by sunrise/sunset for your location. A built-in replacement for "Auto Dark Mode".
+- 🌓 **Scheduled light and dark mode** — Znada can switch the Windows theme itself at fixed times or at sunrise/sunset for your location.
 - ⌨️ **Global hotkey** — jump to the next wallpaper with a keyboard shortcut.
 - 🎮 **Game Mode** — pauses wallpaper and theme changes while you play games or use full-screen apps.
 - 🥷 **Quiet switching** — when a full-screen window is open, Znada waits and changes the wallpaper without interrupting you.
@@ -40,9 +43,13 @@ That's it. The app keeps running in the **system tray** after you close the wind
 
 ## How it works
 
-- Znada watches the Windows light/dark setting (*Settings → Personalization → Colors → Mode*) and reacts instantly.
+- Add your own pictures to the library, or open **Library → Online** to find art by tags.
+- Choose wallpapers in **Appearance**, or use a slideshow to rotate your collection.
+- For automatic day/night switching, Znada follows the Windows light/dark setting (*Settings → Personalization → Colors → Mode*) or uses its own schedule.
 - It sets a separate wallpaper on each monitor using built-in Windows features — no extra software or drivers.
 - Individual wallpapers you pick are copied into the app's own folder, so they don't disappear after an update or if you move the original. Connected live folders stay linked to their original location.
+
+**Desktop wallpapers are currently still images.** Animated pictures use a still frame on the desktop.
 
 ## Build from source (for developers)
 
