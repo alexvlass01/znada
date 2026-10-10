@@ -65,6 +65,17 @@ contextBridge.exposeInMainWorld('api', {
   libraryAddPaths: (paths) => ipcRenderer.invoke('library-add-paths', paths),
   // Records are { path, id? }: every card knows its path, only some have a pool id.
   libraryRemoveMany: (records, options) => ipcRenderer.invoke('library-remove-many', records, options),
+  libraryRemovalAnswer: (requestId, confirmed) => ipcRenderer.invoke('library-removal-answer', requestId, confirmed),
+  onLibraryRemovalQuestion: (cb) => {
+    const handler = (_event, question) => cb(question);
+    ipcRenderer.on('library-removal-question', handler);
+    return () => ipcRenderer.removeListener('library-removal-question', handler);
+  },
+  onLibraryRemovalQuestionClosed: (cb) => {
+    const handler = (_event, requestId) => cb(requestId);
+    ipcRenderer.on('library-removal-question-closed', handler);
+    return () => ipcRenderer.removeListener('library-removal-question-closed', handler);
+  },
   // The token binds this UI action to the exact removal that created its toast.
   // Without it, an old toast in the main window could undo a newer removal made in
   // the fullscreen viewer (main intentionally keeps only one removal snapshot).
@@ -146,6 +157,7 @@ contextBridge.exposeInMainWorld('api', {
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
   thumb: (p, w, h) => ipcRenderer.invoke('thumb', p, w, h),
   thumbInfo: (p, w, h, priority) => ipcRenderer.invoke('thumb-info', p, w, h, priority),
+  mediaMotion: (p) => ipcRenderer.invoke('media-motion', p),
   thumbAspects: (entries, w, h) => ipcRenderer.invoke('thumb-aspects', entries, w, h),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   createShortcuts: (which) => ipcRenderer.invoke('create-shortcuts', which),

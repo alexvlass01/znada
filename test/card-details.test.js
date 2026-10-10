@@ -107,6 +107,19 @@ ok('gelbooru: tags travel with the card', rowById(gel, 'tags').values.join(',') 
 // The feed's three-level bucket and a pool record's exact word are different scales,
 // and both have to end up as a label rather than as a raw token.
 ok('gelbooru: the middle purity bucket gets a label', rowById(gel, 'rating').valueKey === 'details.ratingSensitive');
+// BUG-035. A card the site says moves is an animation in the sheet too, in the chip's words;
+// the site gives no frame count, so none is claimed. The site's word alone is not enough:
+// the format of the bytes the card hands over has to be able to move.
+ok('gelbooru: a still card is an image', rowById(gel, 'type').valueKey === 'details.typeImage');
+ok('gelbooru: a moving card is an animation of its real format', (() => {
+  const moving = D.buildDetailsModel(CardActions.internetSubject({ ...gelCard, format: 'gif', animated: true }), { providerNames: NAMES });
+  const type = rowById(moving, 'type');
+  return type.kind === 'motion' && type.format === 'gif' && !('frames' in type);
+})());
+ok('gelbooru: the site\'s word does not make a JPEG move', (() => {
+  const jpg = D.buildDetailsModel(CardActions.internetSubject({ ...gelCard, animated: true }), { providerNames: NAMES });
+  return rowById(jpg, 'type').valueKey === 'details.typeImage';
+})());
 
 const sameSource = D.buildDetailsModel(
   CardActions.internetSubject({ ...gelCard, source: gelCard.page }), { providerNames: NAMES },

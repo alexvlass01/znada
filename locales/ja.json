@@ -199,6 +199,10 @@
     "removeConfirmCancel": "キャンセル",
     "searchPh": "検索",
     "tagSearchPh": "タグを検索",
+    "searchOrTagPh": "名前または別のタグ…",
+    "clearSearch": "検索とタグをクリア",
+    "tagSuggestions": "タグの候補",
+    "tagToggleHint": "Ctrl+クリック: 選択に追加、または解除",
     "noTagsFound": "一致するタグが見つかりません",
     "clearTagFilter": "タグの絞り込みを解除",
     "collapseSidebar": "サイドバーを折りたたむ",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "一部の項目を削除できませんでした",
     "selectionActions": "選択した壁紙の操作",
     "clearSelection": "選択を解除",
-    "itemsCount": "項目数: {n}"
+    "itemsCount": "項目数: {n}",
+    "sortLabel": "並べ替え",
+    "photosCount": "{n} 枚"
   },
   "details": {
     "type": "ファイル形式",
@@ -292,6 +298,11 @@
     "ratingSensitive": "センシティブ",
     "ratingQuestionable": "グレーゾーン",
     "ratingExplicit": "成人向け"
+  },
+  "motion": {
+    "format": "アニメーション · {format}",
+    "formatFrames": "アニメーション · {format} · {frames} フレーム",
+    "desktopFirstFrame": "現在、デスクトップには最初のフレームが表示されます。"
   },
   "viewer": {
     "title": "ビューアー",
@@ -334,6 +345,9 @@
     "loading": "読み込み中…",
     "noResults": "画像が見つかりませんでした",
     "sourcesFailed": "次のソースから結果を読み込めませんでした: {sources}。もう一度検索するか、別のソースを選んでください。",
+    "sourcePaused": "このサイトはこれほど多くのタグで検索できません",
+    "sourcePausedSort": "この並べ替えでは、このサイトはこれほど多くのタグで検索できません",
+    "allSourcesPaused": "選択したサイトはこれほど多くのタグで検索できません。タグを減らすか、別のサイトをオンにしてください。",
     "error": "エラー: {e}",
     "add": "ライブラリに追加",
     "adding": "追加中…",

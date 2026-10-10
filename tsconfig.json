@@ -46,6 +46,10 @@
     "src/path-grants.js",
     "src/media-type.js",
     "src/fingerprint.js",
-    "src/request-budget.js"
+    "src/request-budget.js",
+    "src/image-motion.js",
+    "src/wallpaper-host.js",
+    "src/child-runner.js",
+    "src/latest-intent.js"
   ]
 }

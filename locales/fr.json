@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Annuler",
     "searchPh": "Rechercher",
     "tagSearchPh": "Rechercher des étiquettes",
+    "searchOrTagPh": "Nom ou autre tag…",
+    "clearSearch": "Effacer la recherche et les tags",
+    "tagSuggestions": "Suggestions de tags",
+    "tagToggleHint": "Ctrl+clic : ajouter à la sélection ou retirer",
     "noTagsFound": "Aucune étiquette correspondante",
     "clearTagFilter": "Retirer le filtre par tag",
     "collapseSidebar": "Réduire le panneau",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Impossible de retirer certains éléments",
     "selectionActions": "Actions des fonds d'écran sélectionnés",
     "clearSelection": "Effacer la sélection",
-    "itemsCount": "{n} élément(s)"
+    "itemsCount": "{n} élément(s)",
+    "sortLabel": "Tri",
+    "photosCount": "{n} photos"
   },
   "details": {
     "type": "Type",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensible",
     "ratingQuestionable": "Douteux",
     "ratingExplicit": "Explicite"
+  },
+  "motion": {
+    "format": "Animation · {format}",
+    "formatFrames": "Animation · {format} · {frames} images",
+    "desktopFirstFrame": "Pour l’instant, le bureau affiche la première image."
   },
   "viewer": {
     "title": "Aperçu",
@@ -334,6 +345,9 @@
     "loading": "Chargement…",
     "noResults": "Aucun résultat trouvé",
     "sourcesFailed": "Impossible de charger les résultats de : {sources}. Relancez la recherche ou choisissez une autre source.",
+    "sourcePaused": "Ce site ne peut pas chercher autant de tags",
+    "sourcePausedSort": "Avec ce tri, ce site ne peut pas chercher autant de tags",
+    "allSourcesPaused": "Les sites choisis ne peuvent pas chercher autant de tags. Retirez un tag ou activez un autre site.",
     "error": "Erreur : {e}",
     "add": "Ajouter à la bibliothèque",
     "adding": "Ajout…",

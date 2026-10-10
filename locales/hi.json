@@ -199,6 +199,10 @@
     "removeConfirmCancel": "रद्द करें",
     "searchPh": "खोजें",
     "tagSearchPh": "टैग खोजें",
+    "searchOrTagPh": "नाम या एक और टैग…",
+    "clearSearch": "खोज और टैग साफ़ करें",
+    "tagSuggestions": "टैग सुझाव",
+    "tagToggleHint": "Ctrl+क्लिक: चयन में जोड़ें या हटाएं",
     "noTagsFound": "कोई मिलान टैग नहीं मिला",
     "clearTagFilter": "टैग फ़िल्टर हटाएं",
     "collapseSidebar": "साइडबार छोटा करें",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "चयनित आइटम को नहीं हटाया जा सका",
     "selectionActions": "चयनित वॉलपेपर क्रियाएं",
     "clearSelection": "चयन साफ़ करें",
-    "itemsCount": "आइटम: {n}"
+    "itemsCount": "आइटम: {n}",
+    "sortLabel": "क्रम",
+    "photosCount": "{n} फ़ोटो"
   },
   "details": {
     "type": "प्रकार",
@@ -292,6 +298,11 @@
     "ratingSensitive": "संवेदनशील",
     "ratingQuestionable": "संदेहास्पद",
     "ratingExplicit": "वयस्क"
+  },
+  "motion": {
+    "format": "एनिमेशन · {format}",
+    "formatFrames": "एनिमेशन · {format} · {frames} फ़्रेम",
+    "desktopFirstFrame": "फ़िलहाल डेस्कटॉप पर पहला फ़्रेम दिखेगा।"
   },
   "viewer": {
     "title": "पूर्वावलोकन",
@@ -334,6 +345,9 @@
     "loading": "लोड हो रहा है…",
     "noResults": "कुछ नहीं मिला",
     "sourcesFailed": "इन स्रोतों से परिणाम लोड नहीं हो सके: {sources}। फिर से खोजें या कोई दूसरा स्रोत चुनें।",
+    "sourcePaused": "यह साइट इतने टैग से खोज नहीं कर सकती",
+    "sourcePausedSort": "इस क्रम के साथ यह साइट इतने टैग से खोज नहीं कर सकती",
+    "allSourcesPaused": "चुनी गई साइटें इतने टैग से खोज नहीं कर सकतीं। एक टैग हटाएं या कोई दूसरी साइट चालू करें।",
     "error": "त्रुटि: {e}",
     "add": "लाइब्रेरी में जोड़ें",
     "adding": "जोड़ा जा रहा है…",

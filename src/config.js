@@ -71,7 +71,8 @@ const DEFAULT_CONFIG = {
   // намеренно: он лежит в config.json у пользователей. Either or both may be on; default keeps the
   // previous behavior (external only) so existing users see no change.
   onlineSources: { lumina: false, internet: true },
-  // The local tag section remembers its open state independently of navigation width.
+  // Legacy tag-panel state: retained when loading existing profiles for compatibility.
+  // LIB-014 stage 2 no longer reads it, and SETTINGS_FIELDS disallows new UI writes.
   libraryTagsExpanded: false,
   // Library navigation may collapse to icons without hiding its sections.
   librarySidebarCollapsed: false,

@@ -110,7 +110,8 @@ assert.ok(
   viewerJs.includes("undo.textContent = t('library.undo')")
     && viewerJs.includes('window.viewerApi.libraryUndoRemove(token)')
     && viewerJs.includes("t(restored ? 'library.undoneToast' : 'library.undoFailed')")
-    && viewerJs.includes('}, 6000);')
+    // LIB-021: transient through the shared 8-second Undo clock.
+    && viewerJs.includes('UndoDeadline.attach(notice.element, document, {')
     && viewerCss.includes('.media-notice-action'),
   'the viewer removal notice must expose a visible, transient, honestly reported Undo action',
 );

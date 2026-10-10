@@ -4,11 +4,14 @@
 // builds public API URLs and maps posts to Znada's shared online-card shape.
 
 const media = require('./media-type');
+const motion = require('./image-motion');
 // The SEARCH BOX module, not another site — see the note in src/gelbooru.js.
 const searchBox = require('./tag-suggest');
 
 const API_BASE = 'https://danbooru.donmai.us/posts.json';
 const POST_BASE = 'https://danbooru.donmai.us/posts';
+// ONL-004. The post list carries no total; the site counts separately, for the same tags.
+const COUNT_BASE = 'https://danbooru.donmai.us/counts/posts.json';
 // The most this API will send in one page.
 const MAX_PAGE_SIZE = 100;
 
@@ -31,16 +34,6 @@ function fileTypeTag(formats) {
     out.push(name);
   }
   return out.length ? `filetype:${out.join(',')}` : '';
-}
-
-function queryTags(query, max = 2) {
-  const raw = String(query || '').trim();
-  if (!raw) return [];
-  const parts = raw.includes(',') ? raw.split(',') : raw.split(/\s+/);
-  return parts
-    .map((tag) => tag.trim().toLowerCase().replace(/\s+/g, '_'))
-    .filter((tag) => tag && !tag.includes(':'))
-    .slice(0, max);
 }
 
 function ratingTag({ sfw = true, sketchy = true, nsfw = false } = {}) {
@@ -80,8 +73,11 @@ function sizeTags(hints) {
   return out;
 }
 
-function buildSearchTags(opts = {}) {
-  const typed = queryTags(opts.q);
+// LIB-014 stage 3. Every word this site is sent, in order: the typed tags (all of them —
+// none is dropped any more), then what the app adds itself. The address and the ONL-004 count
+// are built from this list, and so is the check whether the query fits the site at all.
+function buildSearchTerms(opts = {}) {
+  const typed = searchBox.siteTags(opts.q);
   return [
     ...typed,
     ratingTag(opts.purity),
@@ -89,7 +85,32 @@ function buildSearchTags(opts = {}) {
     ...sizeTags(opts.sizeHints),
     'mpixels:1..',
     orderTag(opts.sorting, { hasQuery: typed.length > 0 }),
-  ].filter(Boolean).join(' ');
+  ].filter(Boolean);
+}
+
+function buildSearchTags(opts = {}) {
+  return buildSearchTerms(opts).join(' ');
+}
+
+// What the shared handler hands `search`, read the one way both `search` and `searchTerms` read
+// it — so the words that are counted are the words that are sent.
+function requestFrom(params) {
+  const o = params || {};
+  return {
+    q: o.q || '',
+    purity: o.purity,
+    sorting: o.sort || o.sorting || 'date_added',
+    page: Number(o.page) > 0 ? Number(o.page) : 1,
+    limit: Number(o.limit) > 0 ? Number(o.limit) : MAX_PAGE_SIZE,
+    formats: o.formats,
+    sizeHints: o.sizeHints,
+  };
+}
+
+// LIB-014 stage 3. The words a search with these parameters would send, for the limit check
+// in src/online-tag-limit.js (see `tagLimit` below).
+function searchTerms(params) {
+  return buildSearchTerms(requestFrom(params));
 }
 
 function buildSearchUrl(opts = {}) {
@@ -101,6 +122,18 @@ function buildSearchUrl(opts = {}) {
     limit: String(limit),
   });
   return `${API_BASE}?${p.toString()}`;
+}
+
+// ONL-004. Counted with exactly the tags the page was asked with — rating, format and size
+// bounds included — so the number describes this question, not the bare tag.
+function buildCountUrl(opts = {}) {
+  return `${COUNT_BASE}?${new URLSearchParams({ tags: buildSearchTags(opts) }).toString()}`;
+}
+
+// null when the answer is not a count: a missing number must not read as "0 found".
+function parseCount(json) {
+  const n = json && json.counts && json.counts.posts;
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
 }
 
 function compactTags(post, max = 24) {
@@ -163,6 +196,9 @@ function mapItem(post) {
     fileSize: Number(post.file_size) || 0,
     fileType: `image/${format === 'jpg' ? 'jpeg' : format}`,
     format,
+    // BUG-035. The site's own word that this file moves, for the card's chip. Danbooru
+    // keeps "animated" among its META tags, which the card's tag list leaves out.
+    animated: motion.taggedAsMoving([post.tag_string, post.tag_string_meta].join(' '), format),
     purity: purityName(post.rating),
     category: 'anime',
     source: post.source || '',
@@ -289,6 +325,17 @@ const PROVIDER = Object.freeze({
       // already comes back narrowed by shape.
       maxPageSize: 200,
     }),
+    // LIB-014 stage 3. How many words one search may carry, counted the way this site
+    // counts them. Measured 2026-10-02 without an account: two words, and a third is
+    // refused with 422 "You cannot search for more than 2 tags at a time." The sort is a
+    // word (`order:` — so two typed tags fit only with "Latest"), so are `-tag` and
+    // `~tag`; the six below are not counted. A query that does not fit is not sent here at
+    // all (src/online-tag-limit.js), and the site shows as paused rather than failed.
+    tagLimit: Object.freeze({
+      max: 2,
+      free: Object.freeze(['rating', 'filetype', 'mpixels', 'width', 'height', 'ratio']),
+      measured: '2026-10-02',
+    }),
   }),
   requestHeaders: Object.freeze({}),
   loadsDirectly: false,
@@ -297,21 +344,20 @@ const PROVIDER = Object.freeze({
 // ONL-012. See the note in src/wallhaven.js. This site has no `enrich`: its search
 // response already carries grouped tags and the artist.
 async function search(params, ctx) {
-  const o = params || {};
-  const page = Number(o.page) > 0 ? Number(o.page) : 1;
-  const limit = Number(o.limit) > 0 ? Number(o.limit) : MAX_PAGE_SIZE;
-  const url = buildSearchUrl({
-    q: o.q || '',
-    purity: o.purity,
-    sorting: o.sort || o.sorting || 'date_added',
-    page,
-    limit,
-    formats: o.formats,
-    sizeHints: o.sizeHints,
-  });
-  const res = await ctx.fetchJson(url, { timeoutMs: 15000 });
+  const request = requestFrom(params);
+  const { page, limit } = request;
+  // ONL-004. Counted once, with the first page of a typed search — the number does not
+  // change while the user scrolls, and the front page is not a question to count.
+  const wantsCount = page === 1 && searchBox.siteTags(request.q).length > 0;
+  const [res, counted] = await Promise.all([
+    ctx.fetchJson(buildSearchUrl(request), { timeoutMs: 15000 }),
+    wantsCount ? ctx.fetchJson(buildCountUrl(request), { timeoutMs: 10000 }) : null,
+  ]);
   if (res.error) return { error: res.error };
-  return parseSearch(res.json, { page, limit });
+  const parsed = parseSearch(res.json, { page, limit });
+  // A failed count leaves the search intact; the site is simply not named in the line.
+  if (counted && !counted.error) parsed.meta.total = parseCount(counted.json);
+  return parsed;
 }
 
 // ONL-013 (META-001). Which post IS this exact file. See the note in src/gelbooru.js for
@@ -386,12 +432,16 @@ module.exports = {
   API_BASE,
   POST_BASE,
   RATING_NAMES,
-  queryTags,
   ratingTag,
   orderTag,
   fileTypeTag,
+  buildSearchTerms,
   buildSearchTags,
+  searchTerms,
   buildSearchUrl,
+  COUNT_BASE,
+  buildCountUrl,
+  parseCount,
   compactTags,
   purityName,
   mapItem,

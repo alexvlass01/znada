@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Zrušiť",
     "searchPh": "Hľadať",
     "tagSearchPh": "Hľadať značky",
+    "searchOrTagPh": "Názov alebo ďalšia značka…",
+    "clearSearch": "Vymazať hľadanie a značky",
+    "tagSuggestions": "Návrhy značiek",
+    "tagToggleHint": "Ctrl+klik: pridať k výberu alebo odobrať",
     "noTagsFound": "Nenašli sa žiadne zodpovedajúce značky",
     "clearTagFilter": "Zrušiť filter značky",
     "collapseSidebar": "Zbaliť panel",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Vybrané položky sa nepodarilo odstrániť",
     "selectionActions": "Akcie vybraných tapiet",
     "clearSelection": "Zrušiť výber",
-    "itemsCount": "Položky: {n}"
+    "itemsCount": "Položky: {n}",
+    "sortLabel": "Zoradenie",
+    "photosCount": "Fotky: {n}"
   },
   "details": {
     "type": "Typ",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Citlivé",
     "ratingQuestionable": "Pochybné",
     "ratingExplicit": "Explicitné"
+  },
+  "motion": {
+    "format": "Animácia · {format}",
+    "formatFrames": "Animácia · {format} · počet snímok: {frames}",
+    "desktopFirstFrame": "Zatiaľ sa na ploche zobrazí prvá snímka."
   },
   "viewer": {
     "title": "Náhľad",
@@ -334,6 +345,9 @@
     "loading": "Načítava sa…",
     "noResults": "Nič sa nenašlo",
     "sourcesFailed": "Výsledky zo zdrojov sa nepodarilo načítať: {sources}. Skúste hľadať znova alebo vyberte iný zdroj.",
+    "sourcePaused": "Táto stránka nevie hľadať podľa toľkých značiek",
+    "sourcePausedSort": "S týmto zoradením táto stránka nevie hľadať podľa toľkých značiek",
+    "allSourcesPaused": "Vybrané stránky nevedia hľadať podľa toľkých značiek. Odoberte značku alebo zapnite inú stránku.",
     "error": "Chyba: {e}",
     "add": "Pridať do knižnice",
     "adding": "Pridáva sa…",

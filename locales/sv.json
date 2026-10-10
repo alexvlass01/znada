@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Avbryt",
     "searchPh": "Sök",
     "tagSearchPh": "Sök efter taggar",
+    "searchOrTagPh": "Namn eller en tagg till…",
+    "clearSearch": "Rensa sökning och taggar",
+    "tagSuggestions": "Taggförslag",
+    "tagToggleHint": "Ctrl+klick: lägg till i urvalet eller ta bort",
     "noTagsFound": "Inga matchande taggar hittades",
     "clearTagFilter": "Rensa taggfilter",
     "collapseSidebar": "Fäll ihop sidopanelen",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Kunde inte ta bort de valda objekten",
     "selectionActions": "Åtgärder för valda bakgrunder",
     "clearSelection": "Rensa markering",
-    "itemsCount": "Objekt: {n}"
+    "itemsCount": "Objekt: {n}",
+    "sortLabel": "Sortering",
+    "photosCount": "{n} foton"
   },
   "details": {
     "type": "Typ",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Känslig",
     "ratingQuestionable": "Tveksam",
     "ratingExplicit": "Barnförbjudet"
+  },
+  "motion": {
+    "format": "Animation · {format}",
+    "formatFrames": "Animation · {format} · {frames} bildrutor",
+    "desktopFirstFrame": "Tills vidare visar skrivbordet den första bildrutan."
   },
   "viewer": {
     "title": "Förhandsgranska",
@@ -334,6 +345,9 @@
     "loading": "Laddar…",
     "noResults": "Inget hittades",
     "sourcesFailed": "Det gick inte att läsa in resultat från: {sources}. Sök igen eller välj en annan källa.",
+    "sourcePaused": "Den här webbplatsen kan inte söka på så många taggar",
+    "sourcePausedSort": "Med den här sorteringen kan webbplatsen inte söka på så många taggar",
+    "allSourcesPaused": "De valda webbplatserna kan inte söka på så många taggar. Ta bort en tagg eller slå på en annan webbplats.",
     "error": "Fel: {e}",
     "add": "Lägg till i bibliotek",
     "adding": "Lägger till…",

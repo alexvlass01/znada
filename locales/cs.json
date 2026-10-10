@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Zrušit",
     "searchPh": "Hledat",
     "tagSearchPh": "Hledat štítky",
+    "searchOrTagPh": "Název nebo další štítek…",
+    "clearSearch": "Vymazat hledání a štítky",
+    "tagSuggestions": "Návrhy štítků",
+    "tagToggleHint": "Ctrl+klik: přidat k výběru nebo odebrat",
     "noTagsFound": "Nenalezeny žádné odpovídající štítky",
     "clearTagFilter": "Zrušit filtr štítku",
     "collapseSidebar": "Sbalit panel",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Nepodařilo se odebrat vybrané položky",
     "selectionActions": "Akce vybraných tapet",
     "clearSelection": "Zrušit výběr",
-    "itemsCount": "Položky: {n}"
+    "itemsCount": "Položky: {n}",
+    "sortLabel": "Řazení",
+    "photosCount": "Fotky: {n}"
   },
   "details": {
     "type": "Typ",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Citlivé",
     "ratingQuestionable": "Pochybné",
     "ratingExplicit": "Explicitní"
+  },
+  "motion": {
+    "format": "Animace · {format}",
+    "formatFrames": "Animace · {format} · počet snímků: {frames}",
+    "desktopFirstFrame": "Zatím se na ploše zobrazí první snímek."
   },
   "viewer": {
     "title": "Náhled",
@@ -334,6 +345,9 @@
     "loading": "Načítání…",
     "noResults": "Nebylo nic nalezeno",
     "sourcesFailed": "Nepodařilo se načíst výsledky ze zdrojů: {sources}. Zkuste hledat znovu nebo zvolte jiný zdroj.",
+    "sourcePaused": "Tento web neumí hledat podle tolika štítků",
+    "sourcePausedSort": "S tímto řazením tento web neumí hledat podle tolika štítků",
+    "allSourcesPaused": "Vybrané weby neumí hledat podle tolika štítků. Odeberte štítek nebo zapněte jiný web.",
     "error": "Chyba: {e}",
     "add": "Přidat do knihovny",
     "adding": "Přidávání…",

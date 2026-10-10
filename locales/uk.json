@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Скасувати",
     "searchPh": "Пошук",
     "tagSearchPh": "Пошук тегів",
+    "searchOrTagPh": "Назва або ще тег…",
+    "clearSearch": "Очистити пошук і теги",
+    "tagSuggestions": "Підказки тегів",
+    "tagToggleHint": "Ctrl+клік — додати до вибраних або прибрати",
     "noTagsFound": "Відповідних тегів не знайдено",
     "clearTagFilter": "Зняти фільтр за тегом",
     "collapseSidebar": "Згорнути панель",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Не вдалося прибрати вибрані елементи",
     "selectionActions": "Дії з вибраними шпалерами",
     "clearSelection": "Зняти виділення",
-    "itemsCount": "Елементів: {n}"
+    "itemsCount": "Елементів: {n}",
+    "sortLabel": "Сортування",
+    "photosCount": "{n} фото"
   },
   "details": {
     "type": "Тип",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Чутливе",
     "ratingQuestionable": "Сумнівне",
     "ratingExplicit": "Відверте"
+  },
+  "motion": {
+    "format": "Анімація · {format}",
+    "formatFrames": "Анімація · {format} · кадрів: {frames}",
+    "desktopFirstFrame": "Поки що на робочому столі буде перший кадр."
   },
   "viewer": {
     "title": "Перегляд",
@@ -334,6 +345,9 @@
     "loading": "Завантаження…",
     "noResults": "Нічого не знайдено",
     "sourcesFailed": "Не вдалося завантажити результати: {sources}. Повторіть пошук або виберіть інше джерело.",
+    "sourcePaused": "Стільки тегів цей сайт не розуміє",
+    "sourcePausedSort": "З цим сортуванням стільки тегів цей сайт не розуміє",
+    "allSourcesPaused": "Вибрані сайти не розуміють стільки тегів. Приберіть тег або увімкніть інший сайт.",
     "error": "Помилка: {e}",
     "add": "Додати до бібліотеки",
     "adding": "Додається…",

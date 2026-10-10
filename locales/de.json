@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Abbrechen",
     "searchPh": "Suchen",
     "tagSearchPh": "Tags suchen",
+    "searchOrTagPh": "Name oder weiterer Tag…",
+    "clearSearch": "Suche und Tags leeren",
+    "tagSuggestions": "Tag-Vorschläge",
+    "tagToggleHint": "Strg+Klick: zur Auswahl hinzufügen oder entfernen",
     "noTagsFound": "Keine passenden Tags gefunden",
     "clearTagFilter": "Tag-Filter aufheben",
     "collapseSidebar": "Seitenleiste einklappen",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Die ausgewählten Elemente konnten nicht entfernt werden",
     "selectionActions": "Aktionen für ausgewählte Hintergrundbilder",
     "clearSelection": "Auswahl aufheben",
-    "itemsCount": "Elemente: {n}"
+    "itemsCount": "Elemente: {n}",
+    "sortLabel": "Sortierung",
+    "photosCount": "{n} Fotos"
   },
   "details": {
     "type": "Typ",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensibel",
     "ratingQuestionable": "Fraglich",
     "ratingExplicit": "Explizit"
+  },
+  "motion": {
+    "format": "Animation · {format}",
+    "formatFrames": "Animation · {format} · {frames} Bilder",
+    "desktopFirstFrame": "Auf dem Desktop ist vorerst das erste Bild zu sehen."
   },
   "viewer": {
     "title": "Vorschau",
@@ -334,6 +345,9 @@
     "loading": "Wird geladen…",
     "noResults": "Nichts gefunden",
     "sourcesFailed": "Ergebnisse von {sources} konnten nicht geladen werden. Suche wiederholen oder eine andere Quelle wählen.",
+    "sourcePaused": "So viele Tags kann diese Seite nicht suchen",
+    "sourcePausedSort": "Mit dieser Sortierung kann diese Seite nicht so viele Tags suchen",
+    "allSourcesPaused": "Die ausgewählten Seiten können nicht so viele Tags suchen. Einen Tag entfernen oder eine andere Seite einschalten.",
     "error": "Fehler: {e}",
     "add": "Zur Bibliothek hinzufügen",
     "adding": "Wird hinzugefügt…",

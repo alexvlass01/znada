@@ -366,6 +366,39 @@ body {
   opacity: 0.58;
 }
 
+/* LIB-021: the Undo deadline line (renderer/undo-deadline.js), the same shape as in
+   styles.css, in this notice's button colour. */
+.media-notice:has(.undo-deadline) {
+  overflow: hidden;
+}
+
+.undo-deadline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: #62a0ea;
+  transform-origin: left center;
+  pointer-events: none;
+  animation: undo-deadline-shrink var(--undo-deadline-ms, 8000ms) linear forwards;
+}
+
+[data-paused="true"] > .undo-deadline {
+  animation-play-state: paused;
+}
+
+@keyframes undo-deadline-shrink {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .undo-deadline {
+    animation: none;
+  }
+}
+
 @keyframes media-notice-in {
   from { opacity: 0; transform: translate(-50%, 6px); }
   to { opacity: 1; transform: translate(-50%, 0); }
@@ -602,3 +635,26 @@ body {
 }
 
 .media-viewer .lib-popup-btn .theme-ic { width: 14px; height: 14px; }
+
+/* BUG-035 — the first-frame line under the chooser, for a picture that moves. It fills
+   the chooser without widening it (see the same rule in styles.css). */
+.media-viewer .lib-popup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 0;
+  min-width: 100%;
+  padding: 4px 8px 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.66);
+  text-wrap: pretty;
+}
+
+.media-viewer .lib-popup-note svg {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  color: #62a0ea;
+}

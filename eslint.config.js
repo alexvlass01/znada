@@ -59,6 +59,8 @@ const NODE_FILES = [
 // documents which modules are dual-mode, and a new module that starts reaching for
 // `window` without being added here gets told so - which is information, not noise.
 const DUAL_MODE_FILES = [
+  'src/tag-suggest.js',
+  'src/library-search.js',
   'src/hotkey.js',
   'src/next-change.js',
   'src/online-add.js',
@@ -76,9 +78,11 @@ const DUAL_MODE_FILES = [
 // actually wired: index.html loads them with <script> tags and they find one another by
 // name. Declared here so a MISSPELLED one is still reported - which is the whole point.
 const RENDERER_SHARED = [
+  'TagSuggest', 'LibrarySearch',
+  'LibraryRemovalDialog', 'UndoDeadline',
   'AssignRows', 'AutoLoad', 'CardActions', 'CardDetails', 'CardInteraction', 'CardMenu', 'CardMetadata', 'ViewScroll',
   'CardTransfer', 'DeferredRefresh', 'JustifiedLayout', 'MediaFolder', 'NextChange', 'OnlineAdd',
-  'OnlineBrowse', 'OnlineSources', 'OnlineQuickFilters', 'OnlineIdentity', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
+  'OnlineBrowse', 'OnlineFound', 'OnlineSources','OnlineQuickFilters', 'OnlineIdentity', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
   'VirtualWindow', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaMediaProxy', 'ZnadaPathKey',
 ].reduce((all, name) => Object.assign(all, { [name]: 'readonly' }), {});
 

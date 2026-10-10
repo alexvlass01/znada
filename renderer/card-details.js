@@ -26,6 +26,7 @@
   if (root) root.CardDetails = api;
 }(typeof window !== 'undefined' ? window : globalThis, function cardDetailsFactory() {
   const FOLDER = 'folder';
+  const MOVING_FORMATS = new Set(['gif', 'png', 'webp']);
 
   function str(value) {
     return typeof value === 'string' ? value : '';
@@ -159,7 +160,12 @@
     if (providerName) {
       rows.push({ id: 'site', labelKey: 'details.site', kind: 'text', value: providerName });
     }
-    rows.push({ id: 'type', labelKey: 'details.type', kind: 'i18n', valueKey: 'details.typeImage' });
+    // BUG-035. A card whose site says the file moves is an animation, in the words of the
+    // card's chip. The site gives no frame count, so none is claimed.
+    const format = str(card.format).toLowerCase();
+    rows.push(card.animated === true && MOVING_FORMATS.has(format)
+      ? { id: 'type', labelKey: 'details.type', kind: 'motion', format }
+      : { id: 'type', labelKey: 'details.type', kind: 'i18n', valueKey: 'details.typeImage' });
     const resolution = resolutionText(card.width, card.height);
     if (resolution) {
       rows.push({ id: 'resolution', labelKey: 'details.resolution', kind: 'text', value: resolution });

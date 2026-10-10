@@ -89,7 +89,10 @@ function answerFor(target, n) {
 }
 
 const wh = (urls) => urls.filter((u) => u.includes('wallhaven.cc'));
-const booru = (urls) => urls.filter((u) => u.includes('gelbooru.com') || u.includes('danbooru.donmai.us'));
+// Page requests only. ONL-004 adds one count request to Danbooru's first page of a typed
+// search; it is not a page and is checked in test/online-found.test.js.
+const booru = (urls) => urls.filter((u) => (u.includes('gelbooru.com') || u.includes('danbooru.donmai.us'))
+  && !u.includes('/counts/'));
 
 // Which page of the group's site was asked for, as a 1-based number whichever site it is.
 // The two name it differently — gelbooru `pid`, counted from zero; danbooru `page`,
@@ -171,8 +174,6 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
       )));
 
     ok('every card that came back is in the feed', res.items.length === 12);
-    ok('and they are not served as two blocks of one site',
-      new Set(res.items.slice(0, 6).map((i) => i.provider)).size > 1);
 
     // The feed is shuffled, and that is checked exactly rather than statistically: with
     // the generator pinned, the same four answers must always come out in the same order,
@@ -191,6 +192,10 @@ function setup(label, configPatch = {}, { firstSiteUsable = true } = {}) {
     };
     const first = await pinnedRun();
     const again = await pinnedRun();
+    // A valid random shuffle can group one site's cards. Check this fixture's mixing
+    // only with the pinned generator, so a lucky grouping cannot fail the suite.
+    ok('the pinned feed is not served as two blocks of one site',
+      new Set(first.items.slice(0, 6).map((i) => i.provider)).size > 1);
     ok('a pinned generator produces the same feed twice',
       again.items.map((i) => i.id).join(',') === first.items.map((i) => i.id).join(','));
     const roundRobin = first.items.map((i) => i.provider).every((p, i, all) => i === 0 || p !== all[i - 1]);

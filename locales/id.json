@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Batal",
     "searchPh": "Cari",
     "tagSearchPh": "Cari label",
+    "searchOrTagPh": "Nama atau label lain…",
+    "clearSearch": "Hapus pencarian dan label",
+    "tagSuggestions": "Saran label",
+    "tagToggleHint": "Ctrl+klik: tambahkan ke pilihan atau hapus",
     "noTagsFound": "Tidak ada label yang cocok",
     "clearTagFilter": "Hapus filter label",
     "collapseSidebar": "Ciutkan bilah samping",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Tidak dapat menghapus item yang dipilih",
     "selectionActions": "Tindakan wallpaper yang dipilih",
     "clearSelection": "Hapus pilihan",
-    "itemsCount": "Item: {n}"
+    "itemsCount": "Item: {n}",
+    "sortLabel": "Urutan",
+    "photosCount": "{n} foto"
   },
   "details": {
     "type": "Jenis",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensitif",
     "ratingQuestionable": "Dipertanyakan",
     "ratingExplicit": "Dewasa"
+  },
+  "motion": {
+    "format": "Animasi · {format}",
+    "formatFrames": "Animasi · {format} · {frames} bingkai",
+    "desktopFirstFrame": "Untuk saat ini, desktop menampilkan bingkai pertama."
   },
   "viewer": {
     "title": "Pratinjau",
@@ -334,6 +345,9 @@
     "loading": "Memuat…",
     "noResults": "Tidak ada yang ditemukan",
     "sourcesFailed": "Tidak dapat memuat hasil dari: {sources}. Cari lagi, atau pilih sumber lain.",
+    "sourcePaused": "Situs ini tidak bisa mencari dengan label sebanyak ini",
+    "sourcePausedSort": "Dengan urutan ini, situs ini tidak bisa mencari dengan label sebanyak ini",
+    "allSourcesPaused": "Situs yang dipilih tidak bisa mencari dengan label sebanyak ini. Hapus satu label atau aktifkan situs lain.",
     "error": "Kesalahan: {e}",
     "add": "Tambahkan ke pustaka",
     "adding": "Menambahkan…",

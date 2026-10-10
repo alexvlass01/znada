@@ -224,6 +224,7 @@ console.log('\nLIB-009: вытеснение из корзины доходит 
           appendChild(child) { child.parent = this; this.children.push(child); return child; },
           remove() { if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this); },
           addEventListener() {},
+          removeEventListener() {},
           classes() { return this.className.split(/\s+/).filter(Boolean); },
         };
         nodes.push(node);
@@ -237,13 +238,16 @@ console.log('\nLIB-009: вытеснение из корзины доходит 
         $: (selector) => (selector === '#viewerRoot' ? root : null),
         setTimeout: (fn, ms) => { timers.push(ms); return timers.length; },
         clearTimeout: () => {},
+        // LIB-021: the Undo notice keeps its time through this module.
+        UndoDeadline: require('../renderer/undo-deadline'),
+        performance: { now: () => 0 },
       };
       vm.createContext(ctx);
       const viewerSrc = fs.readFileSync(path.join(H.ROOT, 'renderer', 'viewer.js'), 'utf8').split('\r\n').join('\n');
       const state = viewerSrc.match(/const VIEWER_NOTICE = \{[^}]*\};/);
       assert.ok(state, 'VIEWER_NOTICE должна оставаться общим состоянием уведомлений');
       vm.runInContext(state[0].replace('const ', 'var '), ctx);
-      for (const name of ['dismissViewerNotice', 'createViewerNotice', 'showViewerMessage',
+      for (const name of ['stopViewerNoticeClock', 'dismissViewerNotice', 'createViewerNotice', 'showViewerMessage',
         'removalNoticeText', 'showRemovalUndo', 'showRemovalResult']) {
         vm.runInContext(grab('renderer/viewer.js', name), ctx);
       }
@@ -275,6 +279,13 @@ console.log('\nLIB-009: вытеснение из корзины доходит 
       const v = mount('ru');
       v.ctx.showRemovalResult({}, {}, { undo: { token: 'tok' }, evicted: 0 });
       assert.ok(!v.notice().classes().includes('media-notice-wrap'), 'короткое уведомление стало переносимым');
+    });
+
+    ok('просмотрщик: «Отменить» висит 8 с (LIB-021)', () => {
+      const v = mount('ru');
+      v.ctx.showRemovalResult({}, {}, { undo: { token: 'tok' }, evicted: 0 });
+      assert.deepStrictEqual(v.timers, [8000], 'срок «Отменить» не 8 секунд');
+      assert.ok(v.notice().children.some((c) => c.className === 'undo-deadline'), 'нет линии срока');
     });
 
     ok('просмотрщик: без «Отменить» предупреждение тоже переносится и висит 6 с', () => {

@@ -4,6 +4,7 @@
 // this module only builds API URLs and maps posts to Znada's online-card shape.
 
 const media = require('./media-type');
+const motion = require('./image-motion');
 // The SEARCH BOX module, not another site: it owns how a typed tag is spelled
 // (lowercase, underscores) and how the token under the caret is found and replaced.
 const searchBox = require('./tag-suggest');
@@ -14,16 +15,6 @@ const POST_BASE = 'https://gelbooru.com/index.php?page=post&s=view&id=';
 // handler's own front-page size is its decision, not this file's.
 const MAX_PAGE_SIZE = 100;
 const RATINGS = ['general', 'sensitive', 'questionable', 'explicit'];
-
-function queryTags(query, max = 2) {
-  const raw = String(query || '').trim();
-  if (!raw) return [];
-  const parts = raw.includes(',') ? raw.split(',') : raw.split(/\s+/);
-  return parts
-    .map((tag) => tag.trim().toLowerCase().replace(/\s+/g, '_'))
-    .filter((tag) => tag && !tag.includes(':'))
-    .slice(0, max);
-}
 
 function selectedRatings({ sfw = true, sketchy = true, nsfw = false } = {}) {
   const selected = [];
@@ -53,8 +44,8 @@ function orderTag(sort) {
 // came back empty. So the shape is left to our own check and only the floor is asked for
 // here. A narrowing, never the decision.
 //
-// Written here rather than passed through `q`: `queryTags` deliberately throws away
-// anything containing a colon, so that a person typing "rating:explicit" into the search
+// Written here rather than passed through `q`: the search box's `siteTags` deliberately throws
+// away search metatags, so that a person typing "rating:explicit" into the search
 // box cannot walk around their own content setting. That guard stays; this is the app
 // speaking, not the user.
 function sizeTags(hints) {
@@ -67,9 +58,19 @@ function sizeTags(hints) {
   return out;
 }
 
+// ONL-004. Videos are never shown (not a wallpaper format), so they are not asked for either.
+// Without this the site's count included them: live 2026-09-27, beatrice_(re:zero) — 2103
+// posts, 124 of them video, 1979 cards; with `-video` the site itself answers 1979. Pages also
+// come back full instead of with holes. This site has no filetype: term; `video` is its tag
+// for webm/mp4 posts.
+const NOT_VIDEO_TAG = '-video';
+
+// LIB-014 stage 3: every typed tag goes out. This used to keep the first two and drop the
+// rest without a word, so a three-tag search showed pictures without the third.
 function buildSearchTags(opts = {}) {
   return [
-    ...queryTags(opts.q),
+    ...searchBox.siteTags(opts.q),
+    NOT_VIDEO_TAG,
     ...ratingTags(opts.purity),
     ...sizeTags(opts.sizeHints),
     orderTag(opts.sorting),
@@ -151,6 +152,9 @@ function mapItem(post) {
     fileSize: 0,
     fileType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
     format: media.normalizeFormat(ext),
+    // BUG-035. The site's own word that this file moves, for the card's chip. Read from
+    // the full tag list: the card keeps only the first 24 tags.
+    animated: motion.taggedAsMoving(post.tags, media.normalizeFormat(ext)),
     purity: purityName(post.rating),
     category: 'anime',
     source: post.source || '',
@@ -444,6 +448,11 @@ const PROVIDER = Object.freeze({
       // this site cannot narrow by shape and most of a normal page is thrown away here.
       maxPageSize: 100,
     }),
+    // LIB-014 stage 3. Declared as "no limit", not left out — an omission would read as
+    // "nobody has looked". Measured 2026-10-02 with the build key: 24 words answered,
+    // 19 of them real tags plus everything this file adds itself (`-video`, the rating,
+    // the size floor and the sort). Re-measure if the key or the route changes.
+    tagLimit: null,
   }),
   // The image hosts refuse a request that does not say it came from the site.
   requestHeaders: Object.freeze({ Referer: 'https://gelbooru.com/' }),
@@ -670,7 +679,6 @@ module.exports = {
   resetState,
   API_BASE,
   POST_BASE,
-  queryTags,
   selectedRatings,
   ratingTags,
   orderTag,

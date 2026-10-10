@@ -663,11 +663,18 @@ function syncAddAction(entry, add) {
 // separate document, so it needs its own small, transient notice rather than trying
 // to reach into the main window's DOM. Only one notice is live at a time because main
 // intentionally keeps only the latest removal snapshot.
-const VIEWER_NOTICE = { element: null, timer: null };
+// `deadline` is the clock of an Undo notice (LIB-021); a plain notice uses `timer`.
+const VIEWER_NOTICE = { element: null, timer: null, deadline: null };
 
-function dismissViewerNotice() {
+function stopViewerNoticeClock() {
   clearTimeout(VIEWER_NOTICE.timer);
   VIEWER_NOTICE.timer = null;
+  if (VIEWER_NOTICE.deadline) VIEWER_NOTICE.deadline.cancel();
+  VIEWER_NOTICE.deadline = null;
+}
+
+function dismissViewerNotice() {
+  stopViewerNoticeClock();
   const element = VIEWER_NOTICE.element;
   VIEWER_NOTICE.element = null;
   if (element) element.remove();
@@ -698,7 +705,7 @@ function finishViewerNotice(notice, message, delay = 2400) {
   notice.text = document.createElement('span');
   notice.text.textContent = message;
   notice.element.appendChild(notice.text);
-  clearTimeout(VIEWER_NOTICE.timer);
+  stopViewerNoticeClock();
   VIEWER_NOTICE.timer = setTimeout(() => {
     if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
   }, delay);
@@ -776,8 +783,7 @@ function showRemovalUndo(entry, pooled, token, evicted) {
   undo.addEventListener('click', async () => {
     if (undo.disabled) return;
     undo.disabled = true;
-    clearTimeout(VIEWER_NOTICE.timer);
-    VIEWER_NOTICE.timer = null;
+    stopViewerNoticeClock();
 
     const currentAdd = currentEntry() === entry
       ? $('#viewerActions [data-action="add"]')
@@ -795,9 +801,17 @@ function showRemovalUndo(entry, pooled, token, evicted) {
     syncCurrentAddAction(entry);
     finishViewerNotice(notice, t(restored ? 'library.undoneToast' : 'library.undoFailed'), 3000);
   });
-  VIEWER_NOTICE.timer = setTimeout(() => {
-    if (VIEWER_NOTICE.element === notice.element) dismissViewerNotice();
-  }, 6000);
+  // LIB-021: 8 seconds with a line the cursor or focus pauses (renderer/undo-deadline.js).
+  VIEWER_NOTICE.deadline = UndoDeadline.attach(notice.element, document, {
+    onExpire: () => {
+      if (VIEWER_NOTICE.element !== notice.element) return;
+      VIEWER_NOTICE.deadline = null;
+      dismissViewerNotice();
+    },
+    now: () => performance.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (id) => clearTimeout(id),
+  });
 }
 
 // What the viewer says after a removal. Without Undo the notice would vanish after the
@@ -827,12 +841,28 @@ function viewerSubjectFor(entry) {
   return CardActions.localSubject({ path: entry.path, type: 'image', id: pooled ? pooled.id : '' }, pooled);
 }
 
+// BUG-035. The viewer is where a moving picture is actually seen moving, so it is where
+// "the desktop will show its first frame" matters most. A site card says so itself; a
+// file on the disk is asked of main, which reads it under the same authority that gives
+// this window the file's address.
+async function viewerEntryMoves(entry) {
+  if (!entry || !window.MotionBadge) return false;
+  if (entry.kind === 'internet') return !!window.MotionBadge.fromSite(entry.raw);
+  if ((entry.kind === 'library' || entry.kind === 'path') && entry.path) {
+    try { return !!window.MotionBadge.fromLocal(await window.viewerApi.mediaMotion(entry.path)); }
+    catch { return false; }
+  }
+  return false;
+}
+
 // The monitor chooser, drawn by the same module the main window uses. Its data comes
 // from main because this window holds no config of its own.
 async function openViewerAssign(entry, descriptor, point) {
-  let targets;
-  try { targets = await window.viewerApi.cardAssignTargets(); }
-  catch { targets = null; }
+  // Asked side by side, so the chooser opens no later than it did before.
+  const [targets, moving] = await Promise.all([
+    Promise.resolve().then(() => window.viewerApi.cardAssignTargets()).catch(() => null),
+    viewerEntryMoves(entry),
+  ]);
   const root = $('#viewerRoot');
   if (!root) return;
   closeViewerPopup();
@@ -888,6 +918,7 @@ async function openViewerAssign(entry, descriptor, point) {
       showViewerMessage(t(res && res.ok !== false ? 'library.assignedToast' : 'library.assignMissingToast'));
     },
   });
+  if (moving) window.MotionBadge.appendFirstFrameNote(pop, t);
 
   root.appendChild(pop);
   const spot = CardMenu.placeAt(

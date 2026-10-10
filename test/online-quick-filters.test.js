@@ -191,7 +191,8 @@ function button(quick, width) {
   assert.strictEqual(visible(), 'screen,purity,sources');
 
   // The one menu: a second button while it is open switches it in place.
-  const popover = { open: false, dataset: { scope: 'all' }, matches: () => popover.open };
+  // addEventListener: ONL-004 reads the Sources counts when the menu opens (test/online-found.test.js).
+  const popover = { open: false, dataset: { scope: 'all' }, matches: () => popover.open, addEventListener() {} };
   let placed = null;
   const invokers = ['purity', 'sources', 'all'].map((scope) => ({ dataset: { scope }, listeners: {},
     addEventListener(name, fn) { this.listeners[name] = fn; } }));

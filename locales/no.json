@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Avbryt",
     "searchPh": "Søk",
     "tagSearchPh": "Søk etter merker",
+    "searchOrTagPh": "Navn eller enda et merke…",
+    "clearSearch": "Tøm søk og merker",
+    "tagSuggestions": "Forslag til merker",
+    "tagToggleHint": "Ctrl+klikk: legg til i utvalget eller fjern",
     "noTagsFound": "Ingen matchende merker funnet",
     "clearTagFilter": "Fjern merkefilter",
     "collapseSidebar": "Skjul sidepanelet",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Kunne ikke fjerne de valgte elementene",
     "selectionActions": "Handlinger for valgte bakgrunner",
     "clearSelection": "Fjern valg",
-    "itemsCount": "Elementer: {n}"
+    "itemsCount": "Elementer: {n}",
+    "sortLabel": "Sortering",
+    "photosCount": "{n} bilder"
   },
   "details": {
     "type": "Type",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensitiv",
     "ratingQuestionable": "Tilsynelatende",
     "ratingExplicit": "Eksplisitt"
+  },
+  "motion": {
+    "format": "Animasjon · {format}",
+    "formatFrames": "Animasjon · {format} · {frames} bilder",
+    "desktopFirstFrame": "Foreløpig viser skrivebordet det første bildet."
   },
   "viewer": {
     "title": "Forhåndsvisning",
@@ -334,6 +345,9 @@
     "loading": "Laster…",
     "noResults": "Ingenting funnet",
     "sourcesFailed": "Kunne ikke laste inn resultater fra: {sources}. Søk på nytt, eller velg en annen kilde.",
+    "sourcePaused": "Dette nettstedet kan ikke søke på så mange merker",
+    "sourcePausedSort": "Med denne sorteringen kan dette nettstedet ikke søke på så mange merker",
+    "allSourcesPaused": "De valgte nettstedene kan ikke søke på så mange merker. Fjern et merke eller slå på et annet nettsted.",
     "error": "Feil: {e}",
     "add": "Legg til i bibliotek",
     "adding": "Legger til…",

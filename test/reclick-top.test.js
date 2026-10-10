@@ -55,7 +55,8 @@ const ctx = {
   showPage: (name) => calls.showPage.push(name),
   selectLibrarySection: (filter) => calls.selectLibrarySection.push(filter),
   setLibraryTag: (tag) => calls.setLibraryTag.push(tag),
-  LIB: { filter: 'all', folderPath: null, q: '', sort: 'name', tag: '' },
+  LibrarySearch: require('../src/library-search'),
+  LIB: { filter: 'all', folderPath: null, q: '', sort: 'name', tags: [] },
   ONLINE: { view: 'search', entries: [] },
 };
 vm.createContext(ctx);
@@ -110,12 +111,12 @@ ok('a restore still in flight is dropped, or it would pull the list back down',
 
 // --- Library sections -----------------------------------------------------------
 reset({ filter: 'all', top: 2000 });
-Object.assign(ctx.LIB, { folderPath: 'C:/photos/trip', q: 'sea', sort: 'added', tag: 'beach' });
+Object.assign(ctx.LIB, { folderPath: 'C:/photos/trip', q: 'sea', sort: 'added', tags: ['beach'] });
 ctx.openLibrarySectionOrTop('all');
 ok('the open section pressed again goes to the top and keeps the folder, search, sort and tag',
   page.scrollTop === 0 && calls.selectLibrarySection.length === 0
-  && ctx.LIB.folderPath === 'C:/photos/trip' && ctx.LIB.q === 'sea' && ctx.LIB.sort === 'added' && ctx.LIB.tag === 'beach');
-Object.assign(ctx.LIB, { folderPath: null, q: '', sort: 'name', tag: '' });
+  && ctx.LIB.folderPath === 'C:/photos/trip' && ctx.LIB.q === 'sea' && ctx.LIB.sort === 'added' && ctx.LIB.tags.join(',') === 'beach');
+Object.assign(ctx.LIB, { folderPath: null, q: '', sort: 'name', tags: [] });
 
 reset({ filter: 'online', top: 2000 });
 ctx.ONLINE.entries = [{ key: 'a' }, { key: 'b' }];
@@ -138,23 +139,23 @@ ctx.openLibrarySectionOrTop('folder');
 ok('another section opens as before', calls.selectLibrarySection.join() === 'folder' && page.scrollTop === 2000);
 
 reset({ filter: 'all', top: 2000 });
-ctx.LIB.tag = 'beach';
+ctx.LIB.tags = ['beach'];
 ctx.openLibraryTagOrTop('beach');
 ok('the lit tag pressed again goes to the top and stays chosen',
-  page.scrollTop === 0 && calls.setLibraryTag.length === 0 && ctx.LIB.tag === 'beach');
+  page.scrollTop === 0 && calls.setLibraryTag.length === 0 && ctx.LIB.tags.join(',') === 'beach');
 
 reset({ filter: 'all', top: 2000 });
 ctx.openLibraryTagOrTop('forest');
 ok('another tag is chosen as before', calls.setLibraryTag.join() === 'forest' && page.scrollTop === 2000);
-ctx.LIB.tag = '';
+ctx.LIB.tags = [];
 
 // --- wiring ---------------------------------------------------------------------
 ok('the top tabs and the rail both go through the new decision',
   source.includes("b.addEventListener('click', () => { openPageOrTop(b.dataset.page); b.blur(); });")
   && source.includes('openLibrarySectionOrTop(btn.dataset.filter);')
-  && source.includes('openLibraryTagOrTop(btn.dataset.tag);')
+  && source.includes('openLibraryTagOrTop(btn.dataset.tag, e);')
   && !source.includes('showPage(b.dataset.page); b.blur();'));
 ok('the rail lights the open section by the same rule a second press uses',
-  (source.match(/b\.dataset\.filter === libOpenSection\(\)/g) || []).length === 2);
+  (source.match(/(?:b|button)\.dataset\.filter === libOpenSection\(\)/g) || []).length === 1);
 
 console.log(`Re-click to top PASS: ${passed} checks`);

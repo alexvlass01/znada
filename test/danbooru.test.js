@@ -6,11 +6,19 @@ const D = require('../src/danbooru');
 let passed = 0;
 const ok = (name, condition) => { assert.ok(condition, name); console.log('  ✓ ' + name); passed++; };
 
-ok('queryTags: comma-separated phrases become tags', (() => {
-  const tags = D.queryTags('blue archive, 1girl, ignored');
-  return tags.length === 2 && tags[0] === 'blue_archive' && tags[1] === '1girl';
+// LIB-014 stage 3: the third typed tag is no longer dropped here. A query with more words than
+// this site takes is not sent at all (src/online-tag-limit.js, test/online-tag-limit.test.js).
+ok('typed tags: comma-separated phrases become tags, and none is dropped', (() => {
+  const tags = D.buildSearchTerms({ q: 'blue archive, 1girl, kept' });
+  return tags[0] === 'blue_archive' && tags[1] === '1girl' && tags[2] === 'kept';
 })());
-ok('queryTags: metatags are not accepted from UI', D.queryTags('rating:e landscape').join(' ') === 'landscape');
+ok('typed tags: metatags are not accepted from UI', (() => {
+  const tags = D.buildSearchTerms({ q: 'rating:e landscape' });
+  return tags[0] === 'landscape' && !tags.includes('rating:e');
+})());
+ok('the address is built from exactly the words that are counted',
+  D.buildSearchTags({ q: 'a b', sorting: 'toplist' }) === D.buildSearchTerms({ q: 'a b', sorting: 'toplist' }).join(' ')
+  && JSON.stringify(D.searchTerms({ q: 'a b', sort: 'toplist' })) === JSON.stringify(D.buildSearchTerms({ q: 'a b', sorting: 'toplist' })));
 ok('ratingTag: default maps SFW+Sketchy to g,s,q', D.ratingTag() === 'rating:g,s,q');
 ok('ratingTag: explicit only', D.ratingTag({ sfw: false, sketchy: false, nsfw: true }) === 'rating:e');
 ok('orderTag: Lumina sorts map to Danbooru', D.orderTag('toplist') === 'order:rank' && D.orderTag('views') === 'order:favcount');
@@ -76,6 +84,18 @@ ok('mapItem: a video is reported, not thrown away', (() => {
 ok('mapItem: a still picture is reported as one', (() => {
   const still = D.mapItem(sample);
   return still.format === 'jpg';
+})());
+// BUG-035. Danbooru files "animated" under META tags, which the card's tag list leaves out.
+ok('mapItem: a GIF tagged animated among the meta tags is reported as moving', (() => {
+  const gif = D.mapItem({ ...sample, file_ext: 'gif', file_url: 'https://cdn.donmai.us/original/a.gif', tag_string_meta: 'animated animated_gif' });
+  return gif.animated === true;
+})());
+ok('mapItem: a JPEG sample of a moving original does not move', (() => {
+  const sampleOnly = D.mapItem({
+    ...sample, file_ext: 'gif', file_url: '', large_file_url: 'https://cdn.donmai.us/sample/a.jpg', tag_string_meta: 'animated',
+  });
+  const untagged = D.mapItem({ ...sample, file_ext: 'gif', file_url: 'https://cdn.donmai.us/original/a.gif' });
+  return sampleOnly.format === 'jpg' && sampleOnly.animated === false && untagged.animated === false;
 })());
 ok('mapItem: fallback full URL reports the format of the file actually selected', (() => {
   const fallback = D.mapItem({

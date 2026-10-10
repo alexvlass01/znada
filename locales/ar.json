@@ -199,6 +199,10 @@
     "removeConfirmCancel": "إلغاء",
     "searchPh": "بحث",
     "tagSearchPh": "بحث في العلامات",
+    "searchOrTagPh": "الاسم أو علامة أخرى…",
+    "clearSearch": "مسح البحث والعلامات",
+    "tagSuggestions": "علامات مقترحة",
+    "tagToggleHint": "Ctrl+نقر: إضافة إلى التحديد أو إزالة",
     "noTagsFound": "لم يتم العثور على علامات مطابقة",
     "clearTagFilter": "مسح تصفية العلامة",
     "collapseSidebar": "طي الشريط الجانبي",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "تعذر إزالة العناصر المحددة",
     "selectionActions": "إجراءات الخلفيات المحددة",
     "clearSelection": "مسح التحديد",
-    "itemsCount": "العناصر: {n}"
+    "itemsCount": "العناصر: {n}",
+    "sortLabel": "الترتيب",
+    "photosCount": "الصور: {n}"
   },
   "details": {
     "type": "النوع",
@@ -292,6 +298,11 @@
     "ratingSensitive": "حساس",
     "ratingQuestionable": "مشكوك فيه",
     "ratingExplicit": "صريح"
+  },
+  "motion": {
+    "format": "رسوم متحركة · {format}",
+    "formatFrames": "رسوم متحركة · {format} · عدد الإطارات: {frames}",
+    "desktopFirstFrame": "حاليًا، يعرض سطح المكتب الإطار الأول."
   },
   "viewer": {
     "title": "معاينة",
@@ -334,6 +345,9 @@
     "loading": "جاري التحميل…",
     "noResults": "لم يتم العثور على شيء",
     "sourcesFailed": "تعذر تحميل النتائج من: {sources}. يمكن تكرار البحث أو اختيار مصدر آخر.",
+    "sourcePaused": "لا يستطيع هذا الموقع البحث بهذا العدد من العلامات",
+    "sourcePausedSort": "مع هذا الترتيب، لا يستطيع هذا الموقع البحث بهذا العدد من العلامات",
+    "allSourcesPaused": "لا تستطيع المواقع المحددة البحث بهذا العدد من العلامات. أزل علامة أو فعّل موقعًا آخر.",
     "error": "خطأ: {e}",
     "add": "إضافة إلى المكتبة",
     "adding": "جارٍ الإضافة…",

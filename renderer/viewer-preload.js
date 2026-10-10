@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('viewerApi', {
   cardEnsureRecord: (p, type) => ipcRenderer.invoke('card-ensure-record', p, type),
   itemLookupMetadata: (id) => ipcRenderer.invoke('item-lookup-metadata', id),
   libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
+  // BUG-035: whether a file on the disk moves, for the assign window's first-frame line.
+  mediaMotion: (p) => ipcRenderer.invoke('media-motion', p),
   onPayload: (cb) => ipcRenderer.on('gallery-payload', (_e, payload) => cb(payload)),
   onFullscreenChanged: (cb) => ipcRenderer.on('gallery-fullscreen-changed', (_e, on) => cb(on)),
   onBackgroundChanged: (cb) => ipcRenderer.on('gallery-background', (_e, mode) => cb(mode)),

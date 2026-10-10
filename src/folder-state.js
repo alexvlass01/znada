@@ -42,6 +42,51 @@ function finiteAspect(value, fallback = 0) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+// Zero reads as "unknown": an empty file is not a picture, and identity below must not
+// pair two files on a size nobody measured.
+function finiteSize(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+// LIB-024. What makes a file that vanished from a folder and a file that appeared in
+// it the SAME file. Renaming or moving a file in Explorer keeps its size and its
+// modification time — the time to a fraction of a millisecond — and the extension
+// tells two encodings of one picture apart. All three have to be known: an entry
+// indexed before sizes were stored has no identity until a scan measures it.
+function fileIdentity(file) {
+  const size = finiteSize(file && file.size);
+  const modifiedAt = finiteTime(file && file.modifiedAt);
+  if (!size || !modifiedAt) return '';
+  return `${path.extname(String(file.relativePath || '')).toLowerCase()}|${size}|${modifiedAt}`;
+}
+
+// Pairs only what is unambiguous: exactly one vanished file and exactly one new file
+// with the same identity. Two copies of one photo, or two photos that happen to share
+// a time and a size, pair with nothing — not finding a file costs a star, attaching a
+// star to the wrong photo is a wrong answer.
+function pairMovedFiles(folder, vanishedKeys, newKeys) {
+  const group = (keys) => {
+    const byIdentity = new Map();
+    for (const key of keys) {
+      const identity = fileIdentity(folder.files[key]);
+      if (!identity) continue;
+      if (!byIdentity.has(identity)) byIdentity.set(identity, []);
+      byIdentity.get(identity).push(key);
+    }
+    return byIdentity;
+  };
+  const gone = group(vanishedKeys);
+  const arrived = group(newKeys);
+  const pairs = [];
+  for (const [identity, fromKeys] of gone) {
+    const toKeys = arrived.get(identity);
+    if (fromKeys.length !== 1 || !toKeys || toKeys.length !== 1) continue;
+    pairs.push({ fromKey: fromKeys[0], toKey: toKeys[0] });
+  }
+  return pairs;
+}
+
 function normalizeRelativePath(value) {
   return String(value || '')
     .replace(/\\/g, '/')
@@ -91,6 +136,8 @@ function normalizeState(raw) {
       };
       const aspect = finiteAspect(file.aspect);
       if (aspect) files[key].aspect = aspect;
+      const size = finiteSize(file.size);
+      if (size) files[key].size = size;
       // Only stored when true, so the common case costs nothing on disk.
       if (file.hidden === true) files[key].hidden = true;
     }
@@ -150,7 +197,7 @@ function reconcileFolder(rawState, options = {}) {
   const scanEntries = Array.isArray(options.entries) ? options.entries : [];
 
   if (!folderId || !rootPath || status === 'unavailable') {
-    return { state, images: [], changed: false, contentChanged: false, added: 0, removed: 0 };
+    return { state, images: [], changed: false, contentChanged: false, added: 0, removed: 0, moved: [] };
   }
 
   let folder = state.folders[folderId];
@@ -166,6 +213,7 @@ function reconcileFolder(rawState, options = {}) {
 
   const seen = new Set();
   const images = [];
+  const imageByKey = new Map();
   let added = 0;
   for (const entry of scanEntries) {
     const filePath = typeof entry === 'string' ? entry : entry && entry.path;
@@ -182,6 +230,8 @@ function reconcileFolder(rawState, options = {}) {
       };
       const aspect = finiteAspect(entry && entry.aspect);
       if (aspect) metadata.aspect = aspect;
+      const size = finiteSize(entry && entry.size);
+      if (size) metadata.size = size;
       folder.files[rel.key] = metadata;
       added++;
       changed = true;
@@ -192,6 +242,13 @@ function reconcileFolder(rawState, options = {}) {
       changed = true;
       contentChanged = true;
     }
+    // LIB-024. Entries indexed before sizes were stored get theirs from the first scan
+    // that measures them (knownPathKeys leaves them out, so the scan does). Nothing on
+    // screen depends on it, so it is saved without telling the window.
+    if (!metadata.size) {
+      const size = finiteSize(entry && entry.size);
+      if (size) { metadata.size = size; changed = true; }
+    }
 
     // A rescan re-confirms the file exists; it does not un-remove it. The user's
     // removal outlives every later scan until they restore it themselves — and a file
@@ -199,24 +256,65 @@ function reconcileFolder(rawState, options = {}) {
     // of hiding by prefix rather than per file.
     if (fileHidden(folder, metadata)) continue;
 
-    images.push({
+    const image = {
       path: path.resolve(rootPath, rel.relativePath),
       firstSeenAt: metadata.firstSeenAt,
       addedAt: metadata.firstSeenAt,
       modifiedAt: metadata.modifiedAt,
       aspect: finiteAspect(metadata.aspect),
-    });
+    };
+    images.push(image);
+    imageByKey.set(rel.key, image);
   }
 
   let removed = 0;
+  const moved = [];
   if (status === 'complete') {
-    for (const key of Object.keys(folder.files)) {
-      if (!seen.has(key)) {
-        delete folder.files[key];
-        removed++;
-        changed = true;
-        contentChanged = true;
+    const vanished = Object.keys(folder.files).filter((key) => !seen.has(key));
+    // LIB-024. Only a complete scan proves a file is gone, so only a complete scan can
+    // tell that a gone file and a new one are the same file under another name. "New"
+    // means first seen by THIS scan: every reconcile of one scan shares its `now`,
+    // including the batches a large folder is indexed in. The first scan of a folder
+    // has nothing to compare with.
+    if (!baselinePending && vanished.length) {
+      const newKeys = Array.from(seen).filter((key) => folder.files[key].firstSeenAt === now);
+      for (const { fromKey, toKey } of pairMovedFiles(folder, vanished, newKeys)) {
+        const before = folder.files[fromKey];
+        const after = folder.files[toKey];
+        // The same photo under a new name is not a new photo: it keeps its place under
+        // "newest first" instead of jumping to the top of the library.
+        after.firstSeenAt = before.firstSeenAt;
+        if (!after.aspect && before.aspect) after.aspect = before.aspect;
+        // LIB-025. A photo the user removed stays removed under its new name. The mark
+        // is kept per path, so without this the rename was enough to bring it back. Only
+        // the photo's OWN mark travels: a photo hidden because its subfolder was removed
+        // is covered by that folder's mark wherever the rule reaches, and taking it out
+        // of the folder is not a decision about the photo.
+        const hidden = before.hidden === true;
+        if (hidden) {
+          after.hidden = true;
+          const at = images.indexOf(imageByKey.get(toKey));
+          if (at >= 0) images.splice(at, 1);
+          imageByKey.delete(toKey);
+        }
+        const image = imageByKey.get(toKey);
+        if (image) {
+          image.firstSeenAt = after.firstSeenAt;
+          image.addedAt = after.firstSeenAt;
+          image.aspect = finiteAspect(after.aspect);
+        }
+        moved.push({
+          from: path.resolve(rootPath, before.relativePath),
+          to: path.resolve(rootPath, after.relativePath),
+          hidden,
+        });
       }
+    }
+    for (const key of vanished) {
+      delete folder.files[key];
+      removed++;
+      changed = true;
+      contentChanged = true;
     }
     if (!folder.baselineComplete) {
       folder.baselineComplete = true;
@@ -224,7 +322,7 @@ function reconcileFolder(rawState, options = {}) {
     }
   }
 
-  return { state, images, changed, contentChanged, added, removed };
+  return { state, images, changed, contentChanged, added, removed, moved };
 }
 
 function removeFolder(rawState, folderId) {
@@ -383,13 +481,17 @@ function listHiddenDirs(rawState) {
   return out;
 }
 
+// Files the next scan may skip measuring. A file without a stored size is left out on
+// purpose (LIB-024): the scan measures it once, and from then on a rename or a move of
+// it can be recognised. Without that, every file indexed before sizes were stored would
+// stay unrecognisable for ever.
 function knownPathKeys(rawState, folderId) {
   const state = normalizeState(rawState);
   const folder = state.folders[folderId];
   if (!folder) return new Set();
-  return new Set(Object.values(folder.files).map((file) => (
-    pathKey(path.resolve(folder.rootPath, file.relativePath))
-  )));
+  return new Set(Object.values(folder.files)
+    .filter((file) => finiteSize(file.size))
+    .map((file) => pathKey(path.resolve(folder.rootPath, file.relativePath))));
 }
 
 // Recursive, status-aware scan used for the library view and discovery index.
@@ -463,8 +565,10 @@ async function scanFolderTree(rootPath, options = {}) {
       }
       try {
         const key = pathKey(path.resolve(full));
-        const modifiedAt = knownPaths.has(key) ? 0 : finiteTime((await io.stat(full)).mtimeMs);
-        const entry = { path: full, modifiedAt };
+        const stats = knownPaths.has(key) ? null : await io.stat(full);
+        const entry = { path: full, modifiedAt: stats ? finiteTime(stats.mtimeMs) : 0 };
+        const size = finiteSize(stats && stats.size);
+        if (size) entry.size = size;
         entries.push(entry);
         batch.push(entry);
         if (batch.length >= batchSize) {

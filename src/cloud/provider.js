@@ -18,6 +18,9 @@
 // and "copy link" must never be offered for one of these cards, because the only link it
 // has would be dead in the user's hands.
 
+// The SEARCH BOX module, not another site: the one way typed text becomes site tags.
+const searchBox = require('../tag-suggest');
+
 // The catalogue speaks in its own three ratings; Znada speaks in three groups. This is
 // the whole translation, and it is one-way on purpose: we ask for the WIDEST rating the
 // user has allowed.
@@ -104,6 +107,11 @@ const PROVIDER = Object.freeze({
     // ONL-015. A browse card genuinely does not carry a format, so this site vouches for
     // its own content instead of being judged on something it never said.
     cardFormat: false,
+    // LIB-014 stage 3. The catalogue takes ONE tag: a single `tag` parameter, matched
+    // exactly on the server (read from both sides' code, 2026-10-02). With more the site
+    // sits the search out like any other site with a limit. The owner's rule: the app
+    // treats it as just another site; teaching the server several tags is server work.
+    tagLimit: Object.freeze({ max: 1, free: Object.freeze([]), measured: '2026-10-02' }),
   }),
   requestHeaders: Object.freeze({}),
   // Previews are signed URLs the window may load itself.
@@ -119,13 +127,23 @@ const PROVIDER = Object.freeze({
 // signing out has to take effect at once. `ctx.credentials.client` is the typed client
 // main already owns; rebuilding the request here would be a second, drifting copy of the
 // catalogue's contract.
+// LIB-014 stage 3. The words this site is sent: its tags, spelled by the same rule as for
+// every other site (lowercase, `_` for a space, search commands refused).
+function searchTerms(params) {
+  return searchBox.siteTags((params || {}).q);
+}
+
 async function search(params, ctx) {
   const o = params || {};
   const session = (ctx && ctx.credentials) || null;
   if (!session || !session.client) return { error: 'unavailable' };
+  const tags = searchTerms(o);
+  // Never cut a query down to what fits. The shared handler does not ask this site with
+  // more than one tag; a caller that does gets a refusal, not somebody else's question.
+  if (tags.length > PROVIDER.capabilities.tagLimit.max) return { error: 'tag_limit' };
   const res = await session.client.getCatalog({
     rating: ratingFor(o.purity, session.explicitAllowed),
-    tag: String(o.q || '').trim() || undefined,
+    tag: tags[0] || undefined,
     cursor: o.cursor || undefined,
     limit: Number(o.limit) > 0 ? Number(o.limit) : 30,
     token: session.token || undefined,
@@ -138,4 +156,4 @@ async function search(params, ctx) {
   return parseCatalog(res.data);
 }
 
-module.exports = { PROVIDER, search, mapItem, parseCatalog, ratingFor };
+module.exports = { PROVIDER, search, searchTerms, mapItem, parseCatalog, ratingFor };

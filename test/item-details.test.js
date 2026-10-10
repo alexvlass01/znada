@@ -117,6 +117,28 @@ ok('configured folder roots authorize themselves and descendants, not sibling pr
   ok('the real reader reports file metadata and image dimensions',
     real.exists && !real.isFolder && real.size > 0 && real.width > 0 && real.height > 0);
 
+  // BUG-035. The sheet asks the motion reader for the FULL answer (a frame count), and a
+  // motion read that fails costs the sheet nothing else.
+  const asked = [];
+  let motionFails = false;
+  const motionReader = details.createDetailsReader({
+    statPath: async () => ({ size: 10, mtimeMs: 1, isFile: () => true, isDirectory: () => false }),
+    readHeader: async () => pngHeader(320, 240),
+    motion: async (p, opts) => {
+      asked.push(opts && opts.countFrames);
+      if (motionFails) throw new Error('locked');
+      return { format: 'gif', animated: true, frames: 48 };
+    },
+  });
+  const moving = await motionReader('C:\\Wallpapers\\moving.gif');
+  ok('the sheet gets whether the picture moves, with its frame count',
+    moving.motion && moving.motion.animated === true && moving.motion.frames === 48 && asked[0] === true);
+  motionFails = true;
+  const broken = await motionReader('C:\\Wallpapers\\locked.gif');
+  ok('a failed motion read leaves the rest of the sheet intact',
+    broken.motion === null && broken.width === 320 && broken.exists);
+  ok('without a motion reader the field is present and empty', real.motion === null && invalid.motion === null);
+
   console.log('\nAll ' + passed + ' item-details tests passed.');
 })().catch((err) => {
   console.error(err);

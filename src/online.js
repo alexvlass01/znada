@@ -115,6 +115,21 @@ function resultHasMore(result, page) {
   return Number(meta.lastPage) > page;
 }
 
+// ONL-004. How many results each site says it has for this question, by site. Only sites
+// that answered AND named a number: a site that failed is reported by providerErrors, and a
+// site that keeps no count (our own catalogue) says nothing rather than a guess. Kept per
+// site on purpose — the same picture on two boards is shown once, so a sum would promise
+// more than the feed can ever load (owner's decision, 2026-09-27).
+function siteTotals(results) {
+  const out = {};
+  for (const result of Array.isArray(results) ? results : []) {
+    if (!result || result.error || !result.provider) continue;
+    const total = result.meta && result.meta.total;
+    if (typeof total === 'number' && Number.isFinite(total) && total >= 0) out[result.provider] = Math.floor(total);
+  }
+  return out;
+}
+
 function mergeSearchResults(results, page = 1) {
   const list = Array.isArray(results) ? results : [];
   const successful = list.filter((result) => result && !result.error);
@@ -133,6 +148,7 @@ function mergeSearchResults(results, page = 1) {
     },
     error,
     providerErrors,
+    totals: siteTotals(successful),
   };
 }
 
@@ -193,6 +209,7 @@ module.exports = {
   thumbnailDataUrl,
   interleave,
   resultHasMore,
+  siteTotals,
   mergeSearchResults,
   providerFailed,
   resolveFallback,

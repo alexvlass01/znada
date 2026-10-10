@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Anulează",
     "searchPh": "Caută",
     "tagSearchPh": "Caută etichete",
+    "searchOrTagPh": "Nume sau încă o etichetă…",
+    "clearSearch": "Șterge căutarea și etichetele",
+    "tagSuggestions": "Sugestii de etichete",
+    "tagToggleHint": "Ctrl+clic: adaugă la selecție sau elimină",
     "noTagsFound": "Nu s-au găsit etichete potrivite",
     "clearTagFilter": "Șterge filtrul de etichetă",
     "collapseSidebar": "Restrânge bara laterală",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Nu s-au putut elimina elementele selectate",
     "selectionActions": "Acțiuni pentru imaginile selectate",
     "clearSelection": "Șterge selecția",
-    "itemsCount": "Elemente: {n}"
+    "itemsCount": "Elemente: {n}",
+    "sortLabel": "Sortare",
+    "photosCount": "Fotografii: {n}"
   },
   "details": {
     "type": "Tip",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensibil",
     "ratingQuestionable": "Discutabil",
     "ratingExplicit": "Explicit"
+  },
+  "motion": {
+    "format": "Animație · {format}",
+    "formatFrames": "Animație · {format} · cadre: {frames}",
+    "desktopFirstFrame": "Deocamdată, desktopul afișează primul cadru."
   },
   "viewer": {
     "title": "Previzualizare",
@@ -334,6 +345,9 @@
     "loading": "Se încarcă…",
     "noResults": "Nu s-a găsit nimic",
     "sourcesFailed": "Nu s-au putut încărca rezultatele din: {sources}. Caută din nou sau alege altă sursă.",
+    "sourcePaused": "Acest site nu poate căuta după atât de multe etichete",
+    "sourcePausedSort": "Cu această sortare, acest site nu poate căuta după atât de multe etichete",
+    "allSourcesPaused": "Site-urile alese nu pot căuta după atât de multe etichete. Eliminați o etichetă sau activați alt site.",
     "error": "Eroare: {e}",
     "add": "Adaugă în bibliotecă",
     "adding": "Se adaugă…",

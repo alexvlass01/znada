@@ -52,6 +52,22 @@ const READY = { active: true, hasMore: true, loading: false, now: 100000 };
   ok('the gap is measured from when the round started', a.state().lastAt === 1000);
 }
 
+// BUG-048. A "no" from the gap alone must say how long it lasts: the end of the feed may
+// already be in view, and the watcher will not report it a second time.
+{
+  const a = AutoLoad.createAutoLoader({ minGapMs: 700 });
+  ok('before any round there is no gap to wait for', a.gapLeft({ ...READY, now: 1000 }) === 0);
+  a.started(1000);
+  ok('a refusal by the gap says how long is left', a.gapLeft({ ...READY, now: 1200 }) === 500);
+  ok('and nothing is left once the gap has passed', a.gapLeft({ ...READY, now: 1750 }) === 0);
+  ok('a refusal for any other reason is not a wait: in flight',
+    a.gapLeft({ ...READY, now: 1200, loading: true }) === 0);
+  ok('nobody has a next page', a.gapLeft({ ...READY, now: 1200, hasMore: false }) === 0);
+  ok('the user is looking elsewhere', a.gapLeft({ ...READY, now: 1200, active: false }) === 0);
+  a.failed();
+  ok('and a loader that has given up waits for nothing', a.gapLeft({ ...READY, now: 1200 }) === 0);
+}
+
 // ---------------------------------------------------------------------------
 // The loop guard. This is the reason the file exists.
 // ---------------------------------------------------------------------------
@@ -153,7 +169,7 @@ ok('the end of the feed is watched, and the watcher only asks through the guard'
   renderer.includes('function setupOnlineAutoLoad()')
   && renderer.includes('setupOnlineAutoLoad();')
   && renderer.includes('maybeAutoLoadOnline();')
-  && renderer.includes('if (!onlineAutoLoad.shouldLoad({'));
+  && renderer.includes('if (!onlineAutoLoad.shouldLoad(state)) {'));
 // One loading path, not two. The button and the scroll call the same function, so the
 // busy flag and the generation check cannot be got round by the new caller.
 ok('scrolling uses the same loader the button always used',

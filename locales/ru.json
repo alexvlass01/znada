@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Отмена",
     "searchPh": "Поиск",
     "tagSearchPh": "Поиск тегов",
+    "searchOrTagPh": "Имя или ещё тег…",
+    "clearSearch": "Очистить поиск и теги",
+    "tagSuggestions": "Подсказки тегов",
+    "tagToggleHint": "Ctrl+клик — добавить к выбранным или убрать",
     "noTagsFound": "Подходящие теги не найдены",
     "clearTagFilter": "Снять фильтр по тегу",
     "collapseSidebar": "Свернуть панель",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Не удалось удалить выбранные элементы",
     "selectionActions": "Действия с выбранными обоями",
     "clearSelection": "Снять выделение",
-    "itemsCount": "Элементов: {n}"
+    "itemsCount": "Элементов: {n}",
+    "sortLabel": "Сортировка",
+    "photosCount": "{n} фото"
   },
   "details": {
     "type": "Тип",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Чувствительное",
     "ratingQuestionable": "Спорное",
     "ratingExplicit": "Откровенное"
+  },
+  "motion": {
+    "format": "Анимация · {format}",
+    "formatFrames": "Анимация · {format} · кадров: {frames}",
+    "desktopFirstFrame": "Пока на рабочем столе будет первый кадр."
   },
   "viewer": {
     "title": "Просмотр",
@@ -334,6 +345,9 @@
     "loading": "Загрузка…",
     "noResults": "Ничего не найдено",
     "sourcesFailed": "Не удалось загрузить результаты: {sources}. Повторите поиск или выберите другой источник.",
+    "sourcePaused": "Столько тегов этот сайт не понимает",
+    "sourcePausedSort": "С этой сортировкой столько тегов этот сайт не понимает",
+    "allSourcesPaused": "Выбранные сайты не понимают столько тегов. Уберите тег или включите другой сайт.",
     "error": "Ошибка: {e}",
     "add": "Добавить в библиотеку",
     "adding": "Добавляется…",

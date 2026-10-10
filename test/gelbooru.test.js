@@ -6,11 +6,18 @@ const G = require('../src/gelbooru');
 let passed = 0;
 const ok = (name, condition) => { assert.ok(condition, name); console.log('  OK ' + name); passed++; };
 
-ok('queryTags: comma-separated phrases become tags', (() => {
-  const tags = G.queryTags('blue archive, 1girl, ignored');
-  return tags.length === 2 && tags[0] === 'blue_archive' && tags[1] === '1girl';
+// LIB-014 stage 3: every typed tag is sent. This site has no tag limit (measured 2026-10-02),
+// and it used to keep the first two and drop the rest without a word.
+ok('typed tags: comma-separated phrases become tags, and none is dropped', (() => {
+  const tags = G.buildSearchTags({ q: 'blue archive, 1girl, kept' }).split(' ');
+  return tags[0] === 'blue_archive' && tags[1] === '1girl' && tags[2] === 'kept';
 })());
-ok('queryTags: metatags are not accepted from UI', G.queryTags('rating:explicit landscape').join(' ') === 'landscape');
+ok('typed tags: metatags are not accepted from UI', (() => {
+  const tags = G.buildSearchTags({ q: 'rating:explicit landscape' }).split(' ');
+  return tags[0] === 'landscape' && !tags.includes('rating:explicit');
+})());
+ok('declares that it has no tag limit, rather than leaving it unsaid',
+  Object.prototype.hasOwnProperty.call(G.PROVIDER.capabilities, 'tagLimit') && G.PROVIDER.capabilities.tagLimit === null);
 ok('ratingTags: SFW and Sketchy exclude Explicit', G.ratingTags().join(' ') === '-rating:explicit');
 ok('ratingTags: Sketchy covers Sensitive and Questionable', G.ratingTags({ sfw: false, sketchy: true, nsfw: false }).join(' ') === '-rating:general -rating:explicit');
 ok('ratingTags: Explicit only uses an exact rating', G.ratingTags({ sfw: false, sketchy: false, nsfw: true }).join(' ') === 'rating:explicit');
@@ -60,6 +67,18 @@ ok('mapItem: an animation is reported, not thrown away', (() => {
 ok('mapItem: a still picture is reported as one', (() => {
   const still = G.mapItem(sample);
   return ['jpg', 'jpeg', 'png'].includes(still.format);
+})());
+// BUG-035. The card's "moves" chip comes from the site's own tag, read from the FULL tag
+// list — the card keeps only 24, and "animated" can fall outside them.
+ok('mapItem: a GIF the site tags as animated is reported as moving', (() => {
+  const many = Array.from({ length: 30 }, (_, i) => `aaa_${i}`).join(' ');
+  const gif = G.mapItem({ ...sample, image: 's.gif', file_url: 'https://img4.gelbooru.com/s.gif', tags: `${many} animated` });
+  return gif.animated === true && !gif.tags.includes('animated');
+})());
+ok('mapItem: an untagged GIF, and a still format with the tag, are not moving', (() => {
+  const gif = G.mapItem({ ...sample, image: 's.gif', file_url: 'https://img4.gelbooru.com/s.gif' });
+  const jpg = G.mapItem({ ...sample, tags: 'animated' });
+  return gif.animated === false && jpg.animated === false;
 })());
 ok('mapItem: missing downloadable URL is skipped', G.mapItem({ ...sample, file_url: '' }) === null);
 // ONL-016. Checked against the live API on 2026-09-03: a Gelbooru post carries no size

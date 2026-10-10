@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Annulla",
     "searchPh": "Cerca",
     "tagSearchPh": "Cerca tag",
+    "searchOrTagPh": "Nome o un altro tag…",
+    "clearSearch": "Cancella ricerca e tag",
+    "tagSuggestions": "Tag suggeriti",
+    "tagToggleHint": "Ctrl+clic: aggiungi alla selezione o rimuovi",
     "noTagsFound": "Nessun tag corrispondente trovato",
     "clearTagFilter": "Rimuovi filtro tag",
     "collapseSidebar": "Comprimi il pannello",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Impossibile rimuovere alcuni elementi",
     "selectionActions": "Azioni sugli sfondi selezionati",
     "clearSelection": "Azzera selezione",
-    "itemsCount": "Numero elementi: {n}"
+    "itemsCount": "Numero elementi: {n}",
+    "sortLabel": "Ordinamento",
+    "photosCount": "{n} foto"
   },
   "details": {
     "type": "Tipo",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensibile",
     "ratingQuestionable": "Discutibile",
     "ratingExplicit": "Esplicito"
+  },
+  "motion": {
+    "format": "Animazione · {format}",
+    "formatFrames": "Animazione · {format} · {frames} fotogrammi",
+    "desktopFirstFrame": "Per ora, il desktop mostra il primo fotogramma."
   },
   "viewer": {
     "title": "Visualizzatore",
@@ -334,6 +345,9 @@
     "loading": "Caricamento…",
     "noResults": "Nessun risultato trovato",
     "sourcesFailed": "Impossibile caricare i risultati da: {sources}. Ripeti la ricerca o scegli un’altra fonte.",
+    "sourcePaused": "Questo sito non gestisce così tanti tag",
+    "sourcePausedSort": "Con questo ordinamento, questo sito non gestisce così tanti tag",
+    "allSourcesPaused": "I siti selezionati non gestiscono così tanti tag. Rimuovi un tag o attiva un altro sito.",
     "error": "Errore: {e}",
     "add": "Aggiungi alla libreria",
     "adding": "Aggiunta…",

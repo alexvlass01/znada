@@ -60,12 +60,14 @@ const photo = (id, extra = {}) => ({ id, type: 'image', path: `C:/photos/${id}.p
   const empty = {};
   const reply = { expand: [], folder: { folders: [], images: [] }, removed: [] };
   const ctx = {
-    LIB: { filter: 'all', tag: '', q: '', sort: 'name', folderPath: null, crumbs: [], shuffleRank: {} },
+    LIB: { filter: 'all', tags: [], q: '', sort: 'name', folderPath: null, crumbs: [], shuffleRank: {} },
     config: { library: {} },
     allViewToken: 1,
+    LibrarySearch: require('../src/library-search'),
     $: (selector) => ({ '#libGrid': {}, '#libEmpty': empty })[selector],
     baseName: (value) => value.split('/').pop(),
     normPathKey: require('../src/path-key').pathKey,
+    updateLibAvailableTags() {},
     assignedIds: () => new Set(), entrySize: () => 0, scheduleSizeReorder() {},
     setLibEmptyText: (key) => { ctx.emptyKey = key; },
     setLibViewHeader: (count) => { ctx.count = count; },
@@ -79,7 +81,7 @@ const photo = (id, extra = {}) => ({ id, type: 'image', path: `C:/photos/${id}.p
   };
   vm.createContext(ctx);
   vm.runInContext(sectionConstant(renderer, 'LIB_SECTION_EMPTY'), ctx);
-  for (const name of ['libMatchesTag', 'sortItems', 'poolImageMap', 'libSectionItems', 'libList', 'libEmptyKey']) {
+  for (const name of ['libMatchesTag', 'libNarrow', 'sortItems', 'poolImageMap', 'libSectionItems', 'libList', 'libEmptyKey']) {
     vm.runInContext(functionSource(renderer, name), ctx);
   }
   for (const name of ['renderAllView', 'renderFolderView', 'renderRemovedView']) {
@@ -87,8 +89,8 @@ const photo = (id, extra = {}) => ({ id, type: 'image', path: `C:/photos/${id}.p
   }
   vm.runInContext(plainBranchSource(renderer), ctx);
 
-  const reset = ({ filter = 'all', q = '', tag = '', library = {} } = {}) => {
-    Object.assign(ctx.LIB, { filter, q, tag, folderPath: filter === 'folder-open' ? 'C:/photos' : null });
+  const reset = ({ filter = 'all', q = '', tags = [], library = {} } = {}) => {
+    Object.assign(ctx.LIB, { filter, q, tags, folderPath: filter === 'folder-open' ? 'C:/photos' : null });
     if (filter === 'folder-open') ctx.LIB.filter = 'folder';
     ctx.config.library = library;
     ctx.emptyKey = undefined;
@@ -102,7 +104,7 @@ const photo = (id, extra = {}) => ({ id, type: 'image', path: `C:/photos/${id}.p
   ok('All: a search with no matches over a full library says nothing matched',
     empty.hidden === false && ctx.emptyKey === 'library.noMatches');
 
-  reset({ tag: 'absent', library: full });
+  reset({ tags: ['absent'], library: full });
   await ctx.renderAllView(ctx.allViewToken);
   ok('All: a tag with no matches says nothing matched', ctx.emptyKey === 'library.noMatches');
 
@@ -164,7 +166,7 @@ const photo = (id, extra = {}) => ({ id, type: 'image', path: `C:/photos/${id}.p
   ctx.renderPlainEmpty();
   ok('Folders: none added says so, not that the library is empty', ctx.emptyKey === 'library.emptyFolders');
 
-  reset({ filter: 'folder', tag: 'absent', library: { f: { id: 'f', type: 'folder', path: 'C:/watched', tags: [] } } });
+  reset({ filter: 'folder', tags: ['absent'], library: { f: { id: 'f', type: 'folder', path: 'C:/watched', tags: [] } } });
   ctx.renderPlainEmpty();
   ok('Folders: a tag with no matches among folders says nothing matched', ctx.emptyKey === 'library.noMatches');
 

@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Annuleren",
     "searchPh": "Zoeken",
     "tagSearchPh": "Zoek tags",
+    "searchOrTagPh": "Naam of nog een tag…",
+    "clearSearch": "Zoekopdracht en tags wissen",
+    "tagSuggestions": "Tagsuggesties",
+    "tagToggleHint": "Ctrl+klik: aan selectie toevoegen of verwijderen",
     "noTagsFound": "Geen overeenkomende tags gevonden",
     "clearTagFilter": "Tagfilter wissen",
     "collapseSidebar": "Zijbalk samenvouwen",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Kon de geselecteerde items niet verwijderen",
     "selectionActions": "Geselecteerde achtergrondacties",
     "clearSelection": "Selectie wissen",
-    "itemsCount": "Items: {n}"
+    "itemsCount": "Items: {n}",
+    "sortLabel": "Sortering",
+    "photosCount": "{n} foto's"
   },
   "details": {
     "type": "Type",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Gevoelig",
     "ratingQuestionable": "Twijfelachtig",
     "ratingExplicit": "Expliciet"
+  },
+  "motion": {
+    "format": "Animatie · {format}",
+    "formatFrames": "Animatie · {format} · {frames} frames",
+    "desktopFirstFrame": "Voorlopig toont het bureaublad het eerste frame."
   },
   "viewer": {
     "title": "Voorbeeld",
@@ -334,6 +345,9 @@
     "loading": "Laden…",
     "noResults": "Niets gevonden",
     "sourcesFailed": "Kon geen resultaten laden van: {sources}. Zoek opnieuw of kies een andere bron.",
+    "sourcePaused": "Deze site kan niet op zoveel tags zoeken",
+    "sourcePausedSort": "Met deze sortering kan deze site niet op zoveel tags zoeken",
+    "allSourcesPaused": "De gekozen sites kunnen niet op zoveel tags zoeken. Verwijder een tag of zet een andere site aan.",
     "error": "Fout: {e}",
     "add": "Aan bibliotheek toevoegen",
     "adding": "Toevoegen…",

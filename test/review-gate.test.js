@@ -409,6 +409,22 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
     gate.writePacketText(tmp, 'test-run', run, ['renderer/renderer.js']);
 
     const stage = (dir, id) => fs.readFileSync(path.join(dir, 'stages', id + '.md'), 'utf8');
+    // QA-016: the worker reads the generated packet, not the contributor contract.
+    // Keep the live-profile prohibition and link cleanup order in the delivered text.
+    const brief = fs.readFileSync(path.join(tmp, 'BRIEF.md'), 'utf8').replace(/\s+/g, ' ');
+    const runtime = stage(tmp, '04-runtime').replace(/\s+/g, ' ');
+    for (const [name, text] of [['BRIEF', brief], ['04-runtime', runtime]]) {
+      assert.ok(/На живом DEV\/DIAG окно переноса не открывать/.test(text),
+        name + ': QA-016 потерян запрет окна переноса на живом профиле');
+      assert.ok(/только на расходном профиле с расходными файлами/.test(text),
+        name + ': QA-016 перенос больше не требует расходных файлов и профиля');
+    }
+    assert.ok(/собственная `npm ci`/.test(brief), 'BRIEF: QA-016 нет безопасного варианта установки');
+    assert.ok(/абсолютные пути/.test(brief) && /junction\/symlink/.test(brief),
+      'BRIEF: QA-016 не требуется проверить пути и тип node_modules');
+    assert.ok(/сначала удалить только саму ссылку[\s\S]*целевая папка[\s\S]*сохранились[\s\S]*затем `git worktree remove`/.test(brief),
+      'BRIEF: QA-016 потерян порядок: ссылка, проверка целевой папки, удаление worktree');
+    assert.ok(/не удалять рекурсивно/.test(brief), 'BRIEF: QA-016 потерян запрет рекурсивного удаления ссылки');
     assert.ok(stage(tmp, '04-runtime').includes(list), 'список ведущего не попал в задание своего этапа');
     assert.ok(/Обязателен каждый пункт/.test(stage(tmp, '04-runtime')), 'список не назван обязательным');
     assert.ok(!stage(tmp, '02-diff').includes(list), 'список одного этапа попал в задание другого');
@@ -430,6 +446,114 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
     'next пересобирает пакет с той же базой, но список ведущего с собой не берёт');
   assert.ok(source.includes("'  в задании есть список проверок от ведущего — каждый его пункт обязателен'"),
     'текст передачи не говорит, что в задании есть список ведущего');
+}
+
+/*
+ * QA-018: пакет от тега не собирается, пока выпуск не подготовлен. 2026-10-09 гейт 1.7.7
+ * начали до подготовки: этап 05 упал на старом номере, а починка потянула второй пакет на
+ * все пять этапов. Сначала правило по фактам, затем настоящий `prepare` во временном
+ * репозитории — чистая функция без проводки в prepare ничего не защищает.
+ */
+{
+  assert.ok(gate.versionNewer('1.7.10', 'v1.7.9'), 'версии сравниваются как числа, а не как строки');
+  assert.ok(gate.versionNewer('1.8.0', 'v1.7.9'));
+  assert.ok(!gate.versionNewer('1.7.6', 'v1.7.6'), 'тот же номер — не новее');
+  assert.ok(!gate.versionNewer('1.7.5', 'v1.7.6'));
+  assert.ok(!gate.versionNewer('1.7.7', 'nightly'), 'нечитаемый тег не делает версию новее');
+  assert.strictEqual(gate.releaseTextName('1.7.7'), 'release_text_1_7_7.md');
+
+  const ready = { version: '1.7.7', tag: 'v1.7.6', translationsLeft: 0, releaseText: true };
+  assert.deepStrictEqual(gate.releasePrepGaps(ready), [], 'подготовленный выпуск задержан');
+  const gaps = (over) => gate.releasePrepGaps({ ...ready, ...over }).join('\n');
+  assert.ok(/не больше последнего выпуска v1\.7\.6/.test(gaps({ version: '1.7.6' })), 'старый номер не пойман');
+  assert.ok(/не больше/.test(gaps({ version: '1.7.5' })), 'номер меньше выпущенного не пойман');
+  assert.ok(/не читается/.test(gaps({ version: 'x' })), 'нечитаемый номер не пойман');
+  assert.ok(/переводы не закончены: 9/.test(gaps({ translationsLeft: 9 })), 'хвост переводов не пойман');
+  assert.ok(/не прочиталось/.test(gaps({ translationsLeft: null })), 'непрочитанные переводы сочтены готовыми');
+  assert.ok(/release_text_1_7_7\.md/.test(gaps({ releaseText: false })), 'нет текста выпуска — не пойман');
+
+  const real = gate.readReleasePrep('v0.0.0');
+  assert.strictEqual(real.version, require(path.join(ROOT, 'package.json')).version, 'версия читается не оттуда');
+  assert.strictEqual(typeof real.translationsLeft, 'number', 'состояние переводов настоящего дерева не прочиталось');
+}
+
+{
+  const { spawnSync, execFileSync } = require('child_process');
+  const os = require('os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qa018-'));
+  const copy = (rel) => fs.cpSync(path.join(ROOT, rel), path.join(tmp, rel), { recursive: true });
+  const g = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'core.autocrlf=false',
+    '-c', 'tag.gpgSign=false', '-c', 'commit.gpgSign=false', ...args], { cwd: tmp, stdio: 'pipe' });
+  const setVersion = (v) => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ ...pkg, version: v }, null, 2) + '\n');
+  };
+  const runGate = (...args) => spawnSync(process.execPath, [path.join(tmp, 'scripts', 'review-gate.js'), ...args],
+    { cwd: tmp, encoding: 'utf8' });
+  const packets = () => {
+    const dir = path.join(tmp, '.tmp', 'review');
+    return fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => n !== 'current.txt') : [];
+  };
+  try {
+    for (const rel of ['scripts/review-gate.js', 'scripts/review-gate', 'src/i18n-state.js',
+      'locales/en.json', 'locales/ru.json', 'locales/de.json', 'locales/state/de.json']) copy(rel);
+    setVersion('1.7.7');
+    g('init', '-q');
+    g('add', '-A');
+    g('commit', '-q', '-m', 'released');
+    g('tag', 'v1.7.7');
+    fs.writeFileSync(path.join(tmp, 'main.js'), '// changed after the release\n');
+    // Хвост переводов: в немецком не хватает строки, которая есть в en/ru.
+    const de = JSON.parse(fs.readFileSync(path.join(tmp, 'locales', 'de.json'), 'utf8'));
+    const firstGroup = Object.keys(de).find((k) => de[k] && typeof de[k] === 'object' && !Array.isArray(de[k]));
+    delete de[firstGroup][Object.keys(de[firstGroup])[0]];
+    fs.writeFileSync(path.join(tmp, 'locales', 'de.json'), JSON.stringify(de, null, 2) + '\n');
+    g('add', '-A');
+    g('commit', '-q', '-m', 'work');
+
+    let res = runGate('prepare', '--by', 't');
+    assert.strictEqual(res.status, 1, 'пакет от тега собран без подготовки выпуска:\n' + res.stdout + res.stderr);
+    assert.ok(/не подготовлен/.test(res.stderr) && /не больше последнего выпуска v1\.7\.7/.test(res.stderr)
+      && /переводы не закончены/.test(res.stderr) && /release_text_1_7_7\.md/.test(res.stderr),
+      'отказ не называет, чего не хватает:\n' + res.stderr);
+    assert.ok(/подготовь выпуск/.test(res.stderr), 'отказ не говорит владельцу, что делать дальше');
+    assert.deepStrictEqual(packets(), [], 'отказ всё равно оставил пакет');
+
+    res = runGate('next');
+    assert.strictEqual(res.status, 1, 'Znada-Review.bat (next) обошёл проверку подготовки');
+    assert.deepStrictEqual(packets(), [], 'next без подготовки оставил пакет');
+
+    // Явная база — не проверка выпуска (догоняющий пакет, проверка ветки): её не задерживаем.
+    res = runGate('prepare', '--by', 't', '--base', 'v1.7.7');
+    assert.strictEqual(res.status, 0, 'явный --base задержан проверкой выпуска:\n' + res.stderr);
+    assert.strictEqual(packets().length, 1, 'пакет с явной базой не собран');
+    fs.rmSync(path.join(tmp, '.tmp'), { recursive: true, force: true });
+
+    // Подготовка сделана: номер выше, перевод на месте. Текст выпуска сначала только в архиве
+    // (так лежат уже опубликованные), затем только среди текущих постановок — оба места считаются.
+    setVersion('1.7.8');
+    copy('locales/de.json');
+    const archived = path.join(tmp, 'plans', 'archive', 'releases', 'release_text_1_7_8.md');
+    fs.mkdirSync(path.dirname(archived), { recursive: true });
+    fs.writeFileSync(archived, '# 1.7.8\n');
+    g('add', '-A');
+    g('commit', '-q', '-m', 'prepare the release');
+    res = runGate('prepare', '--by', 't');
+    assert.strictEqual(res.status, 0, 'текст выпуска в архиве не засчитан:\n' + res.stderr);
+    assert.strictEqual(packets().length, 1, 'после подготовки (текст в архиве) пакет не собран');
+    fs.rmSync(path.join(tmp, '.tmp'), { recursive: true, force: true });
+
+    fs.rmSync(path.join(tmp, 'plans', 'archive'), { recursive: true, force: true });
+    fs.mkdirSync(path.join(tmp, 'plans', 'features'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'plans', 'features', 'release_text_1_7_8.md'), '# 1.7.8\n');
+    g('add', '-A');
+    g('commit', '-q', '-m', 'release text back in features');
+    res = runGate('prepare', '--by', 't');
+    assert.strictEqual(res.status, 0, 'подготовленный выпуск не пустили в гейт:\n' + res.stderr);
+    assert.strictEqual(packets().length, 1, 'после подготовки пакет не собран');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 console.log('review-gate: ok');

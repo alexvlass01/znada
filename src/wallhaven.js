@@ -180,6 +180,10 @@ const PROVIDER = Object.freeze({
       // whatever the site decides to send — so there is nothing to widen.
       maxPageSize: 0,
     }),
+    // LIB-014 stage 3. No limit: ten words answered without an error (2026-10-02), and
+    // several words already mean "all of them" here. Declared rather than left out, so
+    // "no limit" reads as measured, not as forgotten.
+    tagLimit: null,
   }),
   requestHeaders: Object.freeze({}),
   // The window may load these images itself: no Referer is required, so nothing has to

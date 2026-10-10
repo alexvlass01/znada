@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Hủy",
     "searchPh": "Tìm kiếm",
     "tagSearchPh": "Tìm kiếm thẻ",
+    "searchOrTagPh": "Tên hoặc thẻ khác…",
+    "clearSearch": "Xóa tìm kiếm và thẻ",
+    "tagSuggestions": "Gợi ý thẻ",
+    "tagToggleHint": "Ctrl+nhấp: thêm vào lựa chọn hoặc bỏ ra",
     "noTagsFound": "Không tìm thấy thẻ phù hợp",
     "clearTagFilter": "Bỏ lọc theo thẻ",
     "collapseSidebar": "Thu gọn thanh bên",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Không thể xóa các mục đã chọn",
     "selectionActions": "Hành động cho hình nền đã chọn",
     "clearSelection": "Xóa lựa chọn",
-    "itemsCount": "Mục: {n}"
+    "itemsCount": "Mục: {n}",
+    "sortLabel": "Sắp xếp",
+    "photosCount": "{n} ảnh"
   },
   "details": {
     "type": "Loại",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Nhạy cảm",
     "ratingQuestionable": "Đáng ngờ",
     "ratingExplicit": "Người lớn"
+  },
+  "motion": {
+    "format": "Ảnh động · {format}",
+    "formatFrames": "Ảnh động · {format} · {frames} khung hình",
+    "desktopFirstFrame": "Hiện tại, màn hình nền hiển thị khung hình đầu tiên."
   },
   "viewer": {
     "title": "Xem trước",
@@ -334,6 +345,9 @@
     "loading": "Đang tải…",
     "noResults": "Không tìm thấy kết quả",
     "sourcesFailed": "Không thể tải kết quả từ: {sources}. Hãy tìm kiếm lại hoặc chọn nguồn khác.",
+    "sourcePaused": "Trang này không tìm được với nhiều thẻ như vậy",
+    "sourcePausedSort": "Với cách sắp xếp này, trang này không tìm được với nhiều thẻ như vậy",
+    "allSourcesPaused": "Các trang đã chọn không tìm được với nhiều thẻ như vậy. Bỏ bớt một thẻ hoặc bật trang khác.",
     "error": "Lỗi: {e}",
     "add": "Thêm vào thư viện",
     "adding": "Đang thêm…",

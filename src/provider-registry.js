@@ -33,6 +33,9 @@ const znada = require('./cloud/provider');
 // handler asks only those who said they can.
 const HOOKS = Object.freeze([
   'search',
+  // LIB-014 stage 3. The exact words a search would send — declared by a site with a
+  // `tagLimit`, read by src/online-tag-limit.js before the site is asked.
+  'searchTerms',
   'enrich',
   'findByFingerprint',
   'suggestTags',

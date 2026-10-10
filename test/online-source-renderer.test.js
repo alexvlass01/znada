@@ -34,6 +34,9 @@ function element() {
     window: { api: { internetSearch: async () => reply } },
     onlineSearchIsCurrent: () => current, updatePurityToggle() {},
     onlineGridDescriptor: (_kind, item) => item, setLibViewHeader() {},
+    // BUG-048: finalizing a page with cards re-asks the end-of-feed watcher; covered in
+    // test/online-renderer-integration.test.js, not here.
+    recheckOnlineAutoLoad() {},
     $: (id) => id === '#whNote' ? errorNote : null,
     t: (key, args) => key + (args ? ':' + Object.values(args).join(',') : ''),
   };
@@ -54,64 +57,18 @@ function element() {
   await load(2); finish();
   assert.strictEqual(errorNote.textContent, 'online.noResults', 'genuine empty success remains noResults');
 
-  // Execute real rail rendering. ONL-005 task 6: every tag, most used first, in a section
-  // that opens and closes; search runs over all of them.
-  const nodes = Object.fromEntries(['libTags', 'libTagSection', 'libTagEmpty', 'libTagSearch', 'libActiveTag'].map((id) => ['#' + id, element()]));
-  const headClasses = new Set();
-  nodes['#libTagsToggle'] = { classList: { toggle(name, on) { if (on) headClasses.add(name); else headClasses.delete(name); } } };
-  let tags = [':/', ':3', 'a', 'd', 'long-selected-tag'];
-  const uses = { ':/': 1, ':3': 1, a: 5, d: 2, 'long-selected-tag': 9 };
-  const LIB = { filter: 'all', tag: '', tagQuery: '' };
-  const opened = [];
-  const railCtx = {
-    ONLINE: { view: 'search' },
-    inRemovedView: () => LIB.filter === 'removed',
-    LIB, $: (id) => nodes[id], t: (key) => key,
-    config: { libraryTagsExpanded: false },
-    document: { createElement: element, querySelectorAll: () => [] },
-    libAllTags: () => tags.slice().sort((x, y) => x.localeCompare(y)),
-    libTagCounts: () => uses,
-    setLibTagsOpen: (open, options) => opened.push({ open, persist: !!(options && options.persist) }),
-    fitRailSectionHeads() {},
-  };
-  railCtx.filterLibRailTags = bind('filterLibRailTags', railCtx);
-  railCtx.sortTagsByUse = bind('sortTagsByUse', railCtx);
-  const rail = bind('renderLibRailTags', railCtx);
-  const shownTags = () => nodes['#libTags'].children.map((b) => b.dataset.tag);
-  rail();
-  assert.strictEqual(nodes['#libTagSection'].hidden, false);
-  assert.deepStrictEqual(shownTags(), ['long-selected-tag', 'a', 'd', ':/', ':3'],
-    'every tag is listed, most used first, ties alphabetical');
-  assert.strictEqual(headClasses.has('active'), false, 'the head is not lit while no tag is chosen');
-  assert.strictEqual(JSON.stringify(opened[opened.length - 1]), '{"open":false,"persist":false}',
-    'a render shows the stored state (collapsed by default) and writes nothing');
-  railCtx.config.libraryTagsExpanded = true; rail();
-  assert.strictEqual(opened[opened.length - 1].open, true, 'an opened section stays open on the next render');
-  LIB.tagQuery = 'long'; rail();
-  assert.deepStrictEqual(shownTags(), ['long-selected-tag'], 'search narrows the whole list');
-  LIB.tagQuery = ''; rail();
-  assert.strictEqual(nodes['#libActiveTag'].hidden, true, 'no chip while nothing is chosen');
-  LIB.filter = 'favorite'; LIB.tag = 'd'; LIB.tagQuery = 'no-match'; rail();
-  assert.strictEqual(LIB.filter, 'favorite');
-  assert.strictEqual(LIB.tag, 'd', 'searching tag choices never clears the active filter');
-  assert.strictEqual(nodes['#libActiveTag'].hidden, false, 'the chosen tag is shown above the body');
-  assert.strictEqual(nodes['#libActiveTag'].textContent, 'd ×');
-  assert.strictEqual(headClasses.has('active'), true, 'a chosen tag lights the head like a chosen rail row');
-  assert.strictEqual(nodes['#libTagEmpty'].hidden, false);
-  LIB.filter = 'online'; rail();
-  assert.strictEqual(nodes['#libTagSection'].hidden, true);
-  assert.strictEqual(LIB.tagQuery, 'no-match', 'online does not destroy the local tag query');
-  LIB.filter = 'all'; LIB.tag = ''; rail();
-  assert.strictEqual(headClasses.has('active'), false, 'back to All, the head goes dark again');
-  tags = []; rail();
-  assert.strictEqual(nodes['#libTagSection'].hidden, true, 'no tags, no section');
-  assert.strictEqual(LIB.tagQuery, '', 'and no leftover search');
-  LIB.filter = 'favorite'; LIB.tag = 'deleted-tag'; rail();
-  assert.strictEqual(nodes['#libTagSection'].hidden, false, 'last removed tag remains clearable');
-  assert.strictEqual(nodes['#libActiveTag'].textContent, 'deleted-tag ×');
-  assert.strictEqual(LIB.filter, 'favorite', 'metadata changes never redirect the section');
-  LIB.filter = 'removed'; rail();
-  assert.strictEqual(nodes['#libTagSection'].hidden, true, 'trash does not offer an unsupported local tag filter');
+  // Tag toolbar moved to the shared field; execute its actual renderer with the same
+  // stateful DOM fixture as the multi-tag event checks.
+  const { harness } = require('./helpers/library-query-harness');
+  const local = harness({ a: { path: 'a.png', tags: ['a', 'long-selected-tag'] }, b: { path: 'b.png', tags: ['d'] }, c: { path: 'c.png', tags: ['a'] } });
+  local.ctx.renderLibRailTags();
+  assert.strictEqual(local.nodes['#libTagsPanel'].hidden, true);
+  local.nodes['#libSearch'].focus();
+  assert.deepStrictEqual(local.nodes['#libTags'].children.map((b) => b.dataset.tag), ['a', 'd', 'long-selected-tag']);
+  local.ctx.setLibraryTag('d');
+  assert.strictEqual(local.nodes['#libActiveTags'].children[0].dataset.tag, 'd');
+  local.ctx.LIB.filter = 'online'; local.ctx.renderLibRailTags();
+  assert.strictEqual(local.nodes['#libTagSection'].hidden, true);
 
   // Across pages, the first visible card wins; same post URL alone is not identity.
   const hash = 'a'.repeat(32);
@@ -216,24 +173,7 @@ function element() {
     assert.strictEqual(second.parent.title, '');
     assert.strictEqual(writes.length, 0);
 
-    // The local tag section still opens and closes as a remembered section.
-    const tagClasses = new Set();
-    const tagSection = { classList: { toggle(name, on) { if (on) tagClasses.add(name); else tagClasses.delete(name); } } };
-    const tagHead = element();
-    const tagCtx = {
-      config: { libraryTagsExpanded: false }, Promise,
-      window: { api: { setConfig: async (patch) => { writes.push(patch); return {}; } } },
-      $: (id) => ({ '#libTagSection': tagSection, '#libTagsToggle': tagHead })[id] || null,
-    };
-    tagCtx.setRailSectionOpen = bind('setRailSectionOpen', tagCtx);
-    const openTags = bind('setLibTagsOpen', tagCtx);
-    openTags(false);
-    assert.strictEqual(writes.length, 0, 'showing the tag section writes nothing');
-    openTags(true, { persist: true });
-    assert.strictEqual(tagClasses.has('open'), true);
-    assert.strictEqual(tagHead.attrs['aria-expanded'], 'true');
-    assert.strictEqual(tagCtx.config.libraryTagsExpanded, true);
-    assert.strictEqual(JSON.stringify(writes[0]), '{"libraryTagsExpanded":true}', 'the tag section remembers its own state');
+
   }
   // A section title is never cut (owner, 2026-09-17). The head is measured in its normal
   // state every time: a title that fits stays on one line, one that does not makes the head

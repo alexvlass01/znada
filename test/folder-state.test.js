@@ -105,6 +105,11 @@ ok('version 2 state migrates valid aspects and drops invalid values',
   version2Aspect.version === F.VERSION
   && version2Aspect.folders.old.files['a.jpg'].aspect === 1.25
   && !Object.prototype.hasOwnProperty.call(version2Aspect.folders.old.files['b.jpg'], 'aspect'));
+// LIB-024: only a MEASURED file may be skipped by the next scan; one without a stored
+// size is left out so the scan measures it once.
+ok('knownPathKeys leaves out a file whose size was never measured',
+  !F.knownPathKeys(result.state, 'folder-1').has(pathKey(a)));
+result.state.folders['folder-1'].files['a.jpg'].size = 10;
 ok('knownPathKeys returns canonical absolute paths', F.knownPathKeys(result.state, 'folder-1').has(pathKey(a)));
 
 let progressive = F.reconcileFolder(F.emptyState(), {

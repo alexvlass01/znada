@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Peruuta",
     "searchPh": "Haku",
     "tagSearchPh": "Hae tunnisteita",
+    "searchOrTagPh": "Nimi tai toinen tunniste…",
+    "clearSearch": "Tyhjennä haku ja tunnisteet",
+    "tagSuggestions": "Tunnisteehdotukset",
+    "tagToggleHint": "Ctrl+napsautus: lisää valintaan tai poista",
     "noTagsFound": "Vastaavia tunnisteita ei löytynyt",
     "clearTagFilter": "Poista tunnistesuodatin",
     "collapseSidebar": "Kutista sivupaneeli",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Valittuja kohteita ei voitu poistaa",
     "selectionActions": "Valittujen taustakuvien toiminnot",
     "clearSelection": "Tyhjennä valinta",
-    "itemsCount": "Kohteita: {n}"
+    "itemsCount": "Kohteita: {n}",
+    "sortLabel": "Järjestys",
+    "photosCount": "Kuvia: {n}"
   },
   "details": {
     "type": "Tyyppi",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Arkaluontoinen",
     "ratingQuestionable": "Kysymyksiä herättävä",
     "ratingExplicit": "Seksuaalinen"
+  },
+  "motion": {
+    "format": "Animaatio · {format}",
+    "formatFrames": "Animaatio · {format} · {frames} kuvaa",
+    "desktopFirstFrame": "Toistaiseksi työpöydällä näkyy ensimmäinen kuva."
   },
   "viewer": {
     "title": "Esikatselu",
@@ -334,6 +345,9 @@
     "loading": "Ladataan…",
     "noResults": "Mitään ei löytynyt",
     "sourcesFailed": "Tuloksia ei voitu ladata lähteistä: {sources}. Hae uudelleen tai valitse toinen lähde.",
+    "sourcePaused": "Tämä sivusto ei osaa hakea näin monella tunnisteella",
+    "sourcePausedSort": "Tällä järjestyksellä tämä sivusto ei osaa hakea näin monella tunnisteella",
+    "allSourcesPaused": "Valitut sivustot eivät osaa hakea näin monella tunnisteella. Poista tunniste tai ota käyttöön toinen sivusto.",
     "error": "Virhe: {e}",
     "add": "Lisää kirjastoon",
     "adding": "Lisätään…",

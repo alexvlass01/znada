@@ -199,6 +199,10 @@
     "removeConfirmCancel": "ยกเลิก",
     "searchPh": "ค้นหา",
     "tagSearchPh": "ค้นหาแท็ก",
+    "searchOrTagPh": "ชื่อหรือแท็กอื่น…",
+    "clearSearch": "ล้างการค้นหาและแท็ก",
+    "tagSuggestions": "แท็กแนะนำ",
+    "tagToggleHint": "Ctrl+คลิก: เพิ่มในรายการที่เลือกหรือเอาออก",
     "noTagsFound": "ไม่พบแท็กที่ตรงกัน",
     "clearTagFilter": "ล้างตัวกรองแท็ก",
     "collapseSidebar": "ย่อแถบด้านข้าง",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "ไม่สามารถลบรายการที่เลือกได้",
     "selectionActions": "การดำเนินการกับภาพที่เลือก",
     "clearSelection": "ล้างการเลือก",
-    "itemsCount": "รายการ: {n}"
+    "itemsCount": "รายการ: {n}",
+    "sortLabel": "การเรียงลำดับ",
+    "photosCount": "{n} ภาพ"
   },
   "details": {
     "type": "ประเภท",
@@ -292,6 +298,11 @@
     "ratingSensitive": "ละเอียดอ่อน",
     "ratingQuestionable": "ไม่แน่ชัด",
     "ratingExplicit": "สำหรับผู้ใหญ่"
+  },
+  "motion": {
+    "format": "ภาพเคลื่อนไหว · {format}",
+    "formatFrames": "ภาพเคลื่อนไหว · {format} · {frames} เฟรม",
+    "desktopFirstFrame": "ตอนนี้เดสก์ท็อปจะแสดงเฟรมแรก"
   },
   "viewer": {
     "title": "ดูตัวอย่าง",
@@ -334,6 +345,9 @@
     "loading": "กำลังโหลด…",
     "noResults": "ไม่พบสิ่งใด",
     "sourcesFailed": "ไม่สามารถโหลดผลลัพธ์จาก: {sources} ค้นหาอีกครั้งหรือเลือกแหล่งที่มาอื่น",
+    "sourcePaused": "เว็บไซต์นี้ค้นหาด้วยแท็กจำนวนมากขนาดนี้ไม่ได้",
+    "sourcePausedSort": "เมื่อใช้การเรียงลำดับนี้ เว็บไซต์นี้ค้นหาด้วยแท็กจำนวนมากขนาดนี้ไม่ได้",
+    "allSourcesPaused": "เว็บไซต์ที่เลือกค้นหาด้วยแท็กจำนวนมากขนาดนี้ไม่ได้ เอาแท็กออกหนึ่งแท็กหรือเปิดเว็บไซต์อื่น",
     "error": "ข้อผิดพลาด: {e}",
     "add": "เพิ่มลงในคลัง",
     "adding": "กำลังเพิ่ม…",

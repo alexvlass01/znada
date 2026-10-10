@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Annuller",
     "searchPh": "Søg",
     "tagSearchPh": "Søg efter tags",
+    "searchOrTagPh": "Navn eller endnu et tag…",
+    "clearSearch": "Ryd søgning og tags",
+    "tagSuggestions": "Forslag til tags",
+    "tagToggleHint": "Ctrl+klik: føj til markeringen eller fjern",
     "noTagsFound": "Ingen matchende tags fundet",
     "clearTagFilter": "Ryd tagfilter",
     "collapseSidebar": "Skjul sidepanelet",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Kunne ikke fjerne de valgte elementer",
     "selectionActions": "Handlinger for valgte tapeter",
     "clearSelection": "Ryd valg",
-    "itemsCount": "Elementer: {n}"
+    "itemsCount": "Elementer: {n}",
+    "sortLabel": "Sortering",
+    "photosCount": "{n} fotos"
   },
   "details": {
     "type": "Type",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Følsom",
     "ratingQuestionable": "Tvivlsom",
     "ratingExplicit": "Eksplicit"
+  },
+  "motion": {
+    "format": "Animation · {format}",
+    "formatFrames": "Animation · {format} · {frames} billeder",
+    "desktopFirstFrame": "Indtil videre viser skrivebordet det første billede."
   },
   "viewer": {
     "title": "Forhåndsvisning",
@@ -334,6 +345,9 @@
     "loading": "Indlæser…",
     "noResults": "Intet fundet",
     "sourcesFailed": "Kunne ikke indlæse resultater fra: {sources}. Søg igen, eller vælg en anden kilde.",
+    "sourcePaused": "Dette websted kan ikke søge på så mange tags",
+    "sourcePausedSort": "Med denne sortering kan dette websted ikke søge på så mange tags",
+    "allSourcesPaused": "De valgte websteder kan ikke søge på så mange tags. Fjern et tag, eller slå et andet websted til.",
     "error": "Fejl: {e}",
     "add": "Føj til bibliotek",
     "adding": "Tilføjer…",

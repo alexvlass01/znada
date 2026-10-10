@@ -357,8 +357,16 @@ function refreshTexts() {
 // Toast
 // ---------------------------------------------------------------------------
 let toastTimer = null;
+// LIB-021: the clock of an Undo notice. Any newer message replaces the notice, so it stops
+// the clock too — an old Undo deadline must not hide whatever is shown after it.
+let toastDeadline = null;
+function stopToastDeadline() {
+  if (toastDeadline) toastDeadline.cancel();
+  toastDeadline = null;
+}
 function toast(msg) {
   const el = $('#toast');
+  stopToastDeadline();
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
@@ -369,8 +377,11 @@ function toast(msg) {
 // needs it: nothing was deleted from disk, so undoing costs nothing, and a stray
 // click on a large selection should not be a one-way door. Stays up longer than a
 // plain toast because it asks the user to decide something.
-function toastAction(msg, actionLabel, onAction) {
+// `deadline` (LIB-021) is for Undo after a removal: 8 seconds with a visible line that the
+// cursor or focus pauses (renderer/undo-deadline.js). Other actions keep the 6 seconds.
+function toastAction(msg, actionLabel, onAction, { deadline = false } = {}) {
   const el = $('#toast');
+  stopToastDeadline();
   el.textContent = '';
   const text = document.createElement('span');
   text.textContent = msg;
@@ -382,13 +393,21 @@ function toastAction(msg, actionLabel, onAction) {
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     clearTimeout(toastTimer);
+    stopToastDeadline();
     el.classList.remove('show');
     await onAction();
   });
   el.appendChild(btn);
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.classList.remove('show'); el.textContent = ''; }, 6000);
+  const hide = () => { el.classList.remove('show'); el.textContent = ''; };
+  if (!deadline) { toastTimer = setTimeout(hide, 6000); return; }
+  toastDeadline = UndoDeadline.attach(el, document, {
+    onExpire: () => { toastDeadline = null; hide(); },
+    now: () => performance.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (id) => clearTimeout(id),
+  });
 }
 
 // Success message for a removal. It never claims more than happened, and it only
@@ -417,7 +436,7 @@ function toastRemoved(count, undoToken, evicted) {
     t('library.removedToastN', { n: count }),
     evicted > 0 ? t('library.trashEvictedN', { n: evicted }) : '',
   ].filter(Boolean).join(' · ');
-  if (undoToken) toastAction(msg, t('library.undo'), () => undoLastRemoval(undoToken));
+  if (undoToken) toastAction(msg, t('library.undo'), () => undoLastRemoval(undoToken), { deadline: true });
   else toast(msg);
 }
 
@@ -623,6 +642,7 @@ async function setPreview(which, filePath, monitorId = selectedMonitorId) {
     el.dataset.monitorId = contextId;
     el.style.backgroundImage = 'none';
     el.innerHTML = '';
+    delete el.dataset.motion; // the chip went with the markup; so does its mark (BUG-035)
     el.classList.remove('empty');
     el.removeAttribute('data-bg-path');
   }
@@ -642,11 +662,15 @@ async function setPreview(which, filePath, monitorId = selectedMonitorId) {
 
   let newBg = '';
   let newHtml = '';
-  
+  let motion = null;
+
   if (filePath) {
     el.classList.remove('empty');
-    const url = await window.api.fileUrl(filePath);
-    const newBgUrl = `${url}?v=${Date.now()}`;
+    // BUG-035. This preview stands for the desktop too: a moving picture shows the
+    // still frame the desktop will show, and wears the chip (see stillFrameView).
+    const frame = await stillFrameView(filePath);
+    motion = frame ? frame.motion : null;
+    const newBgUrl = (frame && frame.url) || `${await window.api.fileUrl(filePath)}?v=${Date.now()}`;
     newBg = `url("${newBgUrl}")`;
     
     // Preload image
@@ -678,6 +702,7 @@ async function setPreview(which, filePath, monitorId = selectedMonitorId) {
     el.style.backgroundImage = newBg;
   }
   el.innerHTML = newHtml;
+  window.MotionBadge.sync(el, motion, t);
   applyPreviewStyle();
 }
 
@@ -692,6 +717,7 @@ function resetPreviewsForMonitor(monitorId) {
     el.removeAttribute('data-bg-path');
     el.style.backgroundImage = 'none';
     el.innerHTML = '';
+    delete el.dataset.motion; // the chip went with the markup; so does its mark (BUG-035)
     el.classList.remove('empty');
   });
 }
@@ -706,6 +732,18 @@ function renderSlot(which) {
     if (contextVersion !== previewContextVersion || monitorId !== selectedMonitorId) return;
     setPreview(theme, cur, monitorId);
   });
+}
+
+// A still thumbnail and whether the picture moves, in one round trip (BUG-035): a tile
+// shows the chip exactly like a card in the library. The browser preview's stand-in API
+// has no thumbInfo, so there it is the plain thumbnail.
+function thumbWithMotion(path, w, h) {
+  const request = typeof window.api.thumbInfo === 'function'
+    ? window.api.thumbInfo(path, w, h)
+    : window.api.thumb(path, w, h).then((url) => ({ url }));
+  return Promise.resolve(request)
+    .then((info) => ({ url: (info && info.url) || '', motion: (info && info.motion) || null }))
+    .catch(() => ({ url: '', motion: null }));
 }
 
 function renderStrip(theme) {
@@ -730,7 +768,13 @@ function renderStrip(theme) {
     } else {
       el.title = baseName(it.path);
       // small thumbnail (data-URL is instant, no flicker; avoids decoding full-size files)
-      window.api.thumb(it.path, 200, 130).then((u) => { if (u) el.style.backgroundImage = `url("${u}")`; });
+      thumbWithMotion(it.path, 200, 130).then((info) => {
+        if (!info.url) return;
+        el.style.backgroundImage = `url("${info.url}")`;
+        const moving = window.MotionBadge.fromLocal(info.motion);
+        window.MotionBadge.sync(el, moving, t);
+        window.MotionHover.mark(el, it.path, !!moving); // LIB-017
+      });
 
       // Click on thumbnail → switch wallpaper to this item
       if (items.length > 1) {
@@ -1034,7 +1078,7 @@ async function renderConfig() {
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
 const LIB = {
-  filter: 'all', sort: 'added', q: '', tag: '', tagQuery: '', folderPath: null, crumbs: [], shuffleRank: {},
+  filter: 'all', sort: 'added', q: '', tags: [], tagMenu: '', availableTags: null, folderPath: null, crumbs: [], shuffleRank: {},
   selection: window.CardInteraction.createSelectionModel(), aspectCache: new Map(), sizeCache: new Map(),
   poolBySelectionKey: new Map(),
 };
@@ -1078,7 +1122,7 @@ let pendingLibraryScroll = null;
 // What counts as "the same list". The Online feed's own sub-view is part of it: search
 // results and cloud favourites are two lists behind one rail button.
 function libViewKey() {
-  const parts = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LIB.tag || ''];
+  const parts = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LibrarySearch.tagKey(LIB.tags)];
   if (LIB.filter === 'online') parts.push(ONLINE.view || 'search');
   return parts.join('|');
 }
@@ -1160,7 +1204,13 @@ const LIB_RESIZE_SETTLE_MS = 120;
 // deliberately NOT persisted and NOT remembered past a real search. So the front page
 // always comes back curated on the next visit; the ordering the user keeps is the one
 // that applies to their searches.
-const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: false, nsfw: false }, resume: null, nsfwAvailable: false, searched: false, statusFetched: false, sortTouched: false, providerNames: {} };
+const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: false, nsfw: false }, resume: null, nsfwAvailable: false, searched: false, statusFetched: false, sortTouched: false, providerNames: {},
+  // ONL-004. How many each site found for the current search, and whether the screen filter
+  // ran (then no number is honest). Filled from main's reply, shown beside each site in Sources.
+  totals: {}, sizeFiltered: false,
+  // LIB-014 stage 3. Sites that sat this search out because it has more words than they take
+  // ({ id: { max, sortHelps } }), and whether nobody was left to ask because of it.
+  paused: {}, allPaused: false };
 const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
 const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
 const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
@@ -1180,6 +1230,10 @@ const ONLINE = {
 // ONL-003. Whether reaching the end of the feed may ask for another page — see
 // renderer/auto-load.js for why this is suspicious by design.
 const onlineAutoLoad = window.AutoLoad.createAutoLoader();
+// BUG-048. The watcher of the feed's end, kept so it can be asked again after a round
+// (recheckOnlineAutoLoad), and the one pending "ask again after the gap".
+let onlineAutoLoadWatch = null;
+let onlineAutoLoadRetry = 0;
 // Cloud C4: account/session state (renderer-safe; the token never leaves main).
 const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
 // Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
@@ -1306,12 +1360,33 @@ function assignedIds() {
 // of flashing the whole grid.
 function libraryContentSig() {
   const lib = (config && config.library) || {};
+  // LIB-014: with words in the search box, editing a tag can take a photo into the list or
+  // out of it, so whether each record answers the search is part of what the grid shows.
+  const words = LibrarySearch.parse(LIB.q);
   const items = Object.keys(lib).sort().map((id) => {
     const it = lib[id] || {};
     return id + (it.favorite ? '*' : '') + (it.type === 'folder' ? 'F' : '')
-      + (LIB.tag && libMatchesTag(it) ? 'T' : '');
+      + (LIB.tags.length && libMatchesTag(it) ? 'T' : '')
+      + (words.length && LibrarySearch.matches(words, baseName(it.path || ''), it.tags) ? 'Q' : '');
   }).join(',');
   return `${items}|${(config && config.librarySort) || ''}`;
+}
+
+// LIB-014. Did the new config take a record that was already in the pool into the search
+// results or out of them (an edited tag, a moved file)? The in-place upgrade in onConfig
+// handles only freshly materialized photos; one broadcast can carry both, and then that
+// shortcut must not stand in for a rebuild.
+function libSearchMembershipChanged(prevLibrary) {
+  const words = LibrarySearch.parse(LIB.q);
+  if (!words.length) return false;
+  const next = (config && config.library) || {};
+  return Object.keys(prevLibrary || {}).some((id) => {
+    const was = prevLibrary[id];
+    const now = next[id];
+    if (!was || !now) return false; // a removal already forces the rebuild
+    return LibrarySearch.matches(words, baseName(was.path || ''), was.tags)
+      !== LibrarySearch.matches(words, baseName(now.path || ''), now.tags);
+  });
 }
 
 // Which items are assigned to a monitor — affects only the .assigned highlight.
@@ -1330,27 +1405,9 @@ function librarySignature() {
 // query + sort + content). When this is unchanged, a tab switch back to Library can
 // reuse the existing DOM (and its loaded thumbnails) instead of rebuilding/flashing.
 function libRenderKey() {
-  return [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LIB.tag || '', librarySignature()].join('');
+  return [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LibrarySearch.tagKey(LIB.tags), librarySignature()].join('');
 }
 
-function libAllTags() {
-  const set = new Set();
-  Object.values(config.library || {}).forEach((it) => (it.tags || []).forEach((tg) => set.add(tg)));
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}
-
-// ONL-005 task 6: frequent tags first, as the owner asked. The rail lists tags by how many
-// photos carry them, most used first; ties stay alphabetical. Alphabetical alone put ":/", ":3", ":d" on top.
-function sortTagsByUse(tags, counts) {
-  const uses = counts || {};
-  return (tags || []).slice().sort((a, b) => ((uses[b] || 0) - (uses[a] || 0)) || String(a).localeCompare(String(b)));
-}
-
-function filterLibRailTags(tags, query) {
-  const needle = String(query || '').trim().toLocaleLowerCase();
-  if (!needle) return tags.slice();
-  return tags.filter((tag) => String(tag).toLocaleLowerCase().includes(needle));
-}
 
 // Tag → number of pool items carrying it (popularity). Used by the assign-menu autocomplete.
 function libTagCounts() {
@@ -1442,16 +1499,43 @@ function entrySize(x) {
 }
 
 function libMatchesTag(item) {
-  return !LIB.tag || !!(item && Array.isArray(item.tags) && item.tags.includes(LIB.tag));
+  return LibrarySearch.matchesTags(LIB.tags, item && item.tags);
 }
 
-function setLibraryTag(tag) {
-  if (LIB.filter === 'online' || inRemovedView() || LIB.tag === tag) return;
-  LIB.tag = tag;
+// LIB-014 stage 1. Every Library view narrows its list HERE and nowhere else: by the words in
+// the search box (each must be found in the file name or in a tag — src/library-search.js)
+// and by the tag chosen in the side panel. The views used to carry their own copies of both
+// checks, four of the one and three of the other.
+//
+// `itemOf` hands back an entry's pool record, or null for a photo from a watched folder that
+// has none yet: it has no tags, so only its name can match. The trash passes `withTag: false`
+// — it has no tag panel, so a tag chosen elsewhere must not empty it.
+function libNarrow(list, itemOf, options) {
+  if (!(options && options.withTag === false)) {
+    // Keep the actual section before narrowing, including photos expanded from folders.
+    // Candidate counts must describe adding a tag to this result, not the global pool.
+    LIB.queryScope = JSON.stringify([LIB.filter, LIB.folderPath || '']);
+    LIB.queryItems = list.map((entry) => ({ name: baseName(entry.path), tags: itemOf(entry)?.tags || [] }));
+  }
+  const words = LibrarySearch.parse(LIB.q);
+  const byTag = !(options && options.withTag === false) && LIB.tags.length > 0;
+  if (!words.length && !byTag) return list;
+  return list.filter((entry) => {
+    const item = itemOf(entry);
+    if (byTag && !libMatchesTag(item)) return false;
+    return LibrarySearch.matches(words, baseName(entry.path), item && item.tags);
+  });
+}
+
+function setLibraryTag(tag, action = 'single') {
+  if (LIB.filter === 'online' || inRemovedView()) return;
+  const next = LibrarySearch.changeTags(LIB.tags, tag, action);
+  if (LibrarySearch.tagKey(next) === LibrarySearch.tagKey(LIB.tags)) return;
+  LIB.tags = next;
   closeLibPopup();
   clearSelection();
   syncSelectionUI();
-  // Unlike navigation, a filter must not exit a folder or change the selected section.
+  // A filter never exits a folder or changes the selected section.
   renderLibrary();
 }
 
@@ -1463,7 +1547,7 @@ const LIB_SECTION_EMPTY = { favorite: 'library.emptyFavorites', folder: 'library
 // images here" over thousands of photos reads like they are gone. `unfiltered` is the
 // view's count before the search and the tag, and only views that apply them pass it.
 function libEmptyKey(emptyKey, unfiltered) {
-  const narrowed = !!(LIB.q.trim() || LIB.tag);
+  const narrowed = LibrarySearch.parse(LIB.q).length > 0 || LIB.tags.length > 0;
   return narrowed && unfiltered > 0 ? 'library.noMatches' : emptyKey;
 }
 
@@ -1476,10 +1560,7 @@ function libSectionItems() {
 }
 
 function libList() {
-  let items = libSectionItems();
-  if (LIB.tag) items = items.filter(libMatchesTag);
-  const q = LIB.q.trim().toLowerCase();
-  if (q) items = items.filter((it) => baseName(it.path).toLowerCase().includes(q));
+  const items = libNarrow(libSectionItems(), (it) => it);
   sortItems(items);
   return items;
 }
@@ -1499,69 +1580,151 @@ function openLibrarySectionOrTop(filter) {
 }
 
 // The same for a tag row: the lit tag pressed again goes to the top (it used to do nothing).
-function openLibraryTagOrTop(tag) {
-  if (tag === LIB.tag) { scrollOpenViewToTop(); return; }
-  setLibraryTag(tag);
+function openLibraryTagOrTop(tag, event) {
+  event = event || {};
+  const toggle = event.ctrlKey || event.metaKey || event.shiftKey;
+  if (!toggle && LIB.tags.length === 1 && LIB.tags[0] === tag) { scrollOpenViewToTop(); return; }
+  setLibraryTag(tag, toggle ? 'toggle' : 'single');
+}
+
+function updateLibAvailableTags(entries, itemOf) {
+  LIB.availableTags = LibrarySearch.availableTags(entries.map(itemOf));
+  renderLibRailTags();
+}
+
+function libQueryItems() {
+  const scope = JSON.stringify([LIB.filter, LIB.folderPath || '']);
+  if (LIB.queryScope === scope) return LIB.queryItems;
+  // folderEntries() is asynchronous. Until libNarrow() supplies this folder's photos,
+  // expose no candidates rather than tags from the previous scope. Setting queryScope
+  // earlier would mark stale queryItems as current; navigation must not do that.
+  if (LIB.folderPath) return [];
+  return libSectionItems().map((item) => ({ name: baseName(item.path), tags: item.tags || [] }));
+}
+
+function renderLibQueryChips() {
+  const group = $('#libActiveTags');
+  if (!group) return;
+  const old = new Map(Array.from(group.children, (button) => [button.dataset.tag, button]));
+  LIB.tags.forEach((tag) => {
+    let button = old.get(tag);
+    if (!button) {
+      button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'pill lib-filter-btn done lib-active-tag';
+      button.dataset.tag = tag;
+      const label = document.createElement('span');
+      label.className = 'lib-chip-label';
+      label.textContent = tag;
+      const close = document.createElement('span');
+      close.className = 'lib-chip-close';
+      close.textContent = '×';
+      close.setAttribute('aria-hidden', 'true');
+      button.append(label, close);
+      group.appendChild(button);
+    }
+    button.setAttribute('aria-label', t('library.clearTagFilter') + ': ' + tag);
+    button.title = t('library.clearTagFilter');
+    old.delete(tag);
+  });
+  old.forEach((button) => button.remove());
+  group.hidden = !LIB.tags.length || inRemovedView();
+  group.setAttribute('aria-label', t('library.tags'));
+  const clear = $('#libQueryClear');
+  if (clear) clear.hidden = !LIB.q && (!LIB.tags.length || inRemovedView());
+  const search = $('#libSearch');
+  if (search && search.value !== LIB.q) search.value = LIB.q;
+}
+
+function positionLibTagPicker() {
+  const panel = $('#libTagsPanel');
+  if (panel) panel.style.top = 'calc(100% + 6px)';
 }
 
 function renderLibRailTags() {
   const box = $('#libTags');
   const section = $('#libTagSection');
   const empty = $('#libTagEmpty');
-  const search = $('#libTagSearch');
-  if (!box || !section || !empty) return;
-  // Each search toolbar owns its controls; neither changes the navigation rail.
-  if (LIB.filter === 'online' || inRemovedView()) {
-    section.hidden = true;
-    document.querySelectorAll('#viewLibrary .lib-railbtn').forEach((b) => {
-      b.classList.toggle('active', b.dataset.filter === libOpenSection());
-    });
-    return;
-  }
-  const tags = libAllTags();
-
-  // Keep an active filter clearable even if its last tagged item was removed. A tag
-  // query or metadata update must never silently broaden results or change sections.
-  section.hidden = tags.length === 0 && !LIB.tag;
-  if (!tags.length) {
-    LIB.tagQuery = '';
-    if (search) search.value = '';
-  }
-  // ONL-005 task 6: every tag, most used first. The three-tag cut and its "All tags"
-  // button are gone; the section itself is what opens and closes.
-  const matches = filterLibRailTags(sortTagsByUse(tags, libTagCounts()), LIB.tagQuery);
-  const active = $('#libActiveTag');
-  if (active) {
-    active.hidden = !LIB.tag;
-    active.textContent = active.hidden ? '' : LIB.tag + ' ×';
-    active.title = t('library.clearTagFilter');
-    active.setAttribute('aria-label', t('library.clearTagFilter') + ': ' + (LIB.tag || ''));
-  }
-  box.innerHTML = '';
-  matches.forEach((tg) => {
-    const b = document.createElement('button');
-    b.className = 'lib-railbtn';
-    b.dataset.tag = tg;
-    b.title = tg;
-    const ic = document.createElement('span');
-    ic.className = 'lib-rail-ic lib-rail-hash';
-    ic.textContent = '#';
-    const lbl = document.createElement('span');
-    lbl.textContent = tg;
-    b.append(ic, lbl);
-    box.appendChild(b);
+  const panel = $('#libTagsPanel');
+  if (!box || !section || !empty || !panel) return;
+  renderLibQueryChips();
+  const unsupported = LIB.filter === 'online' || inRemovedView();
+  const search = $('#libSearch');
+  const candidates = unsupported ? [] : LibrarySearch.tagCandidates(libQueryItems(), LIB.tags, LIB.q, search?.selectionStart);
+  const counts = new Map(candidates.map(({ tag, count }) => [tag, count]));
+  const matches = candidates.map(({ tag }) => tag);
+  section.hidden = unsupported || (!matches.length && !LIB.tags.length);
+  if (unsupported) LIB.tagMenu = '';
+  panel.hidden = !LIB.tagMenu || section.hidden || !matches.length;
+  search?.setAttribute('aria-expanded', String(!panel.hidden));
+  const heading = $('#libTagHeading');
+  if (heading) heading.textContent = t('library.tagSuggestions');
+  // Reuse the actual buttons. Rebuilding them after every selection loses keyboard focus
+  // and scroll, which makes choosing several of the owner's hundreds of tags impractical.
+  const scroll = box.scrollTop;
+  const focused = box.contains(document.activeElement) ? document.activeElement.dataset.tag : null;
+  const old = new Map(Array.from(box.children, (button) => [button.dataset.tag, button]));
+  matches.forEach((tag, index) => {
+    let button = old.get(tag);
+    if (!button) {
+      button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lib-railbtn';
+      button.dataset.tag = tag;
+      const label = document.createElement('span');
+      label.textContent = tag;
+      button.appendChild(label);
+      const count = document.createElement('span');
+      count.className = 'lib-tag-count';
+      button.appendChild(count);
+    }
+    button.classList.toggle('unavailable', counts.get(tag) === 0);
+    button.title = tag;
+    button.children[1].textContent = t('library.photosCount', { n: counts.get(tag) });
+    button.setAttribute('aria-label', tag + ', ' + button.children[1].textContent);
+    if (box.children[index] !== button) box.insertBefore(button, box.children[index] || null);
+    old.delete(tag);
   });
-  box.hidden = matches.length === 0;
-  empty.hidden = matches.length !== 0;
-  // The head is lit like a chosen rail row while a tag filters the grid (owner, 2026-09-17).
-  // It has no count: the number of tags tells the user nothing.
-  $('#libTagsToggle')?.classList.toggle('active', !!LIB.tag);
-  setLibTagsOpen(!!(config && config.libraryTagsExpanded));
-  fitRailSectionHeads();
-  document.querySelectorAll('#viewLibrary .lib-railbtn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.tag !== undefined ? b.dataset.tag === LIB.tag : b.dataset.filter === libOpenSection());
+  old.forEach((button) => button.remove());
+  box.hidden = !matches.length;
+  empty.hidden = !!matches.length;
+  box.scrollTop = scroll;
+  if (focused && focused !== document.activeElement?.dataset.tag) {
+    Array.from(box.children).find((button) => button.dataset.tag === focused)?.focus({ preventScroll: true });
+  }
+  positionLibTagPicker();
+  document.querySelectorAll('#viewLibrary .lib-navigation .lib-railbtn').forEach((button) => {
+    button.classList.toggle('active', button.dataset.filter === libOpenSection());
   });
 }
+
+function chooseLibTagSuggestion(tag) {
+  const search = $('#libSearch');
+  const consumed = LibrarySearch.consumeToken(LIB.q, search && search.selectionStart);
+  LIB.q = consumed.value;
+  LIB.tagMenu = '';
+  setLibraryTag(tag, 'add');
+  // Selecting an already chosen tag still consumes its token and refreshes the text filter.
+  if (search && search.value !== LIB.q) renderLibrary();
+  focusLibQuery();
+  search?.setSelectionRange(consumed.caret, consumed.caret);
+}
+
+function closeLibTagPicker(restoreFocus = false) {
+  const source = LIB.tagMenu;
+  if (!source) return;
+  LIB.tagMenu = '';
+  renderLibRailTags();
+  if (restoreFocus) focusLibQuery();
+}
+
+function focusLibQuery() {
+  // Restoring focus after a choice/Escape must not reopen the suggestions immediately.
+  LIB.skipQueryFocus = true;
+  $('#libSearch')?.focus();
+  LIB.skipQueryFocus = false;
+}
+
 
 // The duplicate title/count head above the grid was removed (the rail already names the
 // section and the head ate vertical space). The item count now lives in the status bar as
@@ -2128,6 +2291,11 @@ function applyThumbInfo(card, p, info) {
   card.dataset.thumbLoaded = 'true';
   card.classList.remove('missing');
   card.style.backgroundImage = `url("${info.url}")`;
+  // BUG-035. The thumbnail is a still frame; the chip says the picture itself moves.
+  const moving = window.MotionBadge.fromLocal(info.motion);
+  window.MotionBadge.sync(card, moving, t);
+  // LIB-017. ...and it plays while the pointer rests on the card.
+  window.MotionHover.mark(card, p, !!moving);
   if (info.width > 0 && info.height > 0) {
     const aspect = info.width / info.height;
     LIB.aspectCache.set(normPathKey(p), aspect);
@@ -2157,7 +2325,9 @@ function loadThumbInto(card) {
   request.then((info) => {
     const u = info && info.url;
     if (!u) { card.classList.add('missing'); return; }
-    rememberThumbUrl(normPathKey(p), { url: u, width: info.width || 0, height: info.height || 0 });
+    rememberThumbUrl(normPathKey(p), {
+      url: u, width: info.width || 0, height: info.height || 0, motion: info.motion || null,
+    });
     applyThumbInfo(card, p, info);
   }).finally(() => { delete card.dataset.thumbLoading; });
 }
@@ -2191,10 +2361,8 @@ async function renderFolderView(tok) {
   try { res = await window.api.folderEntries(dir); } catch { res = null; }
   if (tok !== allViewToken) return; // navigated away while awaiting
   const folders = (res && res.folders) || [];
-  let images = (res && res.images) || []; // [{ path, addedAt, modifiedAt, aspect }]
+  const images = (res && res.images) || []; // [{ path, addedAt, modifiedAt, aspect }]
   const unfiltered = folders.length + images.length;
-  const q = LIB.q.trim().toLowerCase();
-  if (q) images = images.filter((im) => baseName(im.path).toLowerCase().includes(q));
   // Same entry shape, sorting and chunked rendering as "All": a folder image already
   // in the pool shows its real card, otherwise an ephemeral one. This applies the
   // chosen sort (newest first / name / size / shuffle) and renders big folders in
@@ -2213,8 +2381,10 @@ async function renderFolderView(tok) {
         aspect: im.aspect,
       };
   });
-  if (LIB.tag) entries = entries.filter((entry) => libMatchesTag(entry.item));
-  // Subfolders stay navigable; a folder's tags are not inherited by its images.
+  // Only the photos are narrowed: subfolders stay navigable, and a folder's tags are not
+  // inherited by its images.
+  entries = libNarrow(entries, (entry) => entry.item);
+  updateLibAvailableTags(entries, (entry) => entry.item);
   sortItems(entries, {
     added: (x) => (x.item ? x.item.addedAt : x.addedAt),
     modified: (x) => (x.item ? x.item.modifiedAt : x.modifiedAt),
@@ -2308,9 +2478,8 @@ async function renderAllView(tok) {
       aspect: fi.aspect,
     })));
   const unfiltered = entries.length;
-  const q = LIB.q.trim().toLowerCase();
-  if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
-  if (LIB.tag) entries = entries.filter((en) => libMatchesTag(en.item));
+  entries = libNarrow(entries, (en) => en.item);
+  updateLibAvailableTags(entries, (en) => en.item);
   sortItems(entries, {
     path: (x) => x.path,
     added: (x) => x.item ? x.item.addedAt : x.addedAt,
@@ -2348,8 +2517,8 @@ async function renderRemovedView(tok) {
     folder: im.type === 'folder' ? { path: im.path, name: baseName(im.path) } : undefined,
   }));
   const unfiltered = entries.length;
-  const q = LIB.q.trim().toLowerCase();
-  if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
+  // The trash lists paths and dates, not records, so only the names can match here.
+  entries = libNarrow(entries, () => null, { withTag: false });
   sortItems(entries, {
     path: (x) => x.path,
     added: (x) => x.addedAt,
@@ -3628,6 +3797,9 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
       toast(t(outcome.key, outcome.params || undefined));
     }, { itemId: state.item && state.item.id });
     applyNowInput = appendApplyNowToggle(pop);
+    // BUG-035. A moving picture becomes its first frame on the desktop. Said here, where
+    // the choice is made, and only when the card this window came from moves.
+    if (window.MotionBadge.marksMotion(anchor)) window.MotionBadge.appendFirstFrameNote(pop, t);
     sections++;
   }
 
@@ -3682,18 +3854,16 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
 
 // One card, same meaning as the multi-select button: stop showing this in Znada.
 // Goes through the same path so a photo without a pool record is removable too.
-// LIB-012. Обе поверхности, которые сюда приходят, ставят «Убрать из библиотеки» вплотную
-// к похожему действию: меню карточки — рядом с «Убрать из слота», всплывающее окно — под
-// полем ввода тега. Поэтому подтверждение просится ИМЕННО отсюда, а не из обработчика:
-// массовая кнопка, онлайн-карточка и просмотрщик такого соседства не имеют и спрашивать
-// не должны.
-async function removeRecordFromLibrary(record) {
+// LIB-018. A single removal needs only Undo, except in a menu that also offers
+// "Remove from slot". That menu opts in below; assignment popups and ordinary
+// library cards keep the default. Main still owns the same trash/Undo operation.
+async function removeRecordFromLibrary(record, { confirm = false } = {}) {
   if (!record) return;
   const item = poolItemForRecord(record);
   const payload = [{ path: (item && item.path) || record.path, id: (item && item.id) || '', type: record.type }];
   if (!payload[0].path && !payload[0].id) return;
   let res;
-  try { res = await window.api.libraryRemoveMany(payload, { confirm: true }); }
+  try { res = await window.api.libraryRemoveMany(payload, { confirm }); }
   catch { res = null; }
   // Отказ — не ошибка. Человек нажал «Отмена», и всё должно выглядеть так, будто он не
   // нажимал ничего: ни тоста, ни перерисовки, ни снятого выделения.
@@ -4024,8 +4194,12 @@ async function openCardDetails(subject, record = null) {
     if (row.kind === 'i18n') value = t(row.valueKey);
     else if (row.kind === 'bytes') value = formatFileSize(row.value);
     else if (row.kind === 'date') value = formatDetailsDate(row.value);
+    else if (row.kind === 'motion') value = window.MotionBadge.describe(t, { format: row.format, frames: 0 });
     else value = row.value;
-    rows.appendChild(detailsRow(label, value, { mono: row.kind === 'mono', wide: row.wide }));
+    const node = detailsRow(label, value, { mono: row.kind === 'mono', wide: row.wide });
+    // BUG-035. A local picture is known to move only once its bytes are read (below).
+    if (row.id === 'type') pendingRows.type = node;
+    rows.appendChild(node);
   }
 
   if (model.preview) {
@@ -4068,6 +4242,8 @@ async function openCardDetails(subject, record = null) {
     if (meta.width > 0 && meta.height > 0) {
       fill('resolution', CardDetails.resolutionText(meta.width, meta.height));
     }
+    const moving = window.MotionBadge.fromLocal(meta.motion);
+    if (moving) fill('type', window.MotionBadge.describe(t, moving));
     fill('size', formatFileSize(meta.size));
     fill('modified', formatDetailsDate(meta.modifiedAt));
   } catch { /* metadata is optional; the sheet stays usable without it */ }
@@ -4197,7 +4373,11 @@ function openCardMenu(subject, card, point = null) {
       ? takeOutOfSlot(subject.slot.theme, subject.slot)
       : undefined),
     remove: () => (subject.kind === 'local'
-      ? removeRecordFromLibrary(record)
+      ? removeRecordFromLibrary(record, {
+        // Check the actions actually drawn, including on the large preview: a
+        // folder's current photo can have no removable placement of its own.
+        confirm: groups.some((group) => group.some((action) => action.id === 'removeFromSlot')),
+      })
       : removeOnlineFromLibrary(config.library ? config.library[subject.id] : null)),
     restore: () => restorePaths([subject.path]),
     deleteForever: () => deleteForever([subject.path]),
@@ -4368,6 +4548,95 @@ function startRailAnimation(view, collapsed) {
   return true;
 }
 
+function initLibQueryPicker() {
+  LIB.tagMenu = '';
+  const search = $('#libSearch');
+  const panel = $('#libTagsPanel');
+  const group = $('#libActiveTags');
+  if (!search || !panel || !group) return;
+  const applySearch = () => {
+    if (LIB.q === search.value) return;
+    LIB.q = search.value;
+    LIB.tagMenu = 'suggest';
+    closeLibPopup();
+    clearSelection();
+    syncSelectionUI();
+    renderLibrary();
+  };
+  search.addEventListener('input', applySearch);
+  search.addEventListener('search', applySearch);
+  search.addEventListener('focus', () => {
+    if (LIB.skipQueryFocus) return;
+    LIB.tagMenu = 'suggest';
+    renderLibRailTags();
+  });
+  search.addEventListener('click', () => {
+    LIB.tagMenu = 'suggest';
+    renderLibRailTags();
+  });
+  search.addEventListener('keydown', (event) => {
+    if (event.isComposing) return;
+    if (event.key === 'Escape' && LIB.tagMenu) {
+      event.preventDefault(); event.stopPropagation(); closeLibTagPicker(true); return;
+    }
+    // Text search is live. Enter confirms that text, never an unchosen suggestion:
+    // a filename may match even when the first offered exact tag would exclude it.
+    if (event.key === 'Enter') {
+      event.preventDefault(); event.stopPropagation();
+      applySearch(); closeLibTagPicker(true); return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    if (LIB.tagMenu !== 'suggest') { LIB.tagMenu = 'suggest'; renderLibRailTags(); }
+    const buttons = Array.from($('#libTags').children);
+    if (panel.hidden || !buttons.length) return;
+    event.preventDefault();
+    buttons[event.key === 'ArrowDown' ? 0 : buttons.length - 1].focus();
+  });
+  panel.addEventListener('keydown', (event) => {
+    const button = event.target.closest('button[data-tag]');
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); closeLibTagPicker(true); return;
+    }
+    if (!button) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const buttons = Array.from($('#libTags').children);
+      const next = buttons.indexOf(button) + (event.key === 'ArrowDown' ? 1 : -1);
+      event.preventDefault();
+      if (next < 0) search.focus();
+      else buttons[Math.min(next, buttons.length - 1)].focus();
+    } else if ((event.key === 'Enter' || event.key === ' ') && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+      // Chromium's synthesized button click does not reliably retain modifiers.
+      event.preventDefault();
+      if (LIB.tagMenu === 'suggest') chooseLibTagSuggestion(button.dataset.tag);
+      else openLibraryTagOrTop(button.dataset.tag, event);
+    }
+  });
+  group.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-tag]');
+    if (!button) return;
+    event.stopPropagation();
+    const index = LIB.tags.indexOf(button.dataset.tag);
+    const focused = document.activeElement === button;
+    setLibraryTag(button.dataset.tag, 'remove');
+    if (focused) {
+      const remaining = Array.from(group.children);
+      (remaining[Math.min(index, remaining.length - 1)] || search).focus();
+    }
+  });
+  $('#libQueryClear')?.addEventListener('click', () => {
+    LIB.q = ''; LIB.tags = []; LIB.tagMenu = '';
+    closeLibPopup(); clearSelection(); syncSelectionUI();
+    renderLibrary(); focusLibQuery();
+  });
+  $('#libQueryBox')?.addEventListener('click', (event) => {
+    if (!event.target.closest('button') && event.target !== search) search.focus();
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!event.target.closest('#libQueryBox, #libTagsPanel')) closeLibTagPicker();
+  });
+  window.addEventListener('resize', positionLibTagPicker);
+}
+
 function initLibrary() {
   initLibraryAccountPopover();
   refreshLibraryAccount();
@@ -4376,7 +4645,12 @@ function initLibrary() {
   if (rail) rail.addEventListener('click', (e) => {
     const btn = e.target.closest('.lib-railbtn');
     if (!btn) return;
-    if (btn.dataset.tag !== undefined) { openLibraryTagOrTop(btn.dataset.tag); return; }
+    if (btn.dataset.tag !== undefined) {
+      if (btn.closest('#libActiveTags')) return;
+      if (LIB.tagMenu === 'suggest') chooseLibTagSuggestion(btn.dataset.tag);
+      else openLibraryTagOrTop(btn.dataset.tag, e);
+      return;
+    }
     openLibrarySectionOrTop(btn.dataset.filter);
   });
   $('#libSidebarToggle')?.addEventListener('click', () => {
@@ -4458,9 +4732,11 @@ function initLibrary() {
     syncSelectionUI();
     try {
       let res;
-      try { res = await window.api.libraryRemoveMany(records); }
+      // LIB-020: ask about the selected cards, including folders, before main removes them.
+      try { res = await window.api.libraryRemoveMany(records, { confirm: selected.length >= 2 }); }
       catch { res = { config, removed: 0, error: 'remove_failed' }; }
       config = (res && res.config) || config;
+      if (res && res.cancelled) return;
       if (!res || res.error) {
         toast(t('library.massDeleteFailed'));
         return;
@@ -4498,31 +4774,8 @@ function initLibrary() {
       renderLibrary();
     });
   }
-  const searchEl = $('#libSearch');
-  if (searchEl) {
-    // Native clear can emit both events; rebuild only when the query changes.
-    const applySearch = () => {
-      if (LIB.q === searchEl.value) return;
-      LIB.q = searchEl.value;
-      renderLibrary();
-    };
-    searchEl.addEventListener('input', applySearch);
-    searchEl.addEventListener('search', applySearch);
-  }
-  const tagSearchEl = $('#libTagSearch');
-  if (tagSearchEl) tagSearchEl.addEventListener('input', () => {
-    LIB.tagQuery = tagSearchEl.value;
-    renderLibRailTags();
-    const tagList = $('#libTags');
-    if (tagList) tagList.scrollTop = 0;
-  });
+  initLibQueryPicker();
   const refreshBtn = $('#libRefresh');
-  $('#libTagsToggle')?.addEventListener('click', () => {
-    setLibTagsOpen(!(config && config.libraryTagsExpanded), { persist: true });
-  });
-  $('#libActiveTag')?.addEventListener('click', () => {
-    setLibraryTag('');
-  });
   if (refreshBtn) refreshBtn.addEventListener('click', async () => {
     if (refreshBtn.classList.contains('spinning')) return;
     refreshBtn.classList.add('spinning');
@@ -4754,6 +5007,9 @@ function initOnlineFilterMenu() {
   const popover = $('#onlineFilterPopover');
   if (!popover) return;
   bindAnchoredPopover(popover, () => ONLINE_FILTER_MENU.invoker || $('#whFilterToggle'));
+  // ONL-004. The numbers beside the sites are read from the state at the moment the menu opens,
+  // so a view that is not a search (favourites) never shows the last search's counts.
+  popover.addEventListener('toggle', (event) => { if (event.newState === 'open') renderOnlineSourceCounts(); });
   document.querySelectorAll('[popovertarget="onlineFilterPopover"]').forEach((button) => {
     button.addEventListener('click', (event) => {
       const open = popover.matches(':popover-open');
@@ -4844,25 +5100,13 @@ function onlineTagToken(input) {
   if (!input) return null;
   const value = String(input.value || '');
   const caret = Number.isFinite(input.selectionStart) ? input.selectionStart : value.length;
-  const pos = Math.max(0, Math.min(value.length, caret));
-  let start = pos;
-  while (start > 0 && !/[\s,]/.test(value[start - 1])) start -= 1;
-  let end = pos;
-  while (end < value.length && !/[\s,]/.test(value[end])) end += 1;
-  const raw = value.slice(start, end);
-  const prefix = raw
-    .trim()
-    .toLowerCase()
-    .replace(/^[-~]+/, '')
-    .replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_()]+/g, '');
-  return { start, end, raw, prefix };
+  return TagSuggest.currentTokenRange(value, caret);
 }
 
 function onlineTagSuggestAllowed(token) {
   return !!(token
     && token.prefix.length >= INTERNET_TAG_SUGGEST_MIN_LEN
-    && !token.raw.includes(':'));
+    && !TagSuggest.hasMetatag(token.raw));
 }
 
 function compactOnlineTagCount(value) {
@@ -5102,8 +5346,14 @@ function applyOnlineSourceUI(sources) {
         input.type = 'checkbox';
         input.dataset.provider = p.id;
         const label = document.createElement('span');
+        label.className = 'online-source-name';
         label.textContent = p.name;
-        row.append(input, label);
+        // ONL-004: how many this site found for the current search; filled by
+        // renderOnlineSourceCounts, empty when there is no honest number.
+        const count = document.createElement('span');
+        count.className = 'online-source-count';
+        count.dataset.countFor = p.id;
+        row.append(input, label, count);
         host.append(row);
       }
       host.dataset.providers = ids;
@@ -5132,6 +5382,42 @@ function applyOnlineSourceUI(sources) {
   if (!sources.internet) hideOnlineTagSuggest();
 }
 
+// ONL-004. One short number beside each site in Sources: how many it found for the search on
+// screen. Nothing for the front page, the favourites, a site that failed or keeps no count, and
+// nothing at all while "Fits my screen" is on — see renderer/online-found.js for why.
+// LIB-014 stage 3. A site that sat the search out shows a pause mark in the number's place, its
+// name goes quiet, and hovering either says why (owner, 2026-10-02: a mark with a tooltip, no
+// words on screen). The checkbox is not touched: the user's choice of sites stays.
+const ONLINE_PAUSE_MARK = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">'
+  + '<rect x="4" y="3" width="2.6" height="10" rx="1"/><rect x="9.4" y="3" width="2.6" height="10" rx="1"/></svg>';
+function renderOnlineSourceCounts() {
+  const host = $('#onlineSourceOptions');
+  if (!host) return;
+  const searching = LIB.filter === 'online' && ONLINE.view === 'search';
+  host.querySelectorAll('.online-source-count').forEach((el) => {
+    const state = searching ? OnlineFound.sourceState({
+      totals: INTERNET.totals, paused: INTERNET.paused, id: el.dataset.countFor,
+      sizeFiltered: INTERNET.sizeFiltered, locale: detailsLocale(),
+    }) : null;
+    const paused = !!(state && state.paused);
+    // Two texts: two tags and "Top" are not "too many tags" — the sort is the extra word.
+    const why = paused ? t(state.sortHelps ? 'online.sourcePausedSort' : 'online.sourcePaused') : '';
+    if (paused) el.innerHTML = ONLINE_PAUSE_MARK;
+    else el.textContent = state ? state.text : '';
+    el.title = paused ? why : (state ? state.exact : '');
+    if (typeof el.setAttribute === 'function') {
+      if (paused) { el.setAttribute('role', 'img'); el.setAttribute('aria-label', why); }
+      else { el.removeAttribute('role'); el.removeAttribute('aria-label'); }
+    }
+    const row = typeof el.closest === 'function' ? el.closest('.online-source-option') : null;
+    if (row) {
+      row.classList.toggle('paused', paused);
+      const name = row.querySelector('.online-source-name');
+      if (name) name.title = why;
+    }
+  });
+}
+
 // A rail section's title is never cut. Measured first as it would normally sit — one line,
 // arrow beside it; if it does not fit, the head goes `tight` and the title wraps (styles.css).
 // Longest real title 2026-09-17: Bulgarian "Източници", 69px — it fits the 156px rail now
@@ -5153,27 +5439,6 @@ function watchRailSectionHeads() {
   if (typeof ResizeObserver !== 'function') return;
   const observer = new ResizeObserver(() => fitRailSectionHeads());
   document.querySelectorAll('.lib-rail-section-head, .lib-rail-section-title').forEach((el) => observer.observe(el));
-}
-
-// ONL-005 tasks 5-6. A rail section is collapsed until the user opens it, then remembered
-// across launches. `persist` is set only by the user's own click; a render just shows the
-// stored state. Each section names its own setting and its own save call — a literal
-// setConfig per setting, so the set-config allowlist guard can still read them all.
-function setRailSectionOpen(spec, open, { persist = false } = {}) {
-  const value = !!open;
-  $(spec.section)?.classList.toggle('open', value);
-  $(spec.toggle)?.setAttribute('aria-expanded', String(value));
-  if (!persist || !config || config[spec.setting] === value) return;
-  config[spec.setting] = value;
-  // A remembered UI state; a failed write only means it opens collapsed next time.
-  Promise.resolve(spec.save(value)).catch(() => {});
-}
-
-function setLibTagsOpen(open, options) {
-  setRailSectionOpen({
-    section: '#libTagSection', toggle: '#libTagsToggle', setting: 'libraryTagsExpanded',
-    save: (value) => window.api.setConfig({ libraryTagsExpanded: value }),
-  }, open, options);
 }
 
 // --- Cloud account (C4) ---
@@ -5474,7 +5739,7 @@ function selectLibrarySection(filter, favorites = 'local') {
   }
   ONLINE.view = view;
   const nextFilter = view === 'favorites' ? 'online' : filter;
-  if (LIB.filter !== nextFilter) LIB.tag = '';
+  if (LIB.filter !== nextFilter) { LIB.tags = []; LIB.tagMenu = ''; LIB.availableTags = null; }
   LIB.filter = nextFilter;
   closeLibPopup();
   clearSelection();
@@ -5902,6 +6167,14 @@ async function doOnlineSearch(reset) {
     // ONL-014b. One bookmark object for every site at once, and a fresh search drops
     // it: the bookmarks belong to the question that was asked.
     INTERNET.resume = null;
+    // ONL-004. The counts belong to the question too; the old ones must not stand beside the
+    // sites while a new search is still asking.
+    INTERNET.totals = {};
+    INTERNET.sizeFiltered = false;
+    // LIB-014 stage 3. A pause belongs to the question as well: another query may fit.
+    INTERNET.paused = {};
+    INTERNET.allPaused = false;
+    if ($('#onlineSourceOptions')) renderOnlineSourceCounts();
     ONLINE.loaded = true;
     // ONL-003. A different question deserves a fresh benefit of the doubt: whatever made
     // the previous feed give up says nothing about this one.
@@ -5963,7 +6236,15 @@ async function loadInternetResults(generation) {
   if (res && Object.prototype.hasOwnProperty.call(res, 'resume')) {
     INTERNET.resume = res.resume || null;
   }
+  // LIB-014 stage 3. Taken before the failure check: a paused site is shown as paused even
+  // when every site that WAS asked failed. Kept across pages, like the numbers.
+  INTERNET.paused = { ...(INTERNET.paused || {}), ...((res && res.paused) || {}) };
+  INTERNET.allPaused = !!(res && res.allPaused);
   if (!res || res.error) return [];
+  // ONL-004. Kept per site across pages: a site that has finished is not asked again, and
+  // the number it gave still stands.
+  INTERNET.totals = { ...(INTERNET.totals || {}), ...(res.totals || {}) };
+  INTERNET.sizeFiltered = !!res.sizeFiltered;
   // ONL-014c. The kind comes from the CARD, not from which call fetched it — the same
   // reason it already carries whether a window may load its picture directly.
   return (res.items || []).map((item) => onlineGridDescriptor(item.cardKind === 'cloud' ? 'cloud' : 'internet', item));
@@ -5994,7 +6275,11 @@ function finalizeOnlineFeed() {
   const note = $('#whNote'); const more = $('#whMore');
   const n = ONLINE.entries.length;
   setLibViewHeader(n);
-  if (note) note.textContent = INTERNET.searchError || (n ? '' : t('online.noResults'));
+  // LIB-014 stage 3. Empty because every chosen site sat the search out is not "nothing found":
+  // the feed says why and what to do. A real failure still wins, as it did.
+  const empty = INTERNET.allPaused ? t('online.allSourcesPaused') : t('online.noResults');
+  if (note) note.textContent = INTERNET.searchError || (n ? '' : empty);
+  if ($('#onlineSourceOptions')) renderOnlineSourceCounts();
   const hasMore = !!INTERNET.resume;
   // ONL-003. The button is now the FALLBACK, not the way. It stays out of sight while
   // scrolling keeps the feed filling itself, and comes back the moment the feed stops
@@ -6003,6 +6288,7 @@ function finalizeOnlineFeed() {
   // never leaves the viewport, and the watcher has nothing new to report. The feed would
   // just stop, with no button and no explanation.
   if (more) more.hidden = !hasMore || !onlineAutoLoad.stalled();
+  if (n) recheckOnlineAutoLoad();
 }
 
 // "Показать ещё" advances every active source that still has a next page. Reaching the
@@ -6056,15 +6342,41 @@ function setupOnlineAutoLoad() {
     maybeAutoLoadOnline();
   }, { root, rootMargin: '600px 0px' });
   observer.observe(anchor);
+  onlineAutoLoadWatch = { observer, anchor };
+}
+
+// BUG-048. The watcher reports CHANGES, and a round that adds a few cards without pushing
+// the end of the feed out of the zone changes nothing it can see. Measured on the real
+// app 2026-09-27: beatrice_(re:zero) under the screen filter stopped at 13 cards with the
+// end still in view, no button, and hundreds more on the site. Watching the strip again
+// makes it report where the end is NOW, and the usual guard decides.
+//
+// Only after a round that brought cards. A round that brought nothing shows the button
+// instead (`stalled`) — asking again by itself there is the storm ONL-003 guards against.
+function recheckOnlineAutoLoad() {
+  if (!onlineAutoLoadWatch || onlineAutoLoad.stalled()) return;
+  const { observer, anchor } = onlineAutoLoadWatch;
+  observer.unobserve(anchor);
+  observer.observe(anchor);
 }
 
 function maybeAutoLoadOnline() {
-  if (!onlineAutoLoad.shouldLoad({
+  const state = {
     active: LIB.filter === 'online' && ONLINE.view === 'search' && activePage === 'library',
     hasMore: !!INTERNET.resume,
     loading: ONLINE.loading,
     now: Date.now(),
-  })) return;
+  };
+  if (!onlineAutoLoad.shouldLoad(state)) {
+    // Refused only because the last round started a moment ago: the end is in view now and
+    // will not be reported again by itself, so look once more when the gap is over.
+    const wait = onlineAutoLoad.gapLeft(state);
+    if (wait > 0) {
+      clearTimeout(onlineAutoLoadRetry);
+      onlineAutoLoadRetry = setTimeout(recheckOnlineAutoLoad, wait);
+    }
+    return;
+  }
   loadMoreOnline();
 }
 
@@ -6088,6 +6400,8 @@ function buildInternetCard(item) {
   setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
   card.__galleryItem = galleryItemFromInternet(item);
   setInternetCardThumbnail(card, item);
+  // BUG-035. The same chip as a local card, from what the site says about the file.
+  window.MotionBadge.sync(card, window.MotionBadge.fromSite(item), t);
   const label = [item.resolution, item.category].filter(Boolean).join(' · ');
   card.title = label;
   attachOnlineAddButton(card, 'internet', item, () => window.api.internetAdd(item, INTERNET.q));
@@ -6413,17 +6727,53 @@ function sizeHomeDisplays(monitors) {
   });
 }
 
-async function homeWallpaperUrl(monitor) {
-  if (!monitor) return '';
-  const cacheKey = `${monitor.id}|${wallTheme()}`;
-  const path = await window.api.currentImage(monitor.id, wallTheme());
-  const url = path ? await window.api.fileUrl(path) : '';
-  homeWallpaperCache.set(cacheKey, url);
-  return url;
+// BUG-035. A preview that stands for the desktop shows what the desktop really shows, and
+// for a moving picture that is its FIRST FRAME: Windows sets a still image. So such a
+// preview takes the still thumbnail and wears the chip; the file itself would play there
+// while the desktop stays still. When live wallpapers arrive (MEDIA-001), this is the rule
+// that brings the motion back, not a special case.
+//
+// The frame is asked for at the picture's own size (a thumbnail is at most 1024), because
+// the thumbnail helper scales a small picture UP to the size it is asked for, and "Center"
+// and "Tile" would then draw it bigger than the file itself.
+const STILL_FRAME_MAX = 1024;
+
+// For a moving picture: its still frame and the chip's answer. For anything else null,
+// and the caller draws the file itself exactly as before.
+async function stillFrameView(path) {
+  if (!path || typeof window.api.mediaMotion !== 'function' || typeof window.api.thumbInfo !== 'function') return null;
+  let answer = null;
+  try { answer = await window.api.mediaMotion(path); } catch { return null; }
+  const motion = window.MotionBadge.fromLocal(answer);
+  if (!motion) return null;
+  const side = Math.max(Number(answer.width) || 0, Number(answer.height) || 0);
+  const size = side > 0 ? Math.min(STILL_FRAME_MAX, side) : STILL_FRAME_MAX;
+  let url = '';
+  try {
+    const info = await window.api.thumbInfo(path, size, size);
+    url = (info && info.url) || '';
+  } catch { url = ''; }
+  return { url, motion };
 }
 
-function applyHomeDisplayWallpaper(wallpaper, url) {
+async function homeWallpaperView(monitor) {
+  if (!monitor) return { url: '', motion: null };
+  const cacheKey = `${monitor.id}|${wallTheme()}`;
+  const path = await window.api.currentImage(monitor.id, wallTheme());
+  let view = { url: '', motion: null };
+  if (path) {
+    const frame = await stillFrameView(path);
+    view = { url: (frame && frame.url) || await window.api.fileUrl(path), motion: frame ? frame.motion : null };
+  }
+  homeWallpaperCache.set(cacheKey, view);
+  return view;
+}
+
+function applyHomeDisplayWallpaper(wallpaper, view) {
+  const url = view && view.url;
   const empty = wallpaper.parentElement.querySelector('.home-display-empty');
+  const labels = wallpaper.parentElement.querySelector('.home-display-labels');
+  if (labels) window.MotionBadge.sync(labels, url ? view.motion : null, t, { inline: true });
   if (!url) {
     wallpaper.style.backgroundImage = '';
     wallpaper.classList.add('empty');
@@ -6441,11 +6791,11 @@ function applyHomeDisplayWallpaper(wallpaper, url) {
 
 async function loadHomeDisplayWallpaper(monitor, wallpaper, version) {
   try {
-    const url = await homeWallpaperUrl(monitor);
+    const view = await homeWallpaperView(monitor);
     if (version !== homeRenderVersion || !wallpaper.isConnected) return;
-    applyHomeDisplayWallpaper(wallpaper, url);
+    applyHomeDisplayWallpaper(wallpaper, view);
   } catch {
-    if (version === homeRenderVersion && wallpaper.isConnected) applyHomeDisplayWallpaper(wallpaper, '');
+    if (version === homeRenderVersion && wallpaper.isConnected) applyHomeDisplayWallpaper(wallpaper, null);
   }
 }
 
@@ -6454,7 +6804,7 @@ async function updateHomeBackdrop() {
   const selected = monitorList.find((m) => m.id === homeSelectedMonitorId);
   const primary = monitorList.find((m) => m.primary) || monitorList[0];
   try {
-    const url = await homeWallpaperUrl(selected || primary);
+    const { url } = await homeWallpaperView(selected || primary);
     if (version !== homeBackdropVersion) return;
     $('#homeBackdrop').style.backgroundImage = url ? `url("${url}")` : '';
   } catch {
@@ -6569,13 +6919,17 @@ function renderHome() {
       empty.textContent = t('home.noWallpaper');
       const cacheKey = `${monitor.id}|${wallTheme()}`;
       const hasCachedWallpaper = homeWallpaperCache.has(cacheKey);
-      const cachedWallpaper = homeWallpaperCache.get(cacheKey) || '';
-      empty.hidden = !hasCachedWallpaper || !!cachedWallpaper;
+      const cachedWallpaper = homeWallpaperCache.get(cacheKey) || null;
+      empty.hidden = !hasCachedWallpaper || !!(cachedWallpaper && cachedWallpaper.url);
+      // The label and, for a moving picture, the chip beside it (BUG-035).
+      const labels = document.createElement('span');
+      labels.className = 'home-display-labels';
       const label = document.createElement('span');
       label.className = 'home-display-label';
       label.textContent = t('monitor.label', { n }) + (monitor.primary ? ` · ${t('monitor.primary')}` : '');
-      screen.append(wallpaper, empty, label);
-      if (cachedWallpaper) applyHomeDisplayWallpaper(wallpaper, cachedWallpaper);
+      labels.appendChild(label);
+      screen.append(wallpaper, empty, labels);
+      if (cachedWallpaper && cachedWallpaper.url) applyHomeDisplayWallpaper(wallpaper, cachedWallpaper);
 
       button.appendChild(screen);
       wrap.appendChild(button);
@@ -6661,11 +7015,14 @@ function renderHomeRecentItems(items, version) {
     });
     grid.appendChild(card);
 
-    window.api.thumb(item.path, 360, 220).then((url) => {
-      if (version !== homeRecentRenderVersion || !card.isConnected || !url) return;
-      preview.style.backgroundImage = `url("${url}")`;
+    thumbWithMotion(item.path, 360, 220).then((info) => {
+      if (version !== homeRecentRenderVersion || !card.isConnected || !info.url) return;
+      preview.style.backgroundImage = `url("${info.url}")`;
       preview.classList.add('loaded');
-    }).catch(() => {});
+      const moving = window.MotionBadge.fromLocal(info.motion);
+      window.MotionBadge.sync(preview, moving, t);
+      window.MotionHover.mark(preview, item.path, !!moving); // LIB-017
+    });
   });
 
   // Fit the row to the container width right away with the fallback aspect, then refine once
@@ -6768,7 +7125,32 @@ function renderUpdate(st) {
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
+// LIB-017. One card at a time plays its moving picture while the pointer rests on it.
+// Only local files: an online card would download the whole file for a hover (owner,
+// 2026-10-09). Hosts opt in through MotionHover.mark, next to the chip.
+function installMotionHover() {
+  const controller = window.MotionHover.create({
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (id) => clearTimeout(id),
+    resolveUrl: (p) => window.api.fileUrl(p),
+    reducedMotion: () => typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  });
+  window.MotionHover.install(document, controller);
+}
+
 async function init() {
+  installMotionHover();
+  // LIB-019. One app-styled question for every surface requesting confirmation.
+  // Subscribe before the first IPC await so no question is lost during startup.
+  if (window.api.onLibraryRemovalQuestion) {
+    const removalDialog = LibraryRemovalDialog.create({
+      document,
+      reply: (id, confirmed) => window.api.libraryRemovalAnswer(id, confirmed),
+    });
+    window.api.onLibraryRemovalQuestion(removalDialog.show);
+    window.api.onLibraryRemovalQuestionClosed(removalDialog.dismiss);
+  }
   config = await window.api.getConfig();
   hydrateOnlineFromConfig();
   currentTheme = await window.api.getTheme();
@@ -6885,7 +7267,7 @@ async function init() {
   const btnOpenRemoved = $('#btnOpenRemoved');
   if (btnOpenRemoved) btnOpenRemoved.addEventListener('click', () => {
     LIB.filter = 'removed';
-    LIB.tag = '';
+    LIB.tags = []; LIB.tagMenu = ''; LIB.availableTags = null;
     LIB.folderPath = '';
     LIB.q = '';
     const search = $('#libSearch');
@@ -7232,7 +7614,7 @@ async function init() {
       if (libraryContentSig() !== prevContentSig) {
         if (document.hidden) deferredLiveRefresh.mark('library');
         else if (LIB.filter !== 'favorite' && isFavoriteOnlyLibraryChange(prevLibrary, config.library)) refreshFavoriteHighlights();
-        else if (LIB.tag || !tryUpgradeMaterializedCards(prevPoolIds)) renderLibrary();
+        else if (LIB.tags.length || libSearchMembershipChanged(prevLibrary) || !tryUpgradeMaterializedCards(prevPoolIds)) renderLibrary();
       } else if (assignedSig() !== prevAssignedSig && !document.hidden) {
         refreshAssignedHighlights();
       }

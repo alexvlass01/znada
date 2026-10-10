@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Cancelar",
     "searchPh": "Buscar",
     "tagSearchPh": "Buscar etiquetas",
+    "searchOrTagPh": "Nombre u otra etiqueta…",
+    "clearSearch": "Borrar búsqueda y etiquetas",
+    "tagSuggestions": "Sugerencias de etiquetas",
+    "tagToggleHint": "Ctrl+clic: añadir a la selección o quitar",
     "noTagsFound": "No se encontraron etiquetas coincidentes",
     "clearTagFilter": "Quitar filtro de etiqueta",
     "collapseSidebar": "Contraer panel",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "No se pudieron quitar algunos elementos",
     "selectionActions": "Acciones de los fondos seleccionados",
     "clearSelection": "Borrar selección",
-    "itemsCount": "{n} elemento(s)"
+    "itemsCount": "{n} elemento(s)",
+    "sortLabel": "Orden",
+    "photosCount": "{n} fotos"
   },
   "details": {
     "type": "Tipo",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensible",
     "ratingQuestionable": "Cuestionable",
     "ratingExplicit": "Explícito"
+  },
+  "motion": {
+    "format": "Animación · {format}",
+    "formatFrames": "Animación · {format} · {frames} fotogramas",
+    "desktopFirstFrame": "Por ahora, el escritorio muestra el primer fotograma."
   },
   "viewer": {
     "title": "Visor",
@@ -334,6 +345,9 @@
     "loading": "Cargando…",
     "noResults": "No se encontraron resultados",
     "sourcesFailed": "No se pudieron cargar resultados de: {sources}. Se puede repetir la búsqueda o elegir otra fuente.",
+    "sourcePaused": "Este sitio no admite tantas etiquetas",
+    "sourcePausedSort": "Con este orden, este sitio no admite tantas etiquetas",
+    "allSourcesPaused": "Los sitios seleccionados no admiten tantas etiquetas. Quite una etiqueta o active otro sitio.",
     "error": "Error: {e}",
     "add": "Añadir a la biblioteca",
     "adding": "Añadiendo…",

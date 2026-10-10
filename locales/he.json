@@ -199,6 +199,10 @@
     "removeConfirmCancel": "ביטול",
     "searchPh": "חיפוש",
     "tagSearchPh": "חיפוש תגיות",
+    "searchOrTagPh": "שם או תגית נוספת…",
+    "clearSearch": "ניקוי החיפוש והתגיות",
+    "tagSuggestions": "הצעות לתגיות",
+    "tagToggleHint": "Ctrl+לחיצה: הוספה לבחירה או הסרה",
     "noTagsFound": "לא נמצאו תגיות תואמות",
     "clearTagFilter": "נקה סינון תגית",
     "collapseSidebar": "כווץ את הסרגל הצדדי",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "לא ניתן היה להסיר את הפריטים שנבחרו",
     "selectionActions": "פעולות לרקעים שנבחרו",
     "clearSelection": "נקה בחירה",
-    "itemsCount": "פריטים: {n}"
+    "itemsCount": "פריטים: {n}",
+    "sortLabel": "מיון",
+    "photosCount": "תמונות: {n}"
   },
   "details": {
     "type": "סוג",
@@ -292,6 +298,11 @@
     "ratingSensitive": "רגיש",
     "ratingQuestionable": "מוטל בספק",
     "ratingExplicit": "למבוגרים"
+  },
+  "motion": {
+    "format": "הנפשה · {format}",
+    "formatFrames": "הנפשה · {format} · {frames} פריימים",
+    "desktopFirstFrame": "בינתיים שולחן העבודה מציג את הפריים הראשון."
   },
   "viewer": {
     "title": "תצוגה מקדימה",
@@ -334,6 +345,9 @@
     "loading": "טוען…",
     "noResults": "לא נמצא דבר",
     "sourcesFailed": "לא ניתן היה לטעון תוצאות מ: {sources}. אפשר לחפש שוב או לבחור מקור אחר.",
+    "sourcePaused": "האתר הזה לא יכול לחפש לפי כל כך הרבה תגיות",
+    "sourcePausedSort": "עם המיון הזה, האתר הזה לא יכול לחפש לפי כל כך הרבה תגיות",
+    "allSourcesPaused": "האתרים שנבחרו לא יכולים לחפש לפי כל כך הרבה תגיות. יש להסיר תגית או להפעיל אתר אחר.",
     "error": "שגיאה: {e}",
     "add": "הוסף לספרייה",
     "adding": "מוסיף…",

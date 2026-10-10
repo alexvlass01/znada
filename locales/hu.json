@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Mégse",
     "searchPh": "Keresés",
     "tagSearchPh": "Címkék keresése",
+    "searchOrTagPh": "Név vagy még egy címke…",
+    "clearSearch": "Keresés és címkék törlése",
+    "tagSuggestions": "Címkejavaslatok",
+    "tagToggleHint": "Ctrl+kattintás: hozzáadás a kijelöléshez vagy eltávolítás",
     "noTagsFound": "Nincs egyező címke",
     "clearTagFilter": "Címkeszűrő törlése",
     "collapseSidebar": "Oldalsáv összecsukása",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Nem sikerült eltávolítani a kiválasztott elemeket",
     "selectionActions": "Kiválasztott háttérkép műveletek",
     "clearSelection": "Kiválasztás törlése",
-    "itemsCount": "Elemek: {n}"
+    "itemsCount": "Elemek: {n}",
+    "sortLabel": "Rendezés",
+    "photosCount": "{n} fotó"
   },
   "details": {
     "type": "Típus",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Kényes",
     "ratingQuestionable": "Kérdéses",
     "ratingExplicit": "Felnőtt"
+  },
+  "motion": {
+    "format": "Animáció · {format}",
+    "formatFrames": "Animáció · {format} · {frames} képkocka",
+    "desktopFirstFrame": "Egyelőre az asztalon az első képkocka látszik."
   },
   "viewer": {
     "title": "Előnézet",
@@ -334,6 +345,9 @@
     "loading": "Betöltés…",
     "noResults": "Nincs találat",
     "sourcesFailed": "Nem sikerült betölteni a találatokat innen: {sources}. Keressen újra, vagy válasszon másik forrást.",
+    "sourcePaused": "Ez az oldal nem tud ennyi címkével keresni",
+    "sourcePausedSort": "Ezzel a rendezéssel ez az oldal nem tud ennyi címkével keresni",
+    "allSourcesPaused": "A kiválasztott oldalak nem tudnak ennyi címkével keresni. Távolítson el egy címkét, vagy kapcsoljon be egy másik oldalt.",
     "error": "Hiba: {e}",
     "add": "Hozzáadás a könyvtárhoz",
     "adding": "Hozzáadás…",

@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Cancelar",
     "searchPh": "Pesquisar",
     "tagSearchPh": "Pesquisar tags",
+    "searchOrTagPh": "Nome ou outra tag…",
+    "clearSearch": "Limpar pesquisa e tags",
+    "tagSuggestions": "Sugestões de tags",
+    "tagToggleHint": "Ctrl+clique: adicionar à seleção ou remover",
     "noTagsFound": "Nenhuma tag correspondente encontrada",
     "clearTagFilter": "Limpar filtro de etiqueta",
     "collapseSidebar": "Recolher painel",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Não foi possível remover alguns elementos",
     "selectionActions": "Ações dos papéis de parede selecionados",
     "clearSelection": "Limpar seleção",
-    "itemsCount": "{n} elemento(s)"
+    "itemsCount": "{n} elemento(s)",
+    "sortLabel": "Ordenação",
+    "photosCount": "{n} fotos"
   },
   "details": {
     "type": "Tipo",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensível",
     "ratingQuestionable": "Questionável",
     "ratingExplicit": "Explícito"
+  },
+  "motion": {
+    "format": "Animação · {format}",
+    "formatFrames": "Animação · {format} · {frames} quadros",
+    "desktopFirstFrame": "Por enquanto, a área de trabalho mostra o primeiro quadro."
   },
   "viewer": {
     "title": "Pré-visualização",
@@ -334,6 +345,9 @@
     "loading": "A carregar…",
     "noResults": "Nenhum resultado encontrado",
     "sourcesFailed": "Não foi possível carregar resultados de: {sources}. Pesquise novamente ou escolha outra fonte.",
+    "sourcePaused": "Este site não pesquisa tantas tags",
+    "sourcePausedSort": "Com esta ordenação, este site não pesquisa tantas tags",
+    "allSourcesPaused": "Os sites selecionados não pesquisam tantas tags. Remova uma tag ou ative outro site.",
     "error": "Erro: {e}",
     "add": "Adicionar à biblioteca",
     "adding": "A adicionar…",

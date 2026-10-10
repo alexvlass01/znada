@@ -85,7 +85,7 @@ ok('transient action popups share one lazy materialization promise',
 ok('removal is available for every selected card, not only pool records',
   renderer.includes('remove.disabled = batchPending;')
   && !renderer.includes('remove.disabled = batchPending || removable !== n')
-  && renderer.includes('window.api.libraryRemoveMany(records)'));
+  && renderer.includes('window.api.libraryRemoveMany(records,'));
 ok('the renderer sends the path and kind of each card, since only some have a pool id',
   renderer.includes("return { path: (item && item.path) || record.path, id: (item && item.id) || '', type: record.type };"));
 ok('bulk removal crosses one batch IPC instead of looping config writes',

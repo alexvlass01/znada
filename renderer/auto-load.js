@@ -53,6 +53,18 @@
       return true;
     }
 
+    // BUG-048. How long until the gap is the only thing left in the way — and 0 when it
+    // is not the gap at all. The end of the feed is watched for CHANGES; if it was already
+    // in view when the gap said no, nothing will report it again, so the renderer asks
+    // once more after this long instead of letting the feed stop there.
+    function gapLeft(state = {}) {
+      if (stopped || !lastAt) return 0;
+      if (!state.active || !state.hasMore || state.loading) return 0;
+      const now = Number.isFinite(state.now) ? state.now : 0;
+      const left = minGapMs - (now - lastAt);
+      return left > 0 ? left : 0;
+    }
+
     // Call when a round has been STARTED, so the gap is measured from the request rather
     // than from its answer — a slow site would otherwise let several through.
     function started(now) {
@@ -105,7 +117,7 @@
     // button and no explanation, which is a worse dead end than the one being fixed.
     function stalled() { return stopped || idleRounds > 0; }
 
-    return { shouldLoad, started, finished, failed, reset, exhausted, stalled,
+    return { shouldLoad, gapLeft, started, finished, failed, reset, exhausted, stalled,
       // For tests and for anyone debugging a feed that stopped early.
       state: () => ({ idleRounds, stopped, lastAt }) };
   }

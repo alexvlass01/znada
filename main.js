@@ -10,16 +10,19 @@ const { pathToFileURL } = require('url');
 const { execFile, execFileSync } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
+const { createLibraryRemovalQuestion } = require('./src/library-removal-question');
 const ipcAuthorityMod = require('./src/ipc-authority'); // SEC-002: кто вправе звать какой канал
 const pathGrantsMod = require('./src/path-grants'); // SEC-002: какие пути приложение подтвердило само
 const { pathKey, isDirectChildPath } = require('./src/path-key'); // canonical identity for every local path map
 const libraryAssignment = require('./src/library-assignment');
 const folderState = require('./src/folder-state'); // persistent firstSeenAt для файлов живых папок
 const liveFolderWatch = require('./src/live-folder-watch'); // lightweight fs.watch lifecycle + debounce
+const photoImport = require('./src/photo-import'); // LIB-022/023: имя своей копии и «фото уже в отслеживаемой папке»
 // ONL-013: ни поиск, ни поиск по отпечатку больше не называют сайтов — оба ходят через
 // реестр, поэтому прямые require адаптеров здесь не нужны.
 const online = require('./src/online');
 const sizeFilter = require('./src/size-filter'); // ONL-010: подходит ли картинка под экран
+const onlineTagLimit = require('./src/online-tag-limit'); // LIB-014 этап 3: влезает ли запрос в предел сайта
 const onlineResume = require('./src/online-resume'); // ONL-014b: где какой сайт остановился // смешивание и дедуп результатов внешних провайдеров
 const mediaProxy = require('./src/media-proxy'); // PERF-008: адресация потокового прокси картинок
 const originalStoreMod = require('./src/original-store'); // PERF-010: оригинал, который уже скачан
@@ -29,6 +32,7 @@ const onlineQuickFilters = require('./src/online-quick-filters'); // DESIGN-002:
 const mediaFormats = require('./src/media-type'); // ONL-015: единый список форматов картинок
 const tagSuggest = require('./src/tag-suggest'); // ONL-014: строка поиска (написание тега, токен под курсором)
 const itemDetails = require('./src/item-details'); // bounded metadata reader + URL/path validation
+const imageMotion = require('./src/image-motion'); // BUG-035: does a picture move, read from its bytes
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const libraryStore = require('./src/library-store'); // пул живёт в своём файле с пакетной записью
@@ -41,6 +45,7 @@ const { createTrayController } = require('./src/tray'); // системный т
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
 const { createStealthController } = require('./src/stealth-session'); // отменяемая «невидимая смена» (под тестами)
 const nextChange = require('./src/next-change'); // что Главной РАЗРЕШЕНО обещать про следующую смену (HOME-001)
+const { createLatestIntent } = require('./src/latest-intent'); // последнее намерение планировщика и его единственный таймер (TRG-004)
 const { createTaskQueue } = require('./src/task-queue'); // small async queue for expensive OS thumbnail jobs
 const { ThumbnailHost, resolveThumbnailHelperPath } = require('./src/thumbnail-host');
 const { createFailureNotifier } = require('./src/failure-notifier'); // edge-trigger «работало→сломалось» (T2)
@@ -60,6 +65,19 @@ const mediaMove = require('./src/media-move'); // DATA-006: копировани
 const profileMigrationMod = require('./src/profile-migration'); // DATA-006: пересчёт путей под новый корень
 const applyOutcome = require('./src/apply-outcome'); // пустой слот против исчезнувшего источника
 const poolConsistency = require('./src/pool-consistency'); // ссылки слотов против содержимого пула // stable Squirrel launch targets for Run/.lnk
+const childRunnerMod = require('./src/child-runner'); // WIN-002: системные программы — по полному пути и со сроком
+
+// WIN-002. powershell.exe and reg.exe are started from System32 by absolute path, never
+// looked up on PATH, and every run has a hard deadline after which its whole process tree
+// is ended. A PowerShell that never returned used to hold its caller forever — including
+// the wallpaper apply inside the library lock. Quitting ends whatever is still running.
+// Every system program main starts goes through this one runner, and
+// test/system-children-main.test.js keeps it that way.
+const POWERSHELL_EXE = childRunnerMod.systemExecutable('powershell');
+const REG_EXE = childRunnerMod.systemExecutable('reg');
+// A cold PowerShell compiles its C# interop first: seconds, not half a minute. reg.exe is instant.
+const systemChildTimeouts = { powershell: 30000, reg: 10000 };
+const systemChildren = childRunnerMod.createChildRunner({ execFile });
 
 // Match the AppUserModelID written into the Start Menu shortcut by our
 // electron-winstaller/Squirrel package (`name: Znada`, `exe: Znada.exe`).
@@ -72,9 +90,11 @@ const PACKAGE_AUTHORS = 'alexv';
 function cleanLegacyAutostartRegistryValues() {
   for (const key of windowsLaunch.AUTOSTART_REGISTRY_KEYS) {
     for (const name of windowsLaunch.LEGACY_LOGIN_ITEM_NAMES) {
-      // `reg.exe` is a console program. Keep this best-effort migration silent in
-      // the packaged GUI app instead of flashing up to ten console windows at login.
-      execFile('reg', ['delete', key, '/v', name, '/f'], { windowsHide: true }, () => {});
+      // `reg.exe` is a console program. The runner starts it hidden, so this best-effort
+      // migration stays silent in the packaged GUI app instead of flashing up to ten
+      // console windows at login.
+      systemChildren.run(REG_EXE, ['delete', key, '/v', name, '/f'], { timeoutMs: systemChildTimeouts.reg })
+        .catch(() => {});
     }
   }
 }
@@ -172,8 +192,9 @@ if (SQUIRREL_LIFECYCLE_EVENT === '--squirrel-uninstall') {
   // executable the uninstaller has already deleted, at every single login.
   for (const target of windowsLaunch.autostartCleanupTargets(WINDOWS_APP_USER_MODEL_ID)) {
     try {
-      execFileSync('reg', ['delete', target.key, '/v', target.name, '/f'],
-        { windowsHide: true, stdio: 'ignore' });
+      // Synchronous, so not through the runner; the same absolute path and a deadline.
+      execFileSync(REG_EXE, ['delete', target.key, '/v', target.name, '/f'],
+        { windowsHide: true, stdio: 'ignore', timeout: systemChildTimeouts.reg });
     } catch {
       // `reg delete` exits non-zero when the value is simply not there, which is
       // the normal case for most of these names. Nothing to report.
@@ -301,8 +322,9 @@ function reportChannelSuccess(channel, messageKey, { params } = {}) {
 // or a slot the user emptied) and 'gamemode-blocked' (a deliberate postpone) are
 // states rather than breakages. 'wallpaper-missing' IS a breakage — it is reported,
 // just by the channel below that owns it, so the user gets one notification and not
-// two for the same event.
-const APPLY_EXPECTED_REASONS = new Set(['no-wallpaper', 'gamemode-blocked', 'wallpaper-missing']);
+// two for the same event. 'superseded' (TRG-004) is a scheduler's wish that went stale
+// before it reached the desktop: nothing was tried, and the newer wish reports its own.
+const APPLY_EXPECTED_REASONS = new Set(['no-wallpaper', 'gamemode-blocked', 'wallpaper-missing', 'superseded']);
 
 // A configured photo that is not there any more: the disk was unplugged, the folder
 // was renamed, the file was deleted from outside the app.
@@ -497,19 +519,62 @@ function managedRootUnavailableError() {
 }
 
 // Copy a chosen image into the app's own data dir so it survives app updates and
-// the original being moved/deleted. Content-addressed name (wp-<md5>) → identical
-// images dedupe automatically and re-adding the same file is a no-op. Returns path.
+// the original being moved/deleted. Returns the copy's path.
+//
+// LIB-022. The copy is named after the original — `<name>-<hash>.<ext>` — because every
+// place that shows a photo's name reads it from the file (see src/photo-import.js). The
+// hash tail is what keeps identical images to one copy: an existing copy of the same
+// bytes is reused whatever it is called, an old `wp-<hash>` one included. The size has
+// to match too, so a file of the user's that merely ends the same way in a folder they
+// picked for copies is never taken for ours.
 async function importWallpaper(srcPath) {
   // DATA-006. mkdir would happily CREATE the chosen folder on a drive that is merely
   // missing its letter today, and the copy would land somewhere the user never picked.
   if (!managedRootReady()) throw managedRootUnavailableError();
-  await fs.promises.mkdir(wallpapersDir(), { recursive: true });
+  const dir = wallpapersDir();
+  await fs.promises.mkdir(dir, { recursive: true });
   const buf = await fs.promises.readFile(srcPath); // async: не блокируем main-поток на больших файлах
-  const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 16);
-  const ext = (path.extname(srcPath) || '.img').toLowerCase();
-  const dest = path.join(wallpapersDir(), `wp-${hash}${ext}`);
-  if (!fs.existsSync(dest)) await fs.promises.writeFile(dest, buf);
+  const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, photoImport.HASH_LENGTH);
+  const ext = photoImport.copyExtension(srcPath);
+  for (const name of photoImport.existingCopies(await fs.promises.readdir(dir), hash, ext)) {
+    const found = path.join(dir, name);
+    try {
+      const stats = await fs.promises.stat(found);
+      if (stats.isFile() && stats.size === buf.length) return found;
+    } catch {}
+  }
+  const dest = path.join(dir, photoImport.copyFileName(srcPath, hash));
+  // `wx`: never write over a file that is already there. The search above found nothing
+  // of this size, so a file under this exact name is not this picture — it is refused
+  // rather than either overwritten or handed back as if it were the photo just added.
+  await fs.promises.writeFile(dest, buf, { flag: 'wx' });
   return dest;
+}
+
+// LIB-023. What adding a local photo puts into the pool: the original itself when a
+// watched folder already shows it — a record by reference, the way a star makes one, so
+// the photo stays one card and keeps the date the folder first saw it — and otherwise
+// Znada's own copy, as before. `extra` goes to addToPool unchanged.
+async function photoForPool(srcPath) {
+  if (watchedFolderShowing(srcPath)) {
+    try {
+      const stats = await fs.promises.stat(srcPath);
+      if (stats.isFile() && playlist.IMG_EXTS.has(path.extname(srcPath).toLowerCase())) {
+        return { path: srcPath, extra: liveMaterializeExtra(srcPath, 'image') };
+      }
+    } catch {}
+  }
+  return { path: await importWallpaper(srcPath), extra: undefined };
+}
+
+function watchedFolderShowing(srcPath) {
+  const folders = Object.values(config.library || {})
+    .filter((it) => it && it.type === 'folder' && it.path)
+    .map((it) => it.path);
+  if (!folders.length) return '';
+  let removedDirs = [];
+  try { removedDirs = folderState.listHiddenDirs(liveFolderState).map((d) => d.path); } catch {}
+  return photoImport.watchedFolderFor(srcPath, folders, removedDirs);
 }
 
 // Download a remote image into a private staging file beside its content-addressed
@@ -1304,6 +1369,144 @@ function pruneConfirmedMissingLiveFolderImages() {
   return removed;
 }
 
+// LIB-024. A photo renamed or moved inside a watched folder, in Explorer. The folder
+// index has just said that the old name and the new one are the same file; this moves
+// what the user attached to the photo onto the new name — its record (star, tags, author,
+// source, date) and its places on the monitors. Without it, the very scan that noticed
+// the rename went on to erase all of that (LIB-013, probes S4 and S7).
+//
+// Only an ACTIVE record moves. A removed photo's record sits in the trash under its old
+// name; following it there is a separate question and is not answered here. Anything this
+// function declines is left to the code below exactly as before, so a pair it cannot
+// follow costs what a rename always cost and never more.
+function followMovedFiles(pairs) {
+  let moved = 0;
+  let removedMoved = 0;
+  const removedPaths = hiddenPathSet();
+  for (const pair of (Array.isArray(pairs) ? pairs : [])) {
+    if (!pair || typeof pair.from !== 'string' || typeof pair.to !== 'string') continue;
+    // LIB-025. A photo the user had removed: the index already moved its "removed" mark
+    // to the new name, so here only what is kept for putting it back follows.
+    if (pair.hidden === true) {
+      if (followRemovedMove(pair.from, pair.to)) removedMoved++;
+      continue;
+    }
+    const oldId = library.idFor(pair.from);
+    const record = library.getItem(config.library, oldId);
+    if (!record || record.type !== 'image') continue;
+    const newId = library.idFor(pair.to);
+    // The new name already has a record of its own (a star given to the new card before
+    // this ran). Merging two records is not decided here: both stay as they are.
+    if (library.getItem(config.library, newId)) continue;
+    // Moved into a place the user removed from the library. Bringing the record along
+    // would make the photo active and removed at once — the one state the library must
+    // never be in.
+    if (removedPaths.has(pathKey(pair.to))) continue;
+    const { id: _oldId, path: _oldPath, rev: oldRev, ...carried } = record;
+    // In through the one door every active photo uses, so the new name is cleared of any
+    // old "removed" state the same way a star on it would clear it.
+    //
+    // LIB-027. The revision comes along too. Starting the new name from zero made the
+    // user's latest edits look like the oldest state of the photo, and a recovery merge
+    // then let any stale tombstone for that name delete the record (gate 03, 2026-10-09).
+    if (addToPool('image', pair.to, { ...carried, rev: oldRev }) !== newId) continue;
+    // makeItem keeps only the fields it knows. Whatever else the record carries — the
+    // source page, the age rating, a field added next year — comes across in one go, so
+    // a new field cannot be forgotten here.
+    library.updateItem(config.library, newId, carried);
+    library.replaceIdInSlots(config.monitors, oldId, newId);
+    library.removeItem(config.library, oldId);
+    // The slideshow remembers where it stopped by path; without this it would lose its
+    // place on a monitor whose current photo was the one renamed.
+    for (const [monitorId, byTheme] of Object.entries(config.slideshowCurrentPath || {})) {
+      for (const theme of ['light', 'dark']) {
+        if (!byTheme || pathKey(byTheme[theme] || '') !== pathKey(pair.from)) continue;
+        storeSlideshowPosition(monitorId, theme, {
+          index: ((config.slideshowIndex || {})[monitorId] || {})[theme],
+          path: pair.to,
+        });
+      }
+    }
+    // The pre-library fallback is a bare path; migrateConfig folds it back into the pool
+    // on every start, so a stale one would bring the old name back as a dead record.
+    for (const key of ['lightWallpaper', 'darkWallpaper']) {
+      if (config[key] && pathKey(config[key]) === pathKey(pair.from)) config[key] = pair.to;
+    }
+    moved++;
+  }
+  if (removedMoved) {
+    // The index normally waits five seconds before it is written. The mark that keeps a
+    // removed photo out of the library is the user's decision; a crash in that window
+    // would bring the photo back under its new name, so it is written now, as removal
+    // itself does.
+    folderStateDirty = true;
+    flushLiveFolderState();
+  }
+  if (moved || removedMoved) {
+    saveConfig();
+    trayCtl.refresh();
+  }
+  return moved + removedMoved;
+}
+
+// LIB-025. A removed photo was renamed or moved inside its watched folder. What the user
+// can get back from "Removed" — its kept record with the star, tags and places on the
+// monitors, and the Undo still on screen — named the old path, so "Restore" on the new
+// card brought the photo back blank, and Undo looked for a file that is no longer there.
+// Both follow the new name here.
+//
+// One rule outranks this: a photo is never active and removed at once. If the new name
+// already has an active record, the active record stays, and the photo is shown — the
+// removed mark the index carried over is lifted, exactly as it would be by adding it.
+function followRemovedMove(from, to) {
+  const fromKey = pathKey(from);
+  const oldId = library.idFor(from);
+  const newId = library.idFor(to);
+  const trash = config.libraryTrash || [];
+  const followsFrom = (entry) => !!(entry && entry.item && entry.item.type === 'image'
+    && pathKey(entry.item.path) === fromKey);
+  if (library.getItem(config.library, newId)) {
+    clearRemovedState(to);
+    // LIB-027. The kept record named the old file, and that name is gone: the file is
+    // the active photo now. Left behind, it was a card in "Removed" for a file that does
+    // not exist (gate 03, 2026-10-09).
+    config.libraryTrash = trash.filter((entry) => !followsFrom(entry));
+    return true;
+  }
+  // LIB-027. A record already kept under the new name belongs to an earlier photo whose
+  // file is gone — this file now holds that name. Two records under one id would be
+  // settled later by a tie-break, maybe in favour of the stale one, so it is settled
+  // here: the record that follows the file stays, and it is made newer than the one it
+  // replaces, so a recovery merge with an older copy of the store decides the same way.
+  const toKey = pathKey(to);
+  let replacedRev = 0;
+  const kept = [];
+  for (const entry of trash) {
+    if (!followsFrom(entry) && entry && entry.item && pathKey(entry.item.path) === toKey) {
+      replacedRev = Math.max(replacedRev, library.revOf(entry));
+      continue;
+    }
+    kept.push(entry);
+  }
+  for (const entry of kept) {
+    if (!followsFrom(entry)) continue;
+    entry.item = { ...entry.item, id: newId, path: to };
+    if (replacedRev) entry.rev = Math.max(library.revOf(entry), replacedRev) + 1;
+  }
+  config.libraryTrash = kept;
+  const undo = lastLibraryRemoval;
+  if (undo) {
+    undo.items = (undo.items || []).map((item) => (
+      item && item.type === 'image' && pathKey(item.path) === fromKey ? { ...item, id: newId, path: to } : item));
+    for (const snap of (undo.slots || [])) {
+      snap.itemIds = snap.itemIds.map((id) => (id === oldId ? newId : id));
+    }
+    undo.paths = (undo.paths || []).map((p) => (pathKey(p) === fromKey ? to : p));
+  }
+  // The index already moved the mark, so something changed either way.
+  return true;
+}
+
 function syncLiveFolderWatchers() {
   if (!liveFolderWatcher) return { watched: 0, failed: 0 };
   return liveFolderWatcher.sync(liveFolderItems());
@@ -1407,6 +1610,12 @@ function refreshLiveFolders(folderIds = null, force = false) {
       if (scan.status === 'unavailable' && liveFolderWatcher) liveFolderWatcher.restart(item.id);
       const finalResult = reconcile(scan.status, scan.entries);
       if (!finalResult) continue;
+      // Before the clean-up below decides that the old name's record is dead. Ordered
+      // with every other change to the pool: no one holding the lock waits for a scan.
+      if (finalResult.moved && finalResult.moved.length) {
+        const followed = await withLibraryLock(() => followMovedFiles(finalResult.moved));
+        if (followed) changed = true;
+      }
       summaries.push({
         id: item.id,
         status: scan.status,
@@ -1694,17 +1903,11 @@ function ensureComScript() {
 }
 
 function runCom(args) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', COM_SCRIPT_PATH, ...args],
-      { windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message));
-        resolve(stdout);
-      }
-    );
-  });
+  return systemChildren.run(
+    POWERSHELL_EXE,
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', COM_SCRIPT_PATH, ...args],
+    { timeoutMs: systemChildTimeouts.powershell, maxBuffer: 4 * 1024 * 1024 }
+  ).then((result) => result.stdout);
 }
 
 // Живой PowerShell-хост: компилирует COM один раз, дальше применяет обои мгновенно
@@ -1718,7 +1921,11 @@ function ensureComHostScript() {
     console.error('Не удалось записать COM-host-скрипт:', err);
   }
 }
-const wpHost = new WallpaperHost(COM_HOST_SCRIPT_PATH);
+// The host runs PowerShell from System32 on its own (WIN-002). Its Add-Type starts csc.exe
+// under it, so ending the host ends that too.
+const wpHost = new WallpaperHost(COM_HOST_SCRIPT_PATH, {
+  killProcess: (proc) => systemChildren.killTree(proc),
+});
 
 async function isGameOrFullscreenRunning() {
   if (!config.gameModeBlock) return false;
@@ -1792,21 +1999,22 @@ function ensureThemeScript() {
   }
 }
 
+// TRG-004. The theme schedule waits for a flip already under way before it decides again, so
+// a flip must always end: a hung powershell would otherwise hold the schedule until restart.
+// The system-child runner gives it that deadline (WIN-002, systemChildTimeouts.powershell).
+
 function setWindowsTheme(isDark) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', THEME_SCRIPT_PATH, '-Light', isDark ? '0' : '1'],
-      { windowsHide: true },
-      (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message));
-        resolve();
-      }
-    );
-  });
+  return systemChildren.run(
+    POWERSHELL_EXE,
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', THEME_SCRIPT_PATH, '-Light', isDark ? '0' : '1'],
+    { timeoutMs: systemChildTimeouts.powershell }
+  ).then(() => undefined);
 }
 
-let themeTimer = null;
+// TRG-004. The theme schedule's one timer and its latest intent. A run that went stale while
+// it waited (the schedule was switched off or changed, or a newer run started) flips nothing
+// and arms nothing; a flip already under way finishes, and the newer run decides after it.
+const themeIntent = createLatestIntent();
 let lastScheduledTheme = null;
 
 // Schedule math (parse/sun/boundaries) lives in src/schedule.js — pure & unit-tested.
@@ -1816,17 +2024,23 @@ function themeScheduleBoundaries(date) {
 }
 
 function clearThemeTimer() {
-  if (themeTimer) { clearTimeout(themeTimer); themeTimer = null; }
+  themeIntent.cancel();
 }
 
 // Apply the scheduled theme now (modes: time / sun) and schedule the next flip.
 async function applyThemeSchedule() {
-  clearThemeTimer();
+  const intent = themeIntent.begin();
+  // A flip started by an earlier run cannot be taken back: wait for it, so this run compares
+  // against the theme it left behind rather than the one before it.
+  if (themeIntent.busy()) {
+    await themeIntent.settle(intent);
+    if (!themeIntent.isCurrent(intent)) return;
+  }
   const sch = config.themeSchedule || {};
   if (sch.mode !== 'time' && sch.mode !== 'sun') return; // 'off' — Znada does not drive the theme
   const now = new Date();
   const b = themeScheduleBoundaries(now);
-  if (!b) { themeTimer = setTimeout(applyThemeSchedule, 60 * 60000); return; } // no coords / polar — retry in 1h
+  if (!b) { themeIntent.arm(intent, applyThemeSchedule, 60 * 60000); return; } // no coords / polar — retry in 1h
   const wantDark = schedule.saysDark(b, now);
   const scheduledTheme = wantDark ? 'dark' : 'light';
 
@@ -1840,17 +2054,21 @@ async function applyThemeSchedule() {
 
   // If there's an active override, we skip applying the scheduled theme to Windows, but keep the timer running to detect the next boundary.
   if (config.themeOverride != null) {
-    themeTimer = setTimeout(applyThemeSchedule, schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000);
+    themeIntent.arm(intent, applyThemeSchedule, schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000);
     return;
   }
 
   if (wantDark !== nativeTheme.shouldUseDarkColors) {
-    if (config.gameModeBlock && await isGameOrFullscreenRunning()) {
-      console.log('[GameMode] Theme schedule flip blocked. Will retry in 1 minute.');
-      themeTimer = setTimeout(applyThemeSchedule, 60000);
-      return;
+    if (config.gameModeBlock) {
+      const busy = await isGameOrFullscreenRunning();
+      if (!themeIntent.isCurrent(intent)) return; // switched off or changed while asking
+      if (busy) {
+        console.log('[GameMode] Theme schedule flip blocked. Will retry in 1 minute.');
+        themeIntent.arm(intent, applyThemeSchedule, 60000);
+        return;
+      }
     }
-    setWindowsTheme(wantDark).then(
+    const flip = await themeIntent.dispatch(intent, () => setWindowsTheme(wantDark).then(
       () => reportChannelSuccess('theme-schedule', 'journal.themeSchedule'),
       (e) => {
         console.error('Не удалось сменить тему Windows:', e);
@@ -1859,34 +2077,30 @@ async function applyThemeSchedule() {
           bodyKey: 'notify.themeFailedBody',
         });
       }
-    );
+    ));
+    // Not started, or superseded while the flip ran: the newer run arms the timer.
+    if (!flip.started || !themeIntent.isCurrent(intent)) return;
   }
-  themeTimer = setTimeout(applyThemeSchedule, schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000);
+  themeIntent.arm(intent, applyThemeSchedule, schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000);
 }
 
 function setWallpaper(imagePath) {
-  return new Promise((resolve, reject) => {
-    if (!imagePath || !fs.existsSync(imagePath)) {
-      reject(new Error('Файл обоев не найден: ' + imagePath)); return;
-    }
-    const map = STYLE_MAP[config.style] || STYLE_MAP.fill;
-    execFile(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-ExecutionPolicy', 'Bypass',
-        '-File', PS_SCRIPT_PATH,
-        '-Path', imagePath,
-        '-Style', String(map.style),
-        '-Tile', String(map.tile),
-      ],
-      { windowsHide: true },
-      (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message));
-        resolve();
-      }
-    );
-  });
+  if (!imagePath || !fs.existsSync(imagePath)) {
+    return Promise.reject(new Error('Файл обоев не найден: ' + imagePath));
+  }
+  const map = STYLE_MAP[config.style] || STYLE_MAP.fill;
+  return systemChildren.run(
+    POWERSHELL_EXE,
+    [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', PS_SCRIPT_PATH,
+      '-Path', imagePath,
+      '-Style', String(map.style),
+      '-Tile', String(map.tile),
+    ],
+    { timeoutMs: systemChildTimeouts.powershell }
+  ).then(() => undefined);
 }
 
 // Тема ОС (для UI: титулбар, трей, тема окна). НЕ для выбора обоев — см. wallpaperThemeName().
@@ -1913,38 +2127,64 @@ function wallpaperThemeName(date = new Date()) {
   return schedule.resolveTheme(wallpaperScheduleConfig(), date, currentThemeName());
 }
 
-let wallpaperTimer = null;
+// TRG-004. The wallpaper schedule's one timer and its latest intent, as for the theme above.
+// A run that went stale while it waited — switched off, changed, overtaken by a newer run —
+// puts nothing on the desktop and arms nothing. An apply already sent cannot be taken back:
+// it finishes, and the newer run's apply goes after it.
+const wallpaperIntent = createLatestIntent();
 function clearWallpaperTimer() {
-  if (wallpaperTimer) { clearTimeout(wallpaperTimer); wallpaperTimer = null; }
+  wallpaperIntent.cancel();
 }
+const runWallpaperSchedule = () => applyWallpaperSchedule(false, true);
 
 // Apply the independent wallpaper schedule now and arm its next boundary. `applyNow`
 // is false when another scheduler (the slideshow) already applied the current frame.
 async function applyWallpaperSchedule(isManual = false, applyNow = true) {
-  clearWallpaperTimer();
+  const intent = wallpaperIntent.begin();
   const sch = wallpaperScheduleConfig();
   if (config.separateThemes === false || (sch.mode !== 'time' && sch.mode !== 'sun')) return;
 
   const now = new Date();
   const b = schedule.boundaries(sch, now);
   if (!b) {
-    wallpaperTimer = setTimeout(() => applyWallpaperSchedule(false, true), 60 * 60000);
+    wallpaperIntent.arm(intent, runWallpaperSchedule, 60 * 60000);
     return;
   }
 
   const theme = schedule.saysDark(b, now) ? 'dark' : 'light';
   broadcastWallpaperTheme(theme);
   if (applyNow) {
-    const result = await applyForTheme(theme, isManual);
-    if (result && result.reason === 'gamemode-blocked') {
-      wallpaperTimer = setTimeout(() => applyWallpaperSchedule(false, true), 60000);
+    // The wish depends on the clock alone, so unlike the theme there is nothing to settle
+    // before deciding it. dispatch() still waits for an apply under way, so wishes reach the
+    // desktop in the order they were made even on the spawned fallback, where two applies
+    // would otherwise race; applyForTheme itself stops a wish that goes stale on the way.
+    const run = await wallpaperIntent.dispatch(intent, () => applyForTheme(theme, isManual, null, {
+      stillWanted: () => wallpaperIntent.isCurrent(intent),
+    }));
+    // Not started, or superseded on the way: the newer run arms the timer.
+    if (!run.started || !wallpaperIntent.isCurrent(intent)) return;
+    if (run.value && run.value.reason === 'gamemode-blocked') {
+      wallpaperIntent.arm(intent, runWallpaperSchedule, 60000);
       return;
     }
   }
-  wallpaperTimer = setTimeout(
-    () => applyWallpaperSchedule(false, true),
-    schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000
-  );
+  wallpaperIntent.arm(intent, runWallpaperSchedule, schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000);
+}
+
+// Wallpaper mode 'system' without the slideshow: put up the slot of the theme Windows has now.
+// TRG-004 stage 3. It runs on the wallpaper schedule's intent — the two modes never run at the
+// same time, and switching the mode cancels it — so a flip during a game is retried in a minute
+// instead of being lost.
+async function followWindowsTheme() {
+  // Checked before begin(): in another mode this must not touch the schedule's own timer.
+  if (config.separateThemes === false || !config.wallpaperSchedule || config.wallpaperSchedule.mode !== 'system') return;
+  if (config.slideshow && config.slideshow.enabled) return; // the slideshow owns the frame then
+  const intent = wallpaperIntent.begin();
+  const run = await wallpaperIntent.dispatch(intent, () => applyForTheme(null, false, null, {
+    stillWanted: () => wallpaperIntent.isCurrent(intent),
+  }));
+  if (!run.started || !wallpaperIntent.isCurrent(intent)) return;
+  if (run.value && run.value.reason === 'gamemode-blocked') wallpaperIntent.arm(intent, followWindowsTheme, 60000);
 }
 
 // id основного монитора (для режима «одни обои на все мониторы»)
@@ -2096,14 +2336,15 @@ async function ensureWallpaperReady(srcPath) {
 
 // Thin diagnostics wrapper (span #6 of the MVP-A budget): every wallpaper apply is
 // recorded with its duration and outcome; call sites keep using applyForTheme().
-async function applyForTheme(themeName, isManual = false, targetMonitors = null) {
+// `stillWanted` is for a scheduler (TRG-004): see applyForThemeCore.
+async function applyForTheme(themeName, isManual = false, targetMonitors = null, { stillWanted = null } = {}) {
   const endSpan = diagSpan('wallpaper', 'apply');
   try {
-    const result = await applyForThemeCore(themeName, isManual, targetMonitors);
+    const result = await applyForThemeCore(themeName, isManual, targetMonitors, stillWanted);
     // Only known short reasons; a raw error message may carry a file path and
     // redaction does not exist until stage 4.
     const reason = result && result.ok ? 'ok' : ((result && result.reason) || 'error');
-    endSpan({ status: ['ok', 'gamemode-blocked', 'no-wallpaper', 'wallpaper-missing'].includes(reason) ? reason : 'error' });
+    endSpan({ status: ['ok', 'gamemode-blocked', 'no-wallpaper', 'wallpaper-missing', 'superseded'].includes(reason) ? reason : 'error' });
     reportApplyOutcome(result, isManual); // journal + edge-triggered notification (T2/T3)
     return result;
   } catch (err) {
@@ -2113,8 +2354,14 @@ async function applyForTheme(themeName, isManual = false, targetMonitors = null)
   }
 }
 
-async function applyForThemeCore(themeName, isManual = false, targetMonitors = null) {
+// TRG-004. A scheduler passes `stillWanted`: "is this still my latest wish?". It is asked
+// after the waits below and before each of the three ways a wallpaper goes up — the live
+// host, a spawned COM process, one image for every monitor — so a wish that went stale
+// meanwhile never reaches the desktop and reports nothing. Other callers pass nothing.
+async function applyForThemeCore(themeName, isManual = false, targetMonitors = null, stillWanted = null) {
   const theme = config.separateThemes === false ? 'light' : (themeName || wallpaperThemeName());
+  const superseded = () => typeof stillWanted === 'function' && !stillWanted();
+  const SUPERSEDED = { ok: false, reason: 'superseded', theme };
   broadcastWallpaperTheme(theme);
   if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
     console.log('[GameMode] Wallpaper change blocked due to active game / fullscreen app');
@@ -2138,6 +2385,7 @@ async function applyForThemeCore(themeName, isManual = false, targetMonitors = n
     for (const target of outcome.applied) {
       items.push({ id: target.id, path: await ensureWallpaperReady(target.path) });
     }
+    if (superseded()) return SUPERSEDED; // the game check or the monitor list took its time
     persistSlideshowPosition();
     if (!items.length) {
       return { ok: false, reason: outcome.reason, theme, missing: outcome.missingPaths, sourcesChecked: true };
@@ -2147,6 +2395,7 @@ async function applyForThemeCore(themeName, isManual = false, targetMonitors = n
       await wpHost.apply(pos, items); // быстрый путь: живой COM-хост (без перекомпиляции)
       return { ok: true, theme, missing: outcome.missingPaths, sourcesChecked: true };
     } catch (eHost) {
+      if (superseded()) return SUPERSEDED; // no second try for a wish that went stale meanwhile
       try {
         fs.writeFileSync(APPLY_DATA_PATH, JSON.stringify({ position: pos, items }), 'utf8');
         await runCom(['-Mode', 'apply', '-DataFile', APPLY_DATA_PATH]); // фоллбек: spawn-per-call
@@ -2158,6 +2407,7 @@ async function applyForThemeCore(themeName, isManual = false, targetMonitors = n
     }
   }
 
+  if (superseded()) return SUPERSEDED;
   // Fallback: single wallpaper for all monitors (older Windows / COM failure)
   const target = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
   // The same fork on the single-wallpaper path. Fixing only the per-monitor loop
@@ -2179,19 +2429,29 @@ async function applyForThemeCore(themeName, isManual = false, targetMonitors = n
 
 // ---------------------------------------------------------------------------
 // Slideshow scheduler — rotate each monitor's playlist on an interval.
-// Mirrors applyThemeSchedule(): timer → advance indices → applyForTheme → reschedule.
 // ---------------------------------------------------------------------------
-let slideshowTimer = null;
+// TRG-004 stage 3. The slideshow's one timer — the interval, or the one-minute game retry —
+// and its latest intent, on the same controller as the theme and wallpaper schedules. Every
+// start begins a new intent: the interval's turn, a retry, a manual "next", a picked frame, a
+// theme flip, a settings change, the end of an invisible change. A run that went stale while
+// it waited moves no frame, applies nothing and arms nothing.
+const slideshowIntent = createLatestIntent();
 // HOME-001: Главная показывает живой отсчёт, поэтому момент срабатывания таймера и
-// причина, по которой честного момента НЕТ, обязаны жить рядом с самим таймером.
-// Любая правка планировщика ниже проходит через эти же две переменные — второго
-// набора «когда сменится» в приложении нет.
-let slideshowTimerDueAt = 0;   // epoch ms взведённого таймера, 0 — таймера нет
+// причина, по которой честного момента НЕТ, живут рядом с самим таймером: момент —
+// у контроллера (state().dueAt), причина — здесь. Второго набора «когда сменится» в
+// приложении нет.
 let slideshowHold = null;      // 'gamemode' — таймер лишь перепроверяет, а не сменит
 
+function beginSlideshowRun() {
+  slideshowHold = null;
+  const intent = slideshowIntent.begin();
+  pushNextChange();
+  return intent;
+}
+
+// Switched off (or handed to an invisible change): no run is current and no timer is left.
 function clearSlideshowTimer() {
-  if (slideshowTimer) { clearTimeout(slideshowTimer); slideshowTimer = null; }
-  slideshowTimerDueAt = 0;
+  slideshowIntent.cancel();
   slideshowHold = null;
   pushNextChange();
 }
@@ -2222,66 +2482,113 @@ function slideshowIntervalMs() {
   return mins * 60000;
 }
 
-function scheduleSlideshowTimer(delayMs = slideshowIntervalMs()) {
-  clearSlideshowTimer();
+// Arm the interval for a run that is still current, counted from now.
+function armSlideshowInterval(intent, delayMs = slideshowIntervalMs()) {
   if (!slideshowIntervalEnabled()) return;
   const delay = Math.max(1, Math.floor(Number(delayMs) || slideshowIntervalMs()));
-  slideshowTimer = setTimeout(runSlideshowInterval, delay);
-  slideshowTimerDueAt = Date.now() + delay;
-  pushNextChange();
+  if (slideshowIntent.arm(intent, runSlideshowInterval, delay)) pushNextChange();
+}
+
+// Restart the interval from now, superseding whatever was armed or still waiting.
+function scheduleSlideshowTimer(delayMs) {
+  armSlideshowInterval(beginSlideshowRun(), delayMs);
 }
 
 // Игровой режим/полный экран: таймер ниже НЕ меняет обои, он через минуту снова
 // спрашивает систему. Поэтому взводим его с пометкой hold — интерфейс не должен
-// превратить эту минуту в обещание «через 1 мин».
-function retrySlideshowIntervalSoon() {
-  clearSlideshowTimer();
+// превратить эту минуту в обещание «через 1 мин». Через минуту делается то, что
+// отложили: смена кадра остаётся сменой, а показ текущего кадра (смена темы, настройки)
+// остаётся показом — и не теряется, когда интервал выключен.
+function retrySlideshowSoon(intent, advance) {
   if (!config.slideshow || !config.slideshow.enabled) return;
-  slideshowTimer = setTimeout(runSlideshowInterval, 60000);
-  slideshowTimerDueAt = Date.now() + 60000;
-  slideshowHold = 'gamemode';
-  pushNextChange();
+  if (slideshowIntent.arm(intent, () => runSlideshowRetry(advance), 60000)) {
+    slideshowHold = 'gamemode';
+    pushNextChange();
+  }
 }
 
-async function runSlideshowInterval() {
-  slideshowTimer = null;
-  slideshowTimerDueAt = 0;
-  if (!slideshowIntervalEnabled()) { pushNextChange(); return; }
-  if (config.gameModeBlock && await isGameOrFullscreenRunning()) {
+// The game question of an automatic run: 'go', 'stale' (superseded while asking) or 'blocked'
+// (a game is on; the retry is armed for this run).
+async function slideshowGameCheck(intent, advance) {
+  if (!config.gameModeBlock) return 'go';
+  const busy = await isGameOrFullscreenRunning();
+  if (!slideshowIntent.isCurrent(intent)) return 'stale';
+  if (busy) {
     console.log('[GameMode] Slideshow rotation blocked. Will retry in 1 minute.');
-    retrySlideshowIntervalSoon();
+    retrySlideshowSoon(intent, advance);
+    return 'blocked';
+  }
+  if (slideshowHold) { slideshowHold = null; pushNextChange(); } // the game is over
+  return 'go';
+}
+
+// The interval's turn: one frame on.
+function runSlideshowInterval() {
+  return runSlideshowTurn(true, false);
+}
+
+// The minute after a game: do what was postponed.
+function runSlideshowRetry(advance) {
+  return runSlideshowTurn(advance, true);
+}
+
+// A retry keeps "paused for a game" on the Home page while it asks again, so the page does not
+// blink to "soon" every minute of a game; the pause goes when the game does.
+async function runSlideshowTurn(advance, retry) {
+  const hold = slideshowHold;
+  const intent = beginSlideshowRun();
+  if (retry) slideshowHold = hold;
+  const wanted = advance ? slideshowIntervalEnabled() : !!(config.slideshow && config.slideshow.enabled);
+  if (!wanted) {
+    slideshowHold = null;
+    pushNextChange();
     return;
   }
-  if (stealthScoped('interval')) {
+  if (await slideshowGameCheck(intent, advance) !== 'go') return;
+  if (advance && stealthScoped('interval')) {
     requestWallpaperAdvance('interval', { initialDelayMs: 0, rescheduleInterval: true });
     return;
   }
-  await tickSlideshow(true, false);
+  await slideshowStep(intent, advance, false);
+}
+
+// Move every monitor one frame on if asked, apply the current frame, arm the interval. The
+// move happens when the apply starts, so a run superseded while it waited for an apply already
+// under way moves nothing; dispatch() keeps the slideshow's applies in the order they were made.
+async function slideshowStep(intent, advance, isManual) {
+  const run = await slideshowIntent.dispatch(intent, () => {
+    const theme = wallpaperThemeName();
+    // Slideshow position only — the pool is untouched, so this must not schedule a full
+    // rewrite of every photo record. This is the most frequent write in the app.
+    if (advance) { advanceIndices(theme); saveSettingsOnly(); }
+    return applyForTheme(theme, isManual, null, { stillWanted: () => slideshowIntent.isCurrent(intent) });
+  });
+  // Not started, or superseded on the way: the newer run reports and arms.
+  if (!run.started || !slideshowIntent.isCurrent(intent)) return undefined;
+  if (run.value && run.value.reason === 'gamemode-blocked') {
+    // The apply asked about a game once more and one had started: the frame has moved, so
+    // the retry only shows it.
+    retrySlideshowSoon(intent, false);
+    return run.value;
+  }
+  armSlideshowInterval(intent);
+  return run.value;
 }
 
 // Returns the applyForTheme result on the paths that actually apply, so manual
 // triggers (Home button, hotkey) can report an honest outcome to the user.
 // Auto-only early exits keep returning undefined — their callers ignore it.
 async function tickSlideshow(advance, isManual = false) {
-  clearSlideshowTimer();
+  const intent = beginSlideshowRun();
   if (!config.slideshow || !config.slideshow.enabled) return;
-  const intervalEnabled = slideshowIntervalEnabled();
   // A timer may already be queued when the user disables the interval trigger.
-  if (advance && !isManual && !intervalEnabled) return;
-
-  if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
-    console.log('[GameMode] Slideshow rotation blocked. Will retry in 1 minute.');
-    retrySlideshowIntervalSoon();
-    return { ok: false, reason: 'gamemode-blocked' };
+  if (advance && !isManual && !slideshowIntervalEnabled()) return;
+  if (!isManual) {
+    const game = await slideshowGameCheck(intent, advance);
+    if (game === 'stale') return;
+    if (game === 'blocked') return { ok: false, reason: 'gamemode-blocked' };
   }
-
-  const theme = wallpaperThemeName();
-  // Slideshow position only — the pool is untouched, so this must not schedule a full
-  // rewrite of every photo record. This is the most frequent write in the app.
-  if (advance) { advanceIndices(theme); saveSettingsOnly(); }
-  const result = await applyForTheme(theme, isManual);
-  if (intervalEnabled) scheduleSlideshowTimer();
-  return result;
+  return slideshowStep(intent, advance, isManual);
 }
 
 // ---------------------------------------------------------------------------
@@ -2292,6 +2599,13 @@ const TITLEBAR_HEIGHT = 44;
 function titleBarOverlayColors() {
   const dark = nativeTheme.shouldUseDarkColors;
   return {
+    // Цвет ПОЛОСЫ шапки (--headerbar в renderer/styles.css), а не фона страницы. Windows
+    // рисует область кнопок непрозрачно поверх страницы, и этот цвет решает, видно ли шов
+    // между полосой и кнопками: при равенстве полоса читается как сплошная во всю ширину
+    // окна, при любом другом цвете зона кнопок становится заметным прямоугольником.
+    // Разойтись этим двум значениям не даёт test/caption-palette.test.js.
+    // backgroundColor окна ниже — другое и совпадать не обязано: это фон СТРАНИЦЫ, то есть
+    // первый кадр до отрисовки, а не цвет шапки.
     color: dark ? '#303030' : '#ffffff',
     symbolColor: dark ? '#ffffff' : '#2e3436',
     height: TITLEBAR_HEIGHT,
@@ -2386,6 +2700,12 @@ function sanitizeGalleryPayload(payload) {
   return galleryPayloadMod.sanitizeGalleryPayload(payload);
 }
 
+// Copy, so a later setBounds cannot rewrite the rect remembered for leaving fullscreen.
+function placeGalleryWindow(win, area) {
+  if (!win || !area) return;
+  win.setBounds({ x: area.x, y: area.y, width: area.width, height: area.height });
+}
+
 function createGalleryWindow() {
   // Span #5 of the MVP-A budget: viewer window creation → ready-to-show.
   const endOpenSpan = diagSpan('viewer', 'open-to-ready', { count: galleryPayload.items.length });
@@ -2413,6 +2733,13 @@ function createGalleryWindow() {
       additionalArguments: diagRendererArgs('renderer-viewer'),
     },
   });
+  // BUG-052. The constructor applies this size with the primary monitor's scale.
+  // On the portrait display (125%, work area 960×1536 at x=1920) that came out
+  // 1200×1292: wider than the monitor and short of its bottom, so the picture sat
+  // on the right and the forward arrow was off screen. setBounds, once the window
+  // exists on that display, keeps the work area that was asked for. Show does not
+  // undo it; the call is repeated at ready-to-show in case loading the page does.
+  placeGalleryWindow(galleryWindow, bounds);
 
   if (diagnosticsController) diagnosticsController.attachWindowEvents(galleryWindow, 'viewer');
   if (DEV_LAUNCH_INFO) galleryWindow.on('page-title-updated', (event) => event.preventDefault());
@@ -2426,6 +2753,7 @@ function createGalleryWindow() {
   galleryWindow.once('ready-to-show', () => {
     endOpenSpan();
     if (!galleryWindow || galleryWindow.isDestroyed()) return;
+    placeGalleryWindow(galleryWindow, galleryWindowNormalBounds);
     galleryWindow.show();
     bringToFront(galleryWindow);
   });
@@ -2514,8 +2842,17 @@ function stealthTimeoutMs() {
   return (Number.isFinite(m) && m >= 1 ? Math.min(60, Math.floor(m)) : 5) * 60000;
 }
 
-function rescheduleSlideshowAfterManualWallpaperChange() {
-  if (slideshowIntervalEnabled()) scheduleSlideshowTimer();
+// A manual wallpaper change (a picked frame, an assigned photo, "next" for one monitor) takes
+// over from the slideshow: a pending invisible change and a run still waiting must not move
+// the frame after it. Call this before the apply; it returns the run the change belongs to.
+function supersedeSlideshowForManualChange() {
+  cancelPendingStealth();
+  return beginSlideshowRun();
+}
+
+// …and after the apply: the interval restarts from the change, unless something newer did.
+function rescheduleSlideshowAfterManualWallpaperChange(intent) {
+  armSlideshowInterval(intent);
 }
 
 // ---------------------------------------------------------------------------
@@ -2529,7 +2866,7 @@ function nextChangeState() {
   return nextChange.describe({
     slideshowEnabled: !!(config.slideshow && config.slideshow.enabled),
     intervalEnabled: slideshowIntervalEnabled(),
-    dueAt: slideshowTimerDueAt,
+    dueAt: slideshowIntent.state().dueAt,
     hold: slideshowHold || (stealthCtl.isActive() ? 'stealth' : null),
   });
 }
@@ -2591,12 +2928,13 @@ async function triggerNextWallpaper(targetMonitors = null) {
   if (config.slideshow && config.slideshow.enabled && !targetMonitors) {
     return tickSlideshow(true, true);
   } else {
+    const intent = supersedeSlideshowForManualChange();
     advanceIndices(theme, targetMonitors);
     saveSettingsOnly();  // position only
     try {
       return await applyForTheme(theme, true, targetMonitors);
     } finally {
-      rescheduleSlideshowAfterManualWallpaperChange();
+      rescheduleSlideshowAfterManualWallpaperChange(intent);
     }
   }
 }
@@ -2818,6 +3156,7 @@ const IPC_MAIN_ONLY = [
   'library-add-images', 'library-add-paths', 'library-add-tag', 'library-assign-record',
   'library-assign-records', 'library-delete-forever', 'library-ensure-sizes',
   'library-hidden-list', 'library-materialize', 'library-path-sizes', 'library-recent',
+  'library-removal-answer',
   'library-refresh', 'library-remove-tag', 'library-restore', 'library-toggle-favorite',
   'media-folder-move', 'media-folder-pick', 'media-folder-plan', 'media-folder-state',
   'media-folder-stop',
@@ -2828,10 +3167,12 @@ const IPC_MAIN_ONLY = [
 ];
 
 // Both windows show cards, so both need the actions behind a card's menu (ONL-009).
+// `media-motion` (BUG-035) reads no more than `file-url` already hands the viewer: the
+// same authorized files, and only whether they move.
 const IPC_MAIN_AND_VIEWER = [
   'card-copy-file', 'card-copy-link', 'card-open-source', 'card-save-as', 'cloud-add',
   'file-url', 'get-i18n', 'internet-add', 'item-lookup-metadata',
-  'library-assign', 'library-remove-many', 'library-undo-remove',
+  'library-assign', 'library-remove-many', 'library-undo-remove', 'media-motion',
 ];
 
 // The fullscreen viewer's own window controls.
@@ -3462,7 +3803,6 @@ const SETTINGS_FIELDS = {
   viewerBackground: asOneOf('ambient', 'charcoal', 'aurora', 'color'),
   onlineSort: asOneOf('date_added', 'toplist', 'random', 'views'),
   onlineSources: (value, current) => onlineSources.patch(value, current, providerRegistry.PROVIDERS) || REJECT_SETTING,
-  libraryTagsExpanded: asBool,
   librarySidebarCollapsed: asBool,
   onlinePurity: asMergedObject({ sfw: asBool, sketchy: asBool, nsfw: asBool }),
   // DESIGN-002. The whole list at once, validated by the module the window also uses.
@@ -3621,8 +3961,8 @@ function ensureSlot(monitorId, which) {
 }
 
 // Импорт картинки/папки в пул + назначение её в слот (вернёт true, если реально добавили).
-function assignToSlot(slot, type, srcPath) {
-  const id = addToPool(type, srcPath);
+function assignToSlot(slot, type, srcPath, extra) {
+  const id = addToPool(type, srcPath, extra);
   if (!id) return false;
   if (slot.itemIds.includes(id)) return false; // уже в этом слоте
   slot.itemIds.push(id);
@@ -3671,8 +4011,8 @@ ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
     let added = 0;
     for (const src of res.filePaths) {
       try {
-        const stored = await importWallpaper(src);
-        if (assignToSlot(slot, 'image', stored)) added++;
+        const photo = await photoForPool(src);
+        if (assignToSlot(slot, 'image', photo.path, photo.extra)) added++;
       } catch (err) { console.error('Не удалось импортировать обои:', err); }
     }
     saveConfig();
@@ -3727,9 +4067,9 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => withLibra
       } else if (stats.isFile()) {
         const ext = path.extname(src).toLowerCase();
         if (playlist.IMG_EXTS.has(ext)) {
-          const stored = await importWallpaper(src);
-          if (assignToSlot(slot, 'image', stored)) added++;
-          // importWallpaper completing proves the supported file was actually readable.
+          const photo = await photoForPool(src);
+          if (assignToSlot(slot, 'image', photo.path, photo.extra)) added++;
+          // photoForPool completing proves the supported file was actually readable.
           // Rejected extensions and failed imports must not leave read authority behind.
           grantMediaPath(src);
         }
@@ -3794,7 +4134,10 @@ ipcMain.handle('library-add-images', async () => {
     const before = Object.keys(config.library).length;
     const revivalsBefore = poolRevivals;
     for (const src of res.filePaths) {
-      try { addToPool('image', await importWallpaper(src)); }
+      try {
+        const photo = await photoForPool(src);
+        addToPool('image', photo.path, photo.extra);
+      }
       catch (err) { console.error('library: не удалось импортировать', src, err); }
     }
     const added = Object.keys(config.library).length - before;
@@ -3951,8 +4294,8 @@ ipcMain.handle('library-add-paths', async (e, paths) => withLibraryLock(async ()
           folderIds.push(id);
         }
       } else if (stats.isFile() && playlist.IMG_EXTS.has(path.extname(src).toLowerCase())) {
-        const stored = await importWallpaper(src);
-        if (addToPool('image', stored)) grantMediaPath(src);
+        const photo = await photoForPool(src);
+        if (addToPool('image', photo.path, photo.extra)) grantMediaPath(src);
       }
     } catch (err) { console.error('library: drop import failed', src, err); }
   }
@@ -3974,8 +4317,8 @@ ipcMain.handle('library-add-paths', async (e, paths) => withLibraryLock(async ()
 // card it draws, whereas only some cards have a pool id.
 // LIB-012. Подтверждение спрашивает не обработчик по своему усмотрению, а ПОВЕРХНОСТЬ:
 // решение владельца 2026-09-03 — спрашивать там, где пункт легко спутать с соседним, и
-// только там. Поэтому признак приходит снаружи, а массовая кнопка, онлайн-карточка и
-// просмотрщик остаются как были.
+// только там. LIB-020 добавляет вопрос от двух выбранных карточек в полосе выделения.
+// Признак приходит от поверхности; онлайн-карточка и просмотрщик не спрашивают.
 //
 // Диалог показывается ДО блокировки библиотеки. Он живёт ровно столько, сколько человек
 // думает, и блокировка на это время остановила бы все остальные операции; «Удалить с
@@ -3983,6 +4326,13 @@ ipcMain.handle('library-add-paths', async (e, paths) => withLibraryLock(async ()
 //
 // Убрать из библиотеки обратимо — запись уходит в корзину, — поэтому вопрос задаётся
 // как вопрос, а не предупреждение, и по умолчанию выбрана отмена.
+const libraryRemovalQuestion = createLibraryRemovalQuestion({
+  getWindow: () => mainWindow,
+  nextId: () => crypto.randomUUID(),
+});
+ipcMain.handle('library-removal-answer', (event, requestId, confirmed) =>
+  libraryRemovalQuestion.answer(event.sender, requestId, confirmed));
+
 async function confirmLibraryRemoval(rawRecords, rawOptions) {
   if (!rawOptions || rawOptions.confirm !== true) return null;
   const names = [];
@@ -3991,25 +4341,27 @@ async function confirmLibraryRemoval(rawRecords, rawOptions) {
     const id = typeof rec.id === 'string' && rec.id ? rec.id : '';
     const item = id ? library.getItem(config.library, id) : null;
     const full = (typeof rec.path === 'string' && rec.path) || (item && item.path) || '';
-    if (full) names.push(path.basename(full));
+    if (full) names.push({ name: path.basename(full), type: (item && item.type) || (rec.type === 'folder' ? 'folder' : 'image') });
   }
   // Называть нечего — пусть обработчик сам ответит на пустой запрос, как отвечал всегда.
   if (!names.length) return null;
 
   const shown = names.slice(0, 10);
   const more = names.length - shown.length;
-  const answer = await dialog.showMessageBox(mainWindow, {
-    type: 'question',
-    buttons: [tMain('library.removeConfirmYes'), tMain('library.removeConfirmCancel')],
-    defaultId: 1,
-    cancelId: 1,
+  const confirmed = await libraryRemovalQuestion.ask({
+    names: shown,
+    more,
+    count: names.length,
+    countLabel: tMain('library.itemsCount').replace('{n}', String(names.length)),
+    yesLabel: tMain('library.removeConfirmYes'),
+    cancelLabel: tMain('library.removeConfirmCancel'),
+    closeLabel: tMain('details.close'),
     title: tMain('library.removeConfirmTitle'),
     // tMain() не умеет подстановку, как и у «Удалить с диска» — число подставляется здесь.
     message: tMain('library.removeConfirmMessage').replace('{n}', String(names.length)),
-    detail: [...shown, ...(more > 0 ? [`… +${more}`] : []), '', tMain('library.removeConfirmDetail')].join('\n'),
-    noLink: true,
+    detail: tMain('library.removeConfirmDetail'),
   });
-  if (answer.response === 0) return null;
+  if (confirmed) return null;
   // Отказ не должен отличаться от «ничего не делали»: ни записи, ни отмены, ни тоста.
   return { config, affected: 0, removed: 0, hidden: 0, error: null, cancelled: true, warning: null, undo: null };
 }
@@ -4827,7 +5179,10 @@ ipcMain.handle('library-path-sizes', async (e, paths) => {
 // Path-based (not id-based) because details also open on transient live-folder
 // cards that were never materialized into the pool; the same precedent as
 // `library-path-sizes`, which already stats renderer-supplied paths.
-const readItemDetails = itemDetails.createDetailsReader();
+// BUG-035. One reader for "does this picture move", shared by the cards, the previews that
+// stand for the desktop and the details sheet, so all of them give the same answer.
+const motionReader = imageMotion.createMotionReader();
+const readItemDetails = itemDetails.createDetailsReader({ motion: motionReader });
 // SEC-002, slice 2. Short-lived authority for paths main learned ITSELF — a dialog it
 // opened, or a listing it produced. Everything else has to be vouched for by the pool.
 const pathGrants = pathGrantsMod.create({
@@ -5205,10 +5560,10 @@ async function finalizeLibraryAssignment(result, theme, poolTouched = true) {
   }
   trayCtl.refresh();
   // Assigning a new image to the active monitor×theme changes the current frame → drop any
-  // pending stealth advance so it can't overwrite this choice moments later.
+  // pending stealth advance or waiting slideshow run so it can't overwrite this choice moments later.
   let warning = null;
   if (theme === wallpaperThemeName()) {
-    cancelPendingStealth();
+    const intent = supersedeSlideshowForManualChange();
     try {
       await applyForTheme(theme, true);
     } catch (err) {
@@ -5217,7 +5572,7 @@ async function finalizeLibraryAssignment(result, theme, poolTouched = true) {
       warning = 'apply_failed';
       console.error('library assignment apply failed:', err);
     } finally {
-      rescheduleSlideshowAfterManualWallpaperChange();
+      rescheduleSlideshowAfterManualWallpaperChange(intent);
     }
   }
   return warning;
@@ -5487,6 +5842,13 @@ function usableInternetDownload(item) {
   }
 }
 
+// What a site's `search` is handed: the round's parameters plus the one format list. The
+// tag-limit check counts the words of exactly this, so what is counted is what is sent
+// (LIB-014 stage 3).
+function providerSearchParams(params) {
+  return { ...(params || {}), formats: ACCEPTED_FORMAT_LIST };
+}
+
 async function searchOneProvider(descriptor, params) {
   if (!descriptor) return { provider: '', items: [], meta: {}, error: 'unsupported' };
   const blank = { provider: descriptor.id, items: [], meta: {}, error: null };
@@ -5500,7 +5862,7 @@ async function searchOneProvider(descriptor, params) {
     // The format rule travels WITH the request. A site that can narrow its own reply
     // does so; one that cannot simply ignores it and is filtered below instead.
     res = await descriptor.search(
-      { ...(params || {}), formats: ACCEPTED_FORMAT_LIST },
+      providerSearchParams(params),
       providerContext(descriptor, credentials),
     );
   } catch (err) {
@@ -5657,8 +6019,21 @@ async function searchRound(token, sorting, extra, list, browsing = false) {
   const live = (Array.isArray(list) ? list : providerRegistry.active())
     .filter(sourceEnabled)
     .filter((descriptor) => !onlineResume.isFinished(token, onlineResume.slotKey(descriptor.id, sorting)));
-  if (!live.length) return { results: [], attempts: [] };
-  return searchAllProviders((descriptor) => {
+  // LIB-014 stage 3. A site this query does not fit is not asked at all: it sits this search
+  // out and is named in `paused`. Nothing about it is recorded — it did not fail, so its
+  // bookmark, the failure notice and the user's choice of sites all stay as they were. The
+  // check needs no page, so it is not given one: on the front page `positionFor` throws the
+  // dice for Gelbooru's slice, and a second throw here would move it.
+  const paused = {};
+  const asked = live.filter((descriptor) => {
+    if (descriptor.status === 'retired' || !descriptor.capabilities || !descriptor.capabilities.browse) return true;
+    const answer = onlineTagLimit.verdict(descriptor, providerSearchParams({ ...extra, sort: sorting }));
+    if (answer.fits) return true;
+    paused[descriptor.id] = { max: answer.max, sortHelps: !!answer.sortHelps };
+    return false;
+  });
+  if (!asked.length) return { results: [], attempts: [], paused };
+  const round = await searchAllProviders((descriptor) => {
     const at = positionFor(token, descriptor, sorting, browsing);
     return {
       ...extra,
@@ -5679,7 +6054,8 @@ async function searchRound(token, sorting, extra, list, browsing = false) {
     };
   // ONL-005: chosen sites are independent search sources. Group alternatives remain
   // a lower-level mechanism for other callers, but cannot silently replace a choice.
-  }, live.map((descriptor) => ({ ...descriptor, group: descriptor.id })));
+  }, asked.map((descriptor) => ({ ...descriptor, group: descriptor.id })));
+  return { ...round, paused };
 }
 
 // Write down where everyone got to. A site that failed keeps its bookmark and is asked
@@ -5705,19 +6081,24 @@ async function searchBrowseFeed(o, token) {
   }, undefined, true)));
   const results = rounds.flatMap((round) => round.results);
   rounds.forEach((round) => recordRound(token, round.attempts));
-  if (!rounds.some((round) => round.attempts.length)) return nobodyLeft();
+  const paused = Object.assign({}, ...rounds.map((round) => round.paused));
+  if (!rounds.some((round) => round.attempts.length)) return { ...nobodyLeft(), paused };
   // mergeSearchResults does the deduplication — a picture that is both new and well
   // rated must appear once — and the shuffle then removes the two orderings' rhythm.
   const merged = online.mergeSearchResults(results);
-  return { ...merged, items: online.shuffle(merged.items, browseRandom) };
+  return { ...merged, items: online.shuffle(merged.items, browseRandom), paused };
 }
 
 async function searchQueryFeed(o, token) {
   const sorting = String(o.sort || 'date_added');
   const round = await searchRound(token, sorting, { ...o, categories: SEARCH_CATEGORIES });
   recordRound(token, round.attempts);
-  if (!round.attempts.length) return nobodyLeft();
-  return online.mergeSearchResults(round.results);
+  // LIB-014 stage 3. Nobody asked because every site left was paused: an empty answer that
+  // is neither "nothing found" nor a failure, and the window says why.
+  if (!round.attempts.length) {
+    return { ...nobodyLeft(), paused: round.paused, allPaused: Object.keys(round.paused).length > 0 };
+  }
+  return { ...online.mergeSearchResults(round.results), paused: round.paused };
 }
 
 // Everyone has already said "nothing more". That is not a failure and must not be
@@ -5750,7 +6131,9 @@ async function searchFiltered(o, token, browsing) {
     .filter((item) => sizeFilter.matches(item, targets));
 
   const first = await run({ sizeHints: hints });
-  let merged = { ...first, items: keep(first.items) };
+  // ONL-004: `sizeFiltered` because a site's own count only knows the size floor it was sent,
+  // not the shape judged below — so with this filter the window shows no number at all.
+  let merged = { ...first, items: keep(first.items), sizeFiltered: true };
   // Ask for more of the same rather than more often: a wider page is one request, and a
   // site that filters on its own side will simply return a full one.
   for (let round = 0; round < SIZE_FILTER_EXTRA_ROUNDS; round++) {
@@ -5766,6 +6149,8 @@ async function searchFiltered(o, token, browsing) {
       ...merged,
       items: online.mergeSearchResults([{ items: merged.items }, { items: gained }]).items,
       providerErrors: { ...(merged.providerErrors || {}), ...(next.providerErrors || {}) },
+      totals: { ...(merged.totals || {}), ...(next.totals || {}) },
+      paused: { ...(merged.paused || {}), ...(next.paused || {}) },
     };
   }
   return merged;
@@ -5785,6 +6170,14 @@ ipcMain.handle('internet-search', async (e, opts) => {
   return {
     ...merged,
     browsing,
+    // ONL-004. How many each site found — for a question the user asked. The front page is
+    // our selection, not an answer, and a count of it would describe nothing.
+    totals: browsing ? {} : (merged.totals || {}),
+    sizeFiltered: !browsing && !!merged.sizeFiltered,
+    // LIB-014 stage 3. Which sites sat this search out because it has more words than they
+    // take, and whether nobody was left to ask because of it.
+    paused: merged.paused || {},
+    allPaused: !!merged.allPaused,
     resume: onlineResume.forReply(token),
     nsfwAvailable: explicitContentReachableIn(providerRegistry.active().filter(sourceEnabled)),
   };
@@ -6611,7 +7004,22 @@ ipcMain.handle('thumb', async (e, p, w, h) => {
   const data = await thumbnailData(p, w, h);
   return data.url;
 });
-ipcMain.handle('thumb-info', (e, p, w, h, priority) => thumbnailData(p, w, h, priority));
+// BUG-035. Whether a local picture moves. Same authority as a thumbnail, because it reads
+// the file's bytes; JPEG and BMP are answered from the name and never opened.
+function mediaMotionOf(p, options) {
+  if (!p || typeof p !== 'string' || p.includes('\0') || !path.isAbsolute(p)) return Promise.resolve(null);
+  if (!imageMotion.mayMove(p) || !isAuthorizedMediaPath(p)) return Promise.resolve(null);
+  return motionReader(p, options);
+}
+// A card learns whether its picture moves in the same round trip as its thumbnail, so the
+// grid needs no second request per card. The thumbnail itself stays a still frame.
+ipcMain.handle('thumb-info', async (e, p, w, h, priority) => {
+  const [data, motion] = await Promise.all([thumbnailData(p, w, h, priority), mediaMotionOf(p)]);
+  return motion ? { ...data, motion } : data;
+});
+// The previews that stand for the desktop ask before they choose between the file itself
+// and its still frame.
+ipcMain.handle('media-motion', (e, p) => mediaMotionOf(p));
 
 // Resolve proportions before renderer inserts the next justified-grid chunk. A small
 // worker pool avoids hammering Windows shell with dozens of simultaneous thumbnail jobs.
@@ -6971,11 +7379,11 @@ ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
   storeSlideshowPosition(monitorId, t, playlist.reconcilePosition(list, '', Number(index)));
   saveSettingsOnly();  // position only
   if (t === wallpaperThemeName()) {
-    cancelPendingStealth();
+    const intent = supersedeSlideshowForManualChange();
     try {
       await applyForTheme(t, true);
     } finally {
-      rescheduleSlideshowAfterManualWallpaperChange();
+      rescheduleSlideshowAfterManualWallpaperChange(intent);
     }
   }
   return config;
@@ -7002,14 +7410,15 @@ ipcMain.handle('set-slideshow-to-path', async (e, monitorId, theme, p) => {
   // an inactive theme later becomes active).
   storeSlideshowPosition(monitorId, t, { index: idx, path: p });
   saveSettingsOnly();  // position only
-  // Picking a specific frame is a manual choice → cancel any pending stealth advance.
+  // Picking a specific frame is a manual choice → cancel any pending stealth advance and any
+  // slideshow run still waiting.
   if (t === wallpaperThemeName()) {
-    cancelPendingStealth();
+    const intent = supersedeSlideshowForManualChange();
     try {
       const apply = await applyForTheme(t, true);
       return { config, apply: apply || { ok: true } };
     } finally {
-      rescheduleSlideshowAfterManualWallpaperChange();
+      rescheduleSlideshowAfterManualWallpaperChange(intent);
     }
   }
   // Frame stored for the inactive theme — it will show when that theme activates.
@@ -7269,6 +7678,44 @@ protocol.registerSchemesAsPrivileged([{
   privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: false },
 }]);
 
+// Windows switched light/dark (or only said it did). Registered on ready; a named function so
+// a test can drive the same path a real flip takes (TRG-004).
+function onNativeThemeUpdated() {
+  const isDark = nativeTheme.shouldUseDarkColors;
+  // Windows fires this event spuriously when a wallpaper is applied (WM_SETTINGCHANGE) with
+  // the SAME light/dark value. Only a real flip should toast or re-apply wallpapers — without
+  // this guard every stealth/manual wallpaper change wrongly announced "Windows switched theme".
+  const reallyChanged = lastNativeDark === null ? true : (isDark !== lastNativeDark);
+  lastNativeDark = isDark;
+  if ((config.themeOverride === 'light' && isDark) || (config.themeOverride === 'dark' && !isDark)) {
+    config.themeOverride = null;
+    saveSettingsOnly();
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
+  }
+  trayCtl.refreshIcon();
+  if (!reallyChanged) { broadcastTheme({ silent: true }); return; } // spurious event: refresh UI quietly, nothing else
+  // Suppress the "Windows switched theme" toast during the startup/resume catch-up window
+  // (background flip), but keep announcing genuine theme changes the user makes later.
+  broadcastTheme({ silent: Date.now() < themeToastQuietUntil });
+  // Wallpaper mode='system' follows Windows. Independent time/sun schedules ignore
+  // nativeTheme events completely; unified mode always stays on the shared light slot.
+  if (config.separateThemes !== false && config.wallpaperSchedule && config.wallpaperSchedule.mode === 'system') {
+    if (config.slideshow.enabled) {
+      if (stealthCtl.isActive()) {
+        // A theme flip during an invisible session folds in (Option A) WITHOUT discarding the
+        // session's advance intent — a wake session still shows a new photo on the new theme.
+        // changeTheme() no-ops if the theme didn't actually change, so a spurious WM_SETTINGCHANGE
+        // (Windows fires one when a wallpaper is applied) can't loop or clobber the session.
+        stealthCtl.changeTheme(wallpaperThemeName());
+      } else {
+        tickSlideshow(false); // применить кадр новой темы + перепланировать
+      }
+    } else followWindowsTheme();
+  }
+}
+
 app.whenReady().then(async () => {
   // Electron finalizes its default dev identity during startup, so apply the
   // Squirrel-matching ID immediately after ready and before any window/toast.
@@ -7383,41 +7830,7 @@ app.whenReady().then(async () => {
   }
 
   lastNativeDark = nativeTheme.shouldUseDarkColors; // baseline so the first real flip is detected
-  nativeTheme.on('updated', () => {
-    const isDark = nativeTheme.shouldUseDarkColors;
-    // Windows fires this event spuriously when a wallpaper is applied (WM_SETTINGCHANGE) with
-    // the SAME light/dark value. Only a real flip should toast or re-apply wallpapers — without
-    // this guard every stealth/manual wallpaper change wrongly announced "Windows switched theme".
-    const reallyChanged = lastNativeDark === null ? true : (isDark !== lastNativeDark);
-    lastNativeDark = isDark;
-    if ((config.themeOverride === 'light' && isDark) || (config.themeOverride === 'dark' && !isDark)) {
-      config.themeOverride = null;
-      saveSettingsOnly();
-    }
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
-    }
-    trayCtl.refreshIcon();
-    if (!reallyChanged) { broadcastTheme({ silent: true }); return; } // spurious event: refresh UI quietly, nothing else
-    // Suppress the "Windows switched theme" toast during the startup/resume catch-up window
-    // (background flip), but keep announcing genuine theme changes the user makes later.
-    broadcastTheme({ silent: Date.now() < themeToastQuietUntil });
-    // Wallpaper mode='system' follows Windows. Independent time/sun schedules ignore
-    // nativeTheme events completely; unified mode always stays on the shared light slot.
-    if (config.separateThemes !== false && config.wallpaperSchedule && config.wallpaperSchedule.mode === 'system') {
-      if (config.slideshow.enabled) {
-        if (stealthCtl.isActive()) {
-          // A theme flip during an invisible session folds in (Option A) WITHOUT discarding the
-          // session's advance intent — a wake session still shows a new photo on the new theme.
-          // changeTheme() no-ops if the theme didn't actually change, so a spurious WM_SETTINGCHANGE
-          // (Windows fires one when a wallpaper is applied) can't loop or clobber the session.
-          stealthCtl.changeTheme(wallpaperThemeName());
-        } else {
-          tickSlideshow(false); // применить кадр новой темы + перепланировать
-        }
-      } else applyForTheme();
-    }
-  });
+  nativeTheme.on('updated', onNativeThemeUpdated);
 
   // enumerate monitors, then apply correct wallpaper on launch
   await getMonitors();
@@ -7486,6 +7899,9 @@ app.on('before-quit', () => {
   if (liveFolderWatcher) liveFolderWatcher.closeAll();
   void thumbnailHost.dispose();
   wpHost.dispose();
+  // WIN-002. A fallback PowerShell or reg.exe still running now would outlive the app;
+  // end them all and start no new one. Nothing is awaited: quitting is not held up.
+  systemChildren.disposeAll();
   // SEC-002. Only the browser-waiting phase owns this socket and five-minute timer;
   // post-redirect exchange and /me have their own short request deadlines. On quit,
   // cancel the listener phase when it still exists.
@@ -7589,6 +8005,8 @@ module.exports = {
     setPhysicalDeleteEnabled: (on) => { physicalDeleteEnabled = !!on; },
     setLiveFolderState: (state) => { liveFolderState = state; invalidateHiddenPaths(); },
     getLiveFolderState: () => liveFolderState,
+    // The loader startup runs, so a restart test reads the index the way the app does.
+    loadLiveFolderState: () => loadLiveFolderState(),
     hiddenPathSet: () => hiddenPathSet(),
     resolvePlaylist: (monitorId, theme) => playlist.resolveSlot(
       slotFor(monitorId, theme), config.library, { forceFolderScan: true, exclude: hiddenPathSet() },
@@ -7604,6 +8022,10 @@ module.exports = {
     // который в тестах намеренно заблокирован.
     applyForTheme: (theme, isManual) => applyForTheme(theme, isManual),
     setMonitorsCache: (list) => { monitorsCache = Array.isArray(list) ? list : []; },
+    // WIN-002: the deadlines are half a minute in the app; a test waits milliseconds.
+    setSystemChildTimeouts: (limits) => { Object.assign(systemChildTimeouts, limits || {}); },
+    systemChildren: () => systemChildren,
+    cleanLegacyAutostartRegistryValues: () => cleanLegacyAutostartRegistryValues(),
     checkLiveFolderReachability: () => checkLiveFolderReachability(),
     addToPool: (type, p, extra) => addToPool(type, p, extra),
     saveConfig: () => saveConfig(),
@@ -7676,7 +8098,10 @@ module.exports = {
     // ровно эта развилка и молчала.
     runHourlyLiveFolderPass: () => scheduleLiveFolderFullScan(String("hourly"), 0),
     windowVisibleForLiveFolders: () => liveFolderWindowVisible(),
-    blockIntervalLikeGameMode: () => retrySlideshowIntervalSoon(),
+    blockIntervalLikeGameMode: () => retrySlideshowSoon(beginSlideshowRun(), true),
+    // TRG-004. The handler a real Windows light/dark flip runs; it is registered on ready,
+    // which never comes under the harness. The test sets nativeTheme first, as Windows would.
+    themeUpdated: () => onNativeThemeUpdated(),
     cloudSigninInFlight: () => !!activeCloudSignin,
     cancelCloudSignin: () => cancelCloudSignin(),
     // BUG-031. whenReady never resolves under the harness, so no window exists and every
@@ -7695,6 +8120,9 @@ module.exports = {
       clearWallpaperTimer();
       if (folderStateSaveTimer) clearTimeout(folderStateSaveTimer);
       if (liveFolderAspectTimer) clearTimeout(liveFolderAspectTimer);
+      // A deadline of a test's hung child would otherwise keep node alive after it.
+      wpHost.dispose();
+      systemChildren.disposeAll();
     },
   },
 };

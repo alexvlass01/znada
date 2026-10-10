@@ -199,6 +199,10 @@
     "removeConfirmCancel": "İptal",
     "searchPh": "Ara",
     "tagSearchPh": "Etiket ara",
+    "searchOrTagPh": "Ad veya başka bir etiket…",
+    "clearSearch": "Aramayı ve etiketleri temizle",
+    "tagSuggestions": "Etiket önerileri",
+    "tagToggleHint": "Ctrl+tıklama: seçime ekle veya kaldır",
     "noTagsFound": "Eşleşen etiket bulunamadı",
     "clearTagFilter": "Etiket filtresini temizle",
     "collapseSidebar": "Kenar çubuğunu daralt",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Bazı ögeler kaldırılamadı",
     "selectionActions": "Seçili duvar kağıdı işlemleri",
     "clearSelection": "Seçimi Temizle",
-    "itemsCount": "Öge sayısı: {n}"
+    "itemsCount": "Öge sayısı: {n}",
+    "sortLabel": "Sıralama",
+    "photosCount": "{n} fotoğraf"
   },
   "details": {
     "type": "Tür",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Hassas",
     "ratingQuestionable": "Şüpheli",
     "ratingExplicit": "Müstehcen"
+  },
+  "motion": {
+    "format": "Animasyon · {format}",
+    "formatFrames": "Animasyon · {format} · {frames} kare",
+    "desktopFirstFrame": "Şimdilik masaüstünde ilk kare görünür."
   },
   "viewer": {
     "title": "Görüntüleyici",
@@ -334,6 +345,9 @@
     "loading": "Yükleniyor…",
     "noResults": "Sonuç bulunamadı",
     "sourcesFailed": "Şu kaynaklardan sonuç yüklenemedi: {sources}. Yeniden arayın veya başka bir kaynak seçin.",
+    "sourcePaused": "Bu site bu kadar çok etiketle arama yapamıyor",
+    "sourcePausedSort": "Bu sıralamayla bu site bu kadar çok etiketle arama yapamıyor",
+    "allSourcesPaused": "Seçili siteler bu kadar çok etiketle arama yapamıyor. Bir etiketi kaldırın veya başka bir siteyi açın.",
     "error": "Hata: {e}",
     "add": "Kütüphaneye Ekle",
     "adding": "Ekleniyor…",

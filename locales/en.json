@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Cancel",
     "searchPh": "Search",
     "tagSearchPh": "Search tags",
+    "searchOrTagPh": "Name or another tag…",
+    "clearSearch": "Clear search and tags",
+    "tagSuggestions": "Tag suggestions",
+    "tagToggleHint": "Ctrl+click: add to the selection or remove",
     "noTagsFound": "No matching tags",
     "clearTagFilter": "Clear tag filter",
     "collapseSidebar": "Collapse sidebar",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Could not remove the selected items",
     "selectionActions": "Selected wallpaper actions",
     "clearSelection": "Clear selection",
-    "itemsCount": "Items: {n}"
+    "itemsCount": "Items: {n}",
+    "sortLabel": "Sorting",
+    "photosCount": "{n} photos"
   },
   "details": {
     "type": "Type",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Sensitive",
     "ratingQuestionable": "Questionable",
     "ratingExplicit": "Explicit"
+  },
+  "motion": {
+    "format": "Animation · {format}",
+    "formatFrames": "Animation · {format} · {frames} frames",
+    "desktopFirstFrame": "For now, the desktop shows the first frame."
   },
   "viewer": {
     "title": "Preview",
@@ -334,6 +345,9 @@
     "loading": "Loading…",
     "noResults": "Nothing found",
     "sourcesFailed": "Could not load results from: {sources}. Search again to retry, or choose another source.",
+    "sourcePaused": "This site can't search for this many tags",
+    "sourcePausedSort": "With this sort order, this site can't search for this many tags",
+    "allSourcesPaused": "The selected sites can't search for this many tags. Remove a tag or turn on another site.",
     "error": "Error: {e}",
     "add": "Add to library",
     "adding": "Adding…",

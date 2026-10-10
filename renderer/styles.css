@@ -31,6 +31,14 @@
   --sidebar-bg: #f1f1f1;
   --accent-soft: rgba(53, 132, 228, 0.13);
   --accent-soft-hover: rgba(53, 132, 228, 0.19);
+  /* LIB-021, owner 2026-10-08: the toast follows the theme. Light is the card colour with dark
+     text; #1c71d8 reads on white better than the accent. Dark is the toast as it always was. */
+  --toast-bg: #ffffff;
+  --toast-fg: #2e3436;
+  --toast-ring: rgba(0, 0, 0, 0.08);
+  --toast-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  --toast-action: #1c71d8;
+  --toast-action-hover: #1a5fb4;
   --input-border: rgba(0, 0, 0, 0.14);
   color-scheme: light;
 }
@@ -58,6 +66,12 @@ html.dark {
   --tooltip-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   --sidebar-bg: #2b2b2b;
   --accent-soft: rgba(53, 132, 228, 0.22);
+  --toast-bg: #2e2e2e;
+  --toast-fg: #fff;
+  --toast-ring: transparent;
+  --toast-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  --toast-action: #9dc0ff;
+  --toast-action-hover: #c3d9ff;
   --accent-soft-hover: rgba(53, 132, 228, 0.3);
   --input-border: rgba(255, 255, 255, 0.13);
 }
@@ -83,6 +97,7 @@ body {
 
 /* ---------- Title bar (custom, with native window controls overlay) ---------- */
 .titlebar {
+  position: relative;
   height: 44px;
   flex: 0 0 auto;
   display: flex;
@@ -91,9 +106,30 @@ body {
   /* reserve space on the right for the native min/max/close caption buttons */
   padding: 0 142px 0 14px;
   background: var(--headerbar);
-  border-bottom: 1px solid var(--headerbar-border);
+  /* Черты снизу у самой шапки НЕТ, и это не упущение. Окно открыто с titleBarStyle 'hidden'
+     и titleBarOverlay: верхние 44 px справа Windows рисует НЕПРОЗРАЧНО поверх страницы, своим
+     цветом из main.js. Всё, что CSS кладёт внутрь этих 44 px, под кнопками пропадает — в том
+     числе border-bottom, который сидел бы на 43-м пикселе. Поэтому прежняя черта обрывалась,
+     не доходя до правого угла окна.
+     Черту рисует .titlebar::after строкой НИЖЕ — на 44-м пикселе, сразу за нижней границей
+     оверлея. Туда Windows уже не достаёт, и черта идёт через всё окно, включая участок под
+     кнопками. Цвет самой полосы при этом совпадает с цветом кнопок (main.js,
+     titleBarOverlayColors), так что шва между ними нет.
+     Высота 44 px и зарезервированные справа 142 px не менялись. */
   -webkit-app-region: drag;
   app-region: drag;
+}
+/* Разделительная черта под шапкой. Лежит ровно на границе оверлея (top: 100%), а не внутри
+   шапки, поэтому не обрывается под нативными кнопками — см. комментарий в .titlebar. */
+.titlebar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 1px;
+  background: var(--headerbar-border);
+  pointer-events: none;
 }
 .tb-left { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .tb-icon { width: 18px; height: 18px; border-radius: 5px; }
@@ -187,8 +223,10 @@ body {
 .tb-nav {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%);
-  top: 7px;
+  top: 50%;
+  /* Центруется расчётом, а не подобранным смещением: высота вкладок зависит от шрифта и
+     языка, и зашитое число давало сверху и снизу разный зазор. */
+  transform: translate(-50%, -50%);
   display: flex;
   gap: 2px;
   padding: 3px;
@@ -373,12 +411,21 @@ body.first-run .tb-right { display: none; }
 .home-display-wallpaper.empty { opacity: 0.42; }
 .home-display-empty { position: relative; z-index: 1; padding: 8px; text-shadow: 0 1px 3px #000; }
 
-.home-display-label {
+/* The monitor's label and, for a moving picture, the "GIF" chip beside it (BUG-035).
+   The row holds the position; the label shrinks with an ellipsis, the chip never does. */
+.home-display-labels {
   position: absolute;
   left: 8px;
   bottom: 7px;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   max-width: calc(100% - 16px);
+}
+
+.home-display-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -390,10 +437,13 @@ body.first-run .tb-right { display: none; }
   font-weight: 700;
 }
 
-.home-display.portrait .home-display-label {
+.home-display.portrait .home-display-labels {
   left: 4px;
   bottom: 5px;
   max-width: calc(100% - 8px);
+}
+
+.home-display.portrait .home-display-label {
   padding: 3px 5px;
   font-size: 9.5px;
 }
@@ -1096,6 +1146,13 @@ body.single-theme .wallpaper-schedule-row { display: none !important; }
 .thumb:hover .thumb-remove,
 .thumb:focus-within .thumb-remove { opacity: 1; }
 .thumb-remove:hover { background: #e01b24; }
+/* BUG-035. The library's chip, scaled to a 52 px tile so it does not cover a fifth of it. */
+.thumb .lib-motion {
+  left: 3px; bottom: 3px;
+  height: 14px; padding: 0 4px;
+  border-radius: 4px;
+  font-size: 8.5px; letter-spacing: 0.03em;
+}
 /* Clickable thumbnails: hover outline to signal interactivity */
 .thumb.clickable { cursor: pointer; transition: outline 0.12s ease, transform 0.08s ease; }
 .thumb.clickable:hover {
@@ -1360,13 +1417,14 @@ select option {
   position: fixed;
   bottom: 22px; left: 50%;
   transform: translateX(-50%) translateY(20px);
-  background: #2e2e2e;
-  color: #fff;
+  background: var(--toast-bg);
+  color: var(--toast-fg);
   padding: 11px 20px;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 500;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  /* A ring instead of a border keeps the size the same in both themes. */
+  box-shadow: 0 0 0 1px var(--toast-ring), var(--toast-shadow);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -1379,16 +1437,20 @@ select option {
 .toast-action {
   background: none;
   border: none;
-  color: #9dc0ff;
+  color: var(--toast-action);
   font: inherit;
   font-weight: 700;
   padding: 2px 2px;
   cursor: pointer;
   border-radius: 6px;
 }
-.toast-action:hover { color: #c3d9ff; }
-.toast-action:focus-visible { outline: 2px solid #9dc0ff; outline-offset: 2px; }
+.toast-action:hover { color: var(--toast-action-hover); }
+.toast-action:focus-visible { outline: 2px solid var(--toast-action); outline-offset: 2px; }
 .toast-action:disabled { opacity: .5; cursor: default; }
+/* LIB-021: the Undo deadline line (renderer/undo-deadline.js) — in the button's colour, along
+   the bottom edge, shrinking toward the left. The toast clips it to its rounded corners. */
+.toast:has(.undo-deadline) { overflow: hidden; }
+.toast .undo-deadline { background: var(--toast-action); }
 
 @media (max-width: 720px) {
   .cards { grid-template-columns: 1fr; }
@@ -1569,6 +1631,7 @@ html.dark .lib-navigation { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); 
 
 .lib-main { flex: 1 1 auto; min-width: 0; width: 100%; }
 .lib-toolbar {
+  position: relative;
   display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
   padding: 6px;
   background: var(--sidebar-bg);
@@ -1808,6 +1871,32 @@ html.dark .lib-folder-front { fill: #d99a34; }
 }
 .lib-card.selected .lib-assigned { display: none; }
 
+/* BUG-035. "This picture moves": one chip for GIF, animated WebP and APNG alike — A1, the
+   owner's choice of 2026-09-26. The same dark glass as the star and menu, always visible,
+   bottom-left (top-left is the star, top-right the menu and selection, bottom-right the
+   "assigned" dot). The real format is in its tooltip; see renderer/motion-badge.js. */
+.lib-motion {
+  position: absolute; left: 6px; bottom: 6px; z-index: 6;
+  display: inline-flex; align-items: center;
+  height: 18px; padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 5px;
+  background: rgba(20, 20, 20, 0.68); color: #fff;
+  backdrop-filter: blur(8px);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.045em; line-height: 1;
+  white-space: nowrap; cursor: default;
+}
+.lib-motion.inline { position: static; flex: 0 0 auto; }
+
+/* LIB-017. The moving file laid over the still thumbnail while the pointer rests on the card
+   (renderer/motion-hover.js). First child, so the chip, star and menu stay above it; it takes
+   no clicks, and leaving the card removes it, which brings the still frame back as it was. */
+.motion-play {
+  position: absolute; inset: 0; z-index: 0;
+  width: 100%; height: 100%;
+  object-fit: cover; border-radius: inherit;
+  pointer-events: none;
+}
+
 .lib-empty {
   max-width: 430px;
   margin: 52px auto 0;
@@ -1918,6 +2007,36 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-modal-foot .pill:disabled,
 .details-link:disabled { opacity: .55; cursor: wait; }
 
+/* LIB-019. Accepted removal question: shared Adwaita palette, font and pills.
+   The native dialog top layer makes the rest of the page inert, including its
+   titlebar; the name list scrolls while the action buttons remain visible. */
+.library-remove-dialog { width: min(460px, calc(100% - 48px)); max-height: calc(100% - 48px); margin: auto; padding: 0; color: var(--text); }
+.library-remove-dialog:not([open]) { display: none; }
+.library-remove-dialog::backdrop { background: rgba(0, 0, 0, .45); backdrop-filter: blur(2px); }
+.library-remove-head { display: flex; align-items: flex-start; gap: 12px; padding: 22px 18px 0 24px; flex-shrink: 0; }
+.library-remove-head h2 { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 20px; line-height: 1.3; font-weight: 700; }
+.library-remove-head .lib-modal-close { margin-top: -5px; }
+.library-remove-body { min-height: 0; overflow-y: auto; padding: 16px 24px 0; display: flex; flex-direction: column; gap: 14px; }
+.library-remove-names { margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; box-shadow: none; background: var(--bg); max-height: 224px; overflow-y: auto; flex-shrink: 0; }
+.library-remove-names .row { padding: 10px 12px; gap: 12px; min-width: 0; }
+.library-remove-icon { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border-radius: 8px; background: var(--btn-bg); color: var(--text-dim); }
+.library-remove-icon svg { width: 20px; height: 20px; }
+.library-remove-name { min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.5; }
+.library-remove-count { font-size: 12.5px; color: var(--text-dim); }
+.library-remove-more { margin-top: -6px; color: var(--text-dim); font-size: 12.5px; }
+.library-remove-detail { display: flex; gap: 10px; align-items: flex-start; line-height: 1.5; color: var(--text-dim); font-size: 12.5px; }
+.library-remove-detail svg { width: 16px; height: 16px; flex: 0 0 16px; margin-top: 2px; }
+.library-remove-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 22px 24px 24px; flex-shrink: 0; }
+.library-remove-dialog :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.library-remove-cancel:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.library-remove-sr { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 420px), (max-height: 420px) {
+  .library-remove-dialog { width: calc(100% - 24px); max-height: calc(100% - 24px); }
+  .library-remove-head { padding: 16px 12px 0 16px; }
+  .library-remove-body { padding: 12px 16px 0; }
+  .library-remove-foot { padding: 16px; }
+}
+
 .details-preview {
   position: relative;
   display: grid;
@@ -2027,6 +2146,16 @@ html.dark .lib-folder-front { fill: #d99a34; }
   padding: 7px 8px 3px; font-size: 12.5px; color: var(--text-dim); cursor: pointer;
 }
 .lib-popup-check input { margin: 0; cursor: pointer; }
+/* BUG-035. What the desktop will show for a moving picture, said where the choice is made.
+   `width: 0; min-width: 100%` fills the window without widening it, so the line takes the
+   width the monitor rows already set; when it must wrap, `pretty` leaves no lone word. */
+.lib-popup-note {
+  display: flex; align-items: flex-start; gap: 6px;
+  width: 0; min-width: 100%; padding: 4px 8px 2px;
+  font-size: 12px; line-height: 1.35; color: var(--text-dim);
+  text-wrap: pretty;
+}
+.lib-popup-note svg { flex: 0 0 14px; width: 14px; height: 14px; margin-top: 1px; color: var(--accent); }
 
 .lib-context-menu {
   min-width: 190px; max-width: min(280px, calc(100vw - 16px));
@@ -2055,34 +2184,51 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-tags-section { min-height: 0; }
 .lib-tags-section .lib-rail-section-body { flex: 1 1 100%; min-height: 0; }
 .lib-tags-section .lib-rail-section-inner { display: flex; flex-direction: column; min-height: 0; }
-/* The chosen tag, above the body: visible and clearable while the section is collapsed. */
+/* LIB-014: exact tags and free text share one wrapping field. */
+.lib-unified-search {
+  height: auto; min-height: 38px; padding: 5px 9px; align-items: flex-start;
+}
+.lib-unified-search > svg { margin-top: 5px; }
+.lib-query-content { display: flex; flex-wrap: wrap; align-items: center; flex: 1; min-width: 0; gap: 5px; }
+.lib-query-content .lib-search { flex: 1 1 130px; width: auto; min-width: 90px; height: 26px; }
+#libActiveTags { display: contents; }
+#libActiveTags[hidden] { display: none; }
+#libActiveTags .lib-active-tag {
+  max-width: 100%; min-height: 26px; padding: 4px 8px; font-size: 12px;
+  background: var(--accent-soft); box-shadow: none; white-space: normal; gap: 7px; line-height: 1.35;
+}
+.lib-active-tag .lib-chip-label { min-width: 0; overflow-wrap: anywhere; }
+.lib-active-tag .lib-chip-close { flex: 0 0 auto; font-size: 16px; line-height: 1; opacity: .8; }
+/* Text over a soft accent needs the lighter Adwaita blue on a dark surface. */
+html.dark #libActiveTags .lib-active-tag { color: #99c1f1; }
+.lib-query-clear {
+  flex: 0 0 auto; padding: 3px 5px; margin-top: 1px; border: none; border-radius: 5px;
+  background: transparent; color: var(--text-dim); font-family: inherit; font-size: 18px; line-height: 1.2; cursor: pointer;
+}
+.lib-query-clear:hover { background: var(--row-hover); }
+.lib-query-clear[hidden] { display: none; }
+.lib-tag-picker {
+  /* Above card controls (z-index 7), below the app's global menus. */
+  position: absolute; top: calc(100% + 6px); left: 6px; right: 6px; z-index: 180;
+  display: flex; flex-direction: column; max-height: 244px; padding: 6px;
+  background: var(--card); border: 1px solid var(--card-border); border-radius: 11px; box-shadow: var(--tooltip-shadow);
+}
+.lib-tag-picker[hidden] { display: none; }
+.lib-tag-heading { color: var(--text-dim); font-size: 11.5px; font-weight: 600; padding: 5px 9px; }
+.lib-tag-picker .lib-railtags { flex-direction: column; flex-wrap: nowrap; gap: 2px; padding: 0; }
+.lib-tag-picker .lib-railtags .lib-railbtn {
+  width: 100%; min-height: 28px; flex-shrink: 0; justify-content: space-between;
+  gap: 12px; padding: 6px 8px; background: transparent; text-align: left;
+}
+.lib-tag-picker .lib-railbtn span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.lib-tag-picker .lib-tag-count { flex: 0 0 auto; color: var(--text-dim); font-size: 11px; }
+.lib-tag-picker .lib-railbtn.unavailable:not(.active) { opacity: .55; }
+.lib-tag-picker .lib-railbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lib-active-tag {
   height: auto; min-height: 36px; padding-block: 8px;
   text-align: left; overflow-wrap: anywhere;
 }
 .lib-active-tag[hidden] { display: none; }
-/* Filled secondary search, distinct from the card query above. */
-.lib-tag-searchbox {
-  display: flex; flex: 0 0 auto; align-items: center; gap: 8px;
-  width: calc(100% - 8px); min-width: 0; height: 32px;
-  margin: 4px 4px 8px; padding: 0 10px; box-sizing: border-box;
-  color: var(--text-dim); background: var(--row-hover);
-  border: none; border-radius: 8px;
-  transition: background .12s ease, box-shadow .12s ease, color .12s ease;
-}
-.lib-tag-searchbox:hover { background: var(--accent-soft); }
-.lib-tag-searchbox:focus-within {
-  color: var(--accent); background: var(--accent-soft);
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22);
-}
-.lib-tag-searchbox svg { width: 14px; height: 14px; flex: 0 0 auto; }
-.lib-tag-searchbox input {
-  width: 100%; min-width: 0; padding: 0; outline: none;
-  border: none; background: transparent; color: var(--text);
-  font-family: inherit; font-size: 13px; font-weight: 500;
-}
-/* The placeholder doubles as the section label, so it carries a little more weight. */
-.lib-tag-searchbox input::placeholder { color: var(--text-dim); font-weight: 600; }
 /* Tags wrap as chips instead of taking a full-width row each: the same rail height
    shows roughly three times as many. overflow-x is pinned off — wrapping content must
    never be able to put a horizontal scrollbar under the list. */
@@ -2207,6 +2353,20 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-rail-section-inner { min-height: 0; overflow: hidden; }
 .lib-rail-section-note { margin: 2px 10px 4px 35px; color: var(--text-dim); font-size: 11.5px; line-height: 1.35; }
 .lib-rail-section-note[hidden] { display: none; }
+/* Shared shape of the LIB-021 deadline line; viewer.css carries the same rules. */
+.undo-deadline {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  transform-origin: left center;
+  pointer-events: none;
+  animation: undo-deadline-shrink var(--undo-deadline-ms, 8000ms) linear forwards;
+}
+[data-paused="true"] > .undo-deadline { animation-play-state: paused; }
+@keyframes undo-deadline-shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  /* The line stands still; the notice still lasts its 8 seconds by the clock. */
+  .undo-deadline { animation: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lib-rail-section-body, .lib-rail-chevron { transition: none; }
   /* DESIGN-009: the panel itself switches instantly then (startRailAnimation). */
@@ -2223,6 +2383,12 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .online-source-option input:disabled { cursor: default; }
 /* Same rule for a site's name: wrap, never cut. */
 .online-source-option span { min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
+/* ONL-004: how many the site found for the search, short and quiet at the row's end. */
+.online-source-option .online-source-count { margin-left: auto; padding-left: 12px; color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* LIB-014 stage 3: a site that sat this search out. Its name goes quiet and a pause mark takes
+   the number's place; the checkbox keeps its normal look, because the choice has not changed. */
+.online-source-option.paused .online-source-name { color: var(--text-dim); }
+.online-source-option .online-source-count svg { display: block; width: 13px; height: 13px; }
 
 /* DESIGN-002. Quick buttons for existing online filters, then "Filters" at the row's end.
    The row takes only free space (basis 0), so what it holds never changes its width and
@@ -2714,3 +2880,34 @@ html.dark .lib-folder-front { fill: #d99a34; }
   word-break: break-all;
 }
 .media-folder-away { color: var(--warn, #e5a50a); }
+
+/* LIB-014 rework: one local tool row at every width. Online keeps its own layout. */
+.lib-local-toolbar { flex-wrap: nowrap; align-items: flex-start; gap: 12px; }
+.lib-local-toolbar .lib-local-query-row { position: relative; flex: 1 1 0; min-width: 0; }
+.lib-local-actions { display: flex; flex: 0 0 auto; gap: 6px; align-items: center; margin-left: auto; }
+.lib-local-toolbar .lib-unified-search { width: 100%; padding: 5px 8px; min-height: 38px; }
+.lib-query-content { flex: 1 1 0; width: 100%; }
+.lib-query-entry { display: flex; align-items: center; gap: 4px; flex: 1 1 150px; min-width: 110px; }
+.lib-query-entry .lib-search { flex: 1 1 0; min-width: 0; width: 0; }
+.lib-query-icon { flex: 0 0 16px; }
+.lib-query-content:has(#libActiveTags:not([hidden])) .lib-query-icon { display: none; }
+.lib-local-toolbar .lib-query-clear { width: 24px; height: 26px; margin: 0; padding: 0; }
+.lib-local-toolbar .lib-tags-section { display: contents; }
+.lib-local-toolbar .lib-tags-section[hidden] { display: none; }
+.lib-local-toolbar .lib-tag-picker { left: 0; right: auto; width: max-content; min-width: min(240px,100%); max-width: min(420px,100%); }
+.lib-local-toolbar .lib-tag-picker .lib-railtags { max-height: 244px; }
+.lib-local-toolbar .lib-tag-picker .lib-railbtn { justify-content: flex-start; }
+.lib-local-toolbar .lib-tag-picker .lib-tag-count { font-variant-numeric: tabular-nums; }
+.lib-local-actions .lib-add-btn { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 900px) {
+  .lib-local-actions .lib-add-btn { width: 36px; padding: 0; justify-content: center; }
+  .lib-local-actions .lib-add-btn > span { display: none; }
+}
+@media (max-width: 1000px) {
+  .lib-local-toolbar { flex-wrap: wrap; gap: 8px; }
+  .lib-local-toolbar .lib-local-query-row { flex: 1 1 100%; max-width: none; }
+  .lib-local-actions { width: 100%; margin-left: 0; }
+  .lib-local-actions #libAddPhotos,
+  .lib-local-actions:has(#libAddPhotos[hidden]) #libAddFolder { margin-left: auto; }
+}
+@media (prefers-reduced-motion: no-preference) { .lib-local-actions .lib-add-btn { transition: background .12s ease; } }

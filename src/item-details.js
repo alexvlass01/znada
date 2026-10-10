@@ -15,6 +15,7 @@ function emptyDetails() {
     width: 0,
     height: 0,
     isFolder: false,
+    motion: null,
   };
 }
 
@@ -57,9 +58,12 @@ async function readHeaderFromDisk(filePath) {
 
 // Returns an async path -> metadata reader with a bounded LRU and in-flight dedup.
 // statPath/readHeader are injectable so the filesystem behaviour stays under tests.
+// `motion` (BUG-035) answers whether the picture moves and how many frames it has; main
+// passes its one shared reader so the sheet and the grid never keep two caches of it.
 function createDetailsReader(options = {}) {
   const statPath = options.statPath || ((filePath) => fs.promises.stat(filePath));
   const readHeader = options.readHeader || readHeaderFromDisk;
+  const motionOf = typeof options.motion === 'function' ? options.motion : null;
   const requestedCap = Math.trunc(Number(options.cacheCap));
   const cacheCap = Number.isFinite(requestedCap) && requestedCap > 0
     ? requestedCap : DEFAULT_CACHE_CAP;
@@ -119,15 +123,17 @@ function createDetailsReader(options = {}) {
       isFolder,
       width: 0,
       height: 0,
+      motion: null,
     };
     if (!isFile) return base;
 
     const cachePath = process.platform === 'win32' ? filePath.toLowerCase() : filePath;
-    const dimensions = await dimensionsFor(
-      filePath,
-      `${cachePath}|${base.modifiedAt}|${base.size}`,
-    );
-    return { ...base, ...dimensions };
+    const [dimensions, motion] = await Promise.all([
+      dimensionsFor(filePath, `${cachePath}|${base.modifiedAt}|${base.size}`),
+      // The sheet is the one place a frame count is shown, so it asks for the full walk.
+      motionOf ? Promise.resolve().then(() => motionOf(filePath, { countFrames: true })).catch(() => null) : null,
+    ]);
+    return { ...base, ...dimensions, motion: motion || null };
   };
 }
 

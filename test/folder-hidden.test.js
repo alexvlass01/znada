@@ -87,6 +87,9 @@ const names = (images) => images.map((i) => path.basename(i.path)).sort().join('
   // A removed photo must stay known to the watcher, otherwise it looks like a brand
   // new file the next time the folder is scanned.
   const hidden = F.setHidden(seeded(), [path.resolve(ROOT, 'b.png')]).state;
+  // Measured once (LIB-024): an unmeasured file is left out of the known set so the
+  // next scan reads its size, which says nothing about whether it is removed.
+  hidden.folders.F1.files['b.png'].size = 100;
   const known = F.knownPathKeys(hidden, 'F1');
   ok('a removed photo is still a known path, not a new discovery',
     known.has(pathKey(path.resolve(ROOT, 'b.png'))));

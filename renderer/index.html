@@ -525,49 +525,47 @@
             <button type="button" class="pill" id="libFavoriteCloud" aria-pressed="false" data-i18n="online.sourceLumina">Znada</button>
           </div>
           <div class="lib-local" id="libLocal">
-            <div class="lib-toolbar">
+            <div class="lib-toolbar lib-local-toolbar">
               <div class="lib-local-query-row">
-                <label class="lib-searchbox" for="libSearch">
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
-                  <input type="search" id="libSearch" class="lib-search" placeholder="Поиск" data-i18n-ph="library.searchPh" />
-                </label>
+                <div class="lib-searchbox lib-unified-search" id="libQueryBox">
+                  <div class="lib-query-content">
+                    <svg class="lib-query-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
+                    <div id="libActiveTags" role="group" data-i18n-title="library.tags" aria-label="Теги" hidden></div>
+                    <div class="lib-query-entry">
+                    <input type="text" id="libSearch" class="lib-search" placeholder="Имя или ещё тег…" data-i18n-ph="library.searchOrTagPh" data-i18n-title="library.searchPh" aria-label="Поиск" autocomplete="off" spellcheck="false" aria-controls="libTagsPanel" aria-expanded="false" />
+                    <button type="button" class="lib-query-clear" id="libQueryClear" data-i18n-title="library.clearSearch" aria-label="Очистить поиск и теги" hidden>×</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="lib-tags-section" id="libTagSection" hidden>
+                  <div class="lib-tag-picker" id="libTagsPanel" hidden>
+                    <div class="lib-tag-heading" id="libTagHeading" data-i18n="library.tagSuggestions">Подсказки тегов</div>
+                    <div class="lib-railtags" id="libTags"></div>
+                    <div class="lib-tag-empty" id="libTagEmpty" data-i18n="library.noTagsFound" aria-live="polite" hidden>Подходящие теги не найдены</div>
+                  </div>
+                </div>
               </div>
+              <div class="lib-local-actions">
               <button id="libRefresh" class="lib-iconbtn" data-i18n-title="library.refresh" title="Обновить">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
               </button>
-              <div class="select-wrap">
-                <select id="libSort">
+                <div class="select-wrap lib-local-sort">
+
+                <select id="libSort" data-i18n-title="library.sortLabel" aria-label="Сортировка">
                   <option value="added" data-i18n="library.sortAdded">Сначала новые</option>
                   <option value="name" data-i18n="library.sortName">По имени</option>
                   <option value="size" data-i18n="library.sortSize">По размеру</option>
                   <option value="shuffle" data-i18n="library.sortShuffle">Вперемешку</option>
                 </select>
-              </div>
-              <button class="pill lib-add-btn" id="libAddPhotos">
+                </div>
+              <button class="pill lib-add-btn" id="libAddPhotos" data-i18n-title="library.addPhotos">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.8" y="2.5" width="9.7" height="10.5" rx="1.6"/><path d="m3.3 10 2.2-2.4 1.8 1.7 1.4-1.4 2.8 3M13.3 3.2v4.5M11 5.45h4.6"/><circle cx="8.6" cy="5.5" r="1"/></svg>
                 <span data-i18n="library.addPhotos">Добавить фото…</span>
               </button>
-              <button class="pill lib-add-btn" id="libAddFolder">
+              <button class="pill lib-add-btn" id="libAddFolder" data-i18n-title="library.addFolder">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M1.7 4.2c0-.6.5-1 1-1h2.7l1.3 1.5h6.6c.6 0 1 .4 1 1v6.2c0 .6-.4 1-1 1H2.7c-.5 0-1-.4-1-1z"/></svg>
                 <span data-i18n="library.addFolder">Добавить папку…</span>
               </button>
-              <div class="lib-rail-section lib-tags-section" id="libTagSection" hidden>
-                <button type="button" class="pill lib-filter-btn lib-rail-section-head" id="libTagsToggle" aria-expanded="false" aria-controls="libTagsPanel">
-                  <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M2.4 3.2v4.2c0 .4.2.8.5 1.1l4.9 4.9c.6.6 1.5.6 2.1 0l3.3-3.3c.6-.6.6-1.5 0-2.1L8.3 3.1c-.3-.3-.7-.5-1.1-.5H3.2c-.5 0-.8.3-.8.6z"/><circle cx="5.4" cy="5.5" r="1"/></svg>
-                  <span class="lib-rail-section-title" data-i18n="library.tags">Теги</span>
-                  <svg class="lib-rail-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg>
-                </button>
-                <button type="button" class="pill lib-filter-btn done lib-active-tag" id="libActiveTag" hidden></button>
-                <div class="lib-rail-section-body" id="libTagsPanel">
-                  <div class="lib-rail-section-inner">
-                    <label class="lib-tag-searchbox">
-                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
-                      <input type="search" id="libTagSearch" placeholder="Поиск тегов" data-i18n-ph="library.tagSearchPh" data-i18n-title="library.tagSearchPh" aria-label="Поиск тегов" aria-controls="libTags" autocomplete="off" spellcheck="false" />
-                    </label>
-                    <div class="lib-railtags" id="libTags"></div>
-                    <div class="lib-tag-empty" id="libTagEmpty" data-i18n="library.noTagsFound" aria-live="polite" hidden>Подходящие теги не найдены</div>
-                  </div>
-                </div>
               </div>
             </div>
             <div class="lib-breadcrumbs" id="libCrumbs" hidden></div>
@@ -892,11 +890,18 @@
   <script src="card-transfer.js"></script>
   <script src="card-metadata.js"></script>
   <script src="online-browse.js"></script>
+  <script src="online-found.js"></script>
   <script src="assign-rows.js"></script>
   <script src="resize-anchor.js"></script>
   <script src="deferred-refresh.js"></script>
   <script src="media-folder.js"></script>
+  <script src="motion-badge.js"></script>
+  <script src="motion-hover.js"></script>
   <script src="../src/media-proxy.js"></script>
+  <script src="../src/tag-suggest.js"></script>
+  <script src="../src/library-search.js"></script>
+  <script src="library-removal-dialog.js"></script>
+  <script src="undo-deadline.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

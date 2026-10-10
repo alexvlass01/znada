@@ -1,0 +1,144 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const Search = require('../src/library-search');
+const { harness } = require('./helpers/library-query-harness');
+let passed = 0;
+function check(label, predicate) { assert.ok(predicate, label); passed++; }
+const same = (actual, expected) => assert.deepEqual(Array.from(actual), expected);
+
+check('exact tag does not match a filename or tag substring', !Search.matchesTags(['sky'], ['blue_sky']));
+check('all selected tags required', Search.matchesTags(['sky', 'mountain'], ['mountain', 'sky']) && !Search.matchesTags(['sky', 'mountain'], ['sky']));
+check('untagged folder photo excluded only with chosen tags', !Search.matchesTags(['sky'], null) && Search.matchesTags([], null));
+same(Search.changeTags(['sky'], 'mountain', 'toggle'), ['sky', 'mountain']);
+same(Search.changeTags(['sky', 'mountain'], 'sky', 'toggle'), ['mountain']);
+same(Search.changeTags(['sky'], 'sky', 'add'), ['sky']);
+check('order-independent collision-free view key', Search.tagKey(['a', 'b']) === Search.tagKey(['b', 'a']) && Search.tagKey(['a,b']) !== Search.tagKey(['a', 'b']));
+same(Search.suggestTags(['blue_sky', 'небо', 'beatrice_(re:zero)'], 'blue sky, не', 12), ['небо']);
+same(Search.suggestTags(['blue_sky', 'blue sea'], 'blue sky,', 8), ['blue_sky']);
+same(Search.suggestTags(['beatrice_(re:zero)'], 'beatrice_(re:', 13), ['beatrice_(re:zero)']);
+assert.equal(Search.consumeToken('red mou sun', 5).value, 'red sun');
+assert.equal(Search.consumeToken('blue sky, mou, water', 13).value, 'blue sky, water');
+assert.equal(Search.consumeToken('sky, mou', 8).value, 'sky');
+same(Search.parse(Search.consumeToken('sky, mountain lake', 2).value), ['mountain lake']);
+
+const pool = {
+  a: { path: 'mountain.jpg', tags: ['sky', 'mountain'], favorite: true },
+  b: { path: 'sea.jpg', tags: ['sky', 'water'] },
+  c: { path: 'skyline.jpg', tags: ['city'] },
+  d: { path: 'forest.jpg', tags: ['forest', 'mountain'] },
+  e: { path: 'long.jpg', tags: ['original_character_with_a_very_long_name', 'небо'] },
+};
+const candidates = (selected, text, caret) => Search.tagCandidates(Object.values(pool).map((it) => ({ name: it.path, tags: it.tags })), selected, text, caret);
+assert.deepEqual(candidates(['sky'], 'mount', 5), [{ tag: 'mountain', count: 1 }]);
+assert.deepEqual(candidates(['water'], 'mount', 5), [{ tag: 'mountain', count: 0 }]);
+assert.deepEqual(candidates(['sky'], 'sea mou', 7), [{ tag: 'mountain', count: 0 }]);
+assert.deepEqual(candidates([], 'original_character, не', 22), [{ tag: 'небо', count: 1 }]);
+assert.deepEqual(Search.tagCandidates([{ name: 'x', tags: ['sky', 'sky'] }], [], '', 0), [{ tag: 'sky', count: 1 }]);
+assert.deepEqual(Search.tagCandidates([{ name: 'x', tags: ['sky', 'blue_sky'] }], ['sky'], 'blue sky,', 8), [{ tag: 'blue_sky', count: 1 }]);
+check('empty suggestions have a hard eight-row limit', Search.tagCandidates([{ name: 'x', tags: Array.from({ length: 40 }, (_, i) => 'tag' + i) }], [], '', 0).length === 8);
+const { ctx, nodes, fire, event, document } = harness(pool);
+ctx.initLibQueryPicker(); ctx.renderLibRailTags();
+const search = nodes['#libSearch'], box = nodes['#libTags'], panel = nodes['#libTagsPanel'];
+const shown = () => box.children.map((b) => b.dataset.tag);
+const button = (tag) => box.children.find((b) => b.dataset.tag === tag);
+search.focus();
+check('empty focused field opens a short selection', !panel.hidden && shown().includes('city') && shown().length <= 8);
+ctx.openLibraryTagOrTop('sky');
+ctx.openLibraryTagOrTop('mountain', { ctrlKey: true });
+same(ctx.LIB.tags, ['sky', 'mountain']);
+same(ctx.libNarrow(Object.values(pool), (it) => it).map((it) => it.path), ['mountain.jpg']);
+ctx.LIB.q = 'sea';
+check('text and exact tags intersect', ctx.libNarrow(Object.values(pool), (it) => it).length === 0);
+ctx.LIB.q = ''; ctx.renderLibRailTags();
+ctx.updateLibAvailableTags([pool.a], (it) => it);
+assert.ok(button('city'), 'raw section candidates remain available after narrowing');
+check('zero candidate stays dim and clickable with explicit count', button('city').classList.contains('unavailable') && button('city').children[1].textContent === '0 фото' && !button('city').disabled);
+check('selected tags are excluded from candidates', !shown().includes('sky') && !shown().includes('mountain'));
+const focused = button('city'); focused.focus(); box.scrollTop = 71;
+ctx.renderLibRailTags();
+check('background refresh keeps actual focus button and scroll', document.activeElement === focused && box.scrollTop === 71 && button('city') === focused);
+ctx.openLibraryTagOrTop('city', { shiftKey: true });
+ctx.openLibraryTagOrTop('city', { metaKey: true });
+same(ctx.LIB.tags, ['sky', 'mountain']);
+ctx.openLibraryTagOrTop('sky'); same(ctx.LIB.tags, ['sky']);
+ctx.openLibraryTagOrTop('sky'); check('repeat single tag scrolls up', ctx.tops === 1);
+ctx.openLibraryTagOrTop('sky', { ctrlKey: true }); same(ctx.LIB.tags, []);
+ctx.LIB.tags = ['sky']; ctx.LIB.q = 'mount'; ctx.renderLibRailTags();
+search.value = 'mount mou'; search.selectionStart = 9; fire(search, 'input');
+check('input filters instantly and opens local suggestions', ctx.LIB.q === 'mount mou' && !panel.hidden && shown().includes('mountain'));
+const renders = ctx.renders; fire(search, 'search'); check('duplicate native events do not rebuild', ctx.renders === renders);
+fire(search, 'keydown', { key: 'ArrowDown' }); check('arrow focuses suggestion', document.activeElement.dataset.tag === 'mountain');
+ctx.chooseLibTagSuggestion('mountain');
+same(ctx.LIB.tags, ['sky', 'mountain']);
+check('choosing consumes only current token and restores input focus', ctx.LIB.q === 'mount' && document.activeElement === search && panel.hidden);
+search.value = 'sky'; search.selectionStart = 3; fire(search, 'input');
+ctx.chooseLibTagSuggestion('sky'); check('already chosen suggestion consumes and refreshes without duplicate', ctx.LIB.q === '' && ctx.LIB.tags.length === 2 && panel.hidden);
+ctx.LIB.q = 'mount'; search.value = 'mount'; ctx.LIB.tagMenu = 'suggest'; ctx.renderLibRailTags();
+const chip = nodes['#libActiveTags'].children[0]; chip.focus(); fire(nodes['#libActiveTags'], 'click', { target: chip });
+same(ctx.LIB.tags, ['mountain']); check('per-chip removal preserves free text and focus', ctx.LIB.q === 'mount' && document.activeElement === nodes['#libActiveTags'].children[0]);
+const last = nodes['#libActiveTags'].children[0]; last.focus(); fire(nodes['#libActiveTags'], 'click', { target: last });
+check('last chip returns focus to input', ctx.LIB.tags.length === 0 && document.activeElement === search);
+ctx.setLibraryTag('sky'); fire(nodes['#libQueryClear'], 'click');
+check('shared clear restores complete query, preserves section', ctx.LIB.q === '' && !ctx.LIB.tags.length && ctx.LIB.filter === 'all' && panel.hidden);
+ctx.LIB.tagMenu = 'suggest'; ctx.renderLibRailTags();
+const escape = fire(panel, 'keydown', { key: 'Escape' });
+check('escape closes picker and restores input without reopening', escape.prevented && escape.stopped && panel.hidden && document.activeElement === search);
+ctx.setLibraryTag('sky'); ctx.LIB.tagMenu = 'suggest'; ctx.renderLibRailTags();
+const modified = fire(panel, 'keydown', { key: 'Enter', ctrlKey: true, target: button('mountain') });
+same(ctx.LIB.tags, ['sky', 'mountain']);
+check('modified Enter chooses before synthesis and closes picker', modified.prevented && panel.hidden && document.activeElement === search);
+check('picker is anchored to the search wrapper', panel.style.top === 'calc(100% + 6px)');
+ctx.LIB.tagMenu = 'suggest'; ctx.renderLibRailTags();
+const target = { closest: () => null }; document.handlers.pointerdown(event(target)); check('outside click closes picker', panel.hidden);
+ctx.LIB.tags = ['gone']; ctx.config.library = {}; ctx.renderLibRailTags();
+check('last deleted tag stays clearable', !nodes['#libTagSection'].hidden && nodes['#libActiveTags'].children[0].dataset.tag === 'gone');
+ctx.LIB.filter = 'removed'; ctx.renderLibRailTags();
+check('trash has no picker or active chips', nodes['#libTagSection'].hidden && nodes['#libActiveTags'].hidden);
+check('trash ignores local exact tags', ctx.libNarrow([{ path: 'other.jpg' }], () => null, { withTag: false }).length === 1);
+ctx.LIB.filter = 'folder'; ctx.LIB.folderPath = '/folder'; ctx.LIB.tags = []; ctx.LIB.q = '';
+ctx.libNarrow([{ path: '/folder/inner.jpg', item: { tags: ['inside'] } }, { path: '/folder/untagged.jpg' }], (it) => it.item);
+check('folder candidates use expanded contents including unpooled photos', ctx.libQueryItems().length === 2 && Search.tagCandidates(ctx.libQueryItems(), [], '', 0)[0].tag === 'inside');
+ctx.LIB.folderPath = '/other';
+check('new folder never reuses previous section candidates', ctx.libQueryItems().length === 0);
+ctx.LIB.filter = 'favorite'; ctx.LIB.folderPath = '';
+ctx.config.library = pool;
+check('section switch falls back to only the new section', ctx.libQueryItems().length === 1 && ctx.libQueryItems()[0].name === 'mountain.jpg');
+ctx.LIB.filter = 'online'; const before = ctx.renders; ctx.setLibraryTag('city', 'toggle');
+check('online ignores local commands', ctx.renders === before);
+const fresh = harness(pool);
+fresh.ctx.initLibQueryPicker(); fresh.nodes['#libSearch'].focus();
+fresh.fire(fresh.nodes['#libSearch'], 'keydown', { key: 'ArrowDown' });
+fresh.ctx.chooseLibTagSuggestion(fresh.document.activeElement.dataset.tag);
+check('choosing an empty-field candidate restores focus with menu closed', fresh.ctx.LIB.tagMenu === '' && fresh.nodes['#libTagsPanel'].hidden && fresh.document.activeElement === fresh.nodes['#libSearch']);
+fresh.ctx.LIB.tags = ['sky']; fresh.nodes['#libSearch'].value = 'city'; fresh.nodes['#libSearch'].selectionStart = 4;
+fresh.fire(fresh.nodes['#libSearch'], 'input'); fresh.ctx.chooseLibTagSuggestion('city');
+same(fresh.ctx.LIB.tags, ['sky', 'city']);
+check('dim zero-result candidate can still be chosen deliberately', fresh.ctx.libNarrow(Object.values(pool), (it) => it).length === 0);
+
+// A tag suggestion is optional. Enter in the text field must keep ordinary name search,
+// including photos with no tags; only an explicit choice turns text into an exact tag.
+const ordinary = harness({ ...pool, f: { path: 'mountain-backup.jpg', tags: [] } });
+ordinary.ctx.initLibQueryPicker();
+const textSearch = ordinary.nodes['#libSearch'];
+textSearch.focus(); textSearch.value = 'mountain'; textSearch.selectionStart = 8;
+ordinary.fire(textSearch, 'input');
+const beforeEnter = ordinary.ctx.libNarrow(Object.values(ordinary.ctx.config.library), (it) => it).map((it) => it.path);
+check('ordinary live text search includes a filename without tags', beforeEnter.includes('mountain-backup.jpg'));
+ordinary.fire(textSearch, 'keydown', { key: 'Enter' });
+check('Enter preserves free text instead of selecting the first tag', ordinary.ctx.LIB.q === 'mountain' && ordinary.ctx.LIB.tags.length === 0);
+same(ordinary.ctx.libNarrow(Object.values(ordinary.ctx.config.library), (it) => it).map((it) => it.path), beforeEnter);
+check('plain Enter closes optional suggestions and keeps input focus', ordinary.nodes['#libTagsPanel'].hidden && ordinary.document.activeElement === textSearch);
+ordinary.fire(textSearch, 'keydown', { key: 'Enter' });
+check('repeated Enter never reopens or picks a tag', ordinary.ctx.LIB.q === 'mountain' && !ordinary.ctx.LIB.tags.length && ordinary.nodes['#libTagsPanel'].hidden);
+ordinary.ctx.setLibraryTag('sky'); textSearch.value = 'sea'; textSearch.selectionStart = 3;
+ordinary.fire(textSearch, 'input'); ordinary.fire(textSearch, 'keydown', { key: 'Enter' });
+check('a chosen tag and filename text remain independent on Enter', ordinary.ctx.LIB.q === 'sea' && ordinary.ctx.LIB.tags.length === 1 && ordinary.ctx.LIB.tags[0] === 'sky');
+same(ordinary.ctx.libNarrow(Object.values(ordinary.ctx.config.library), (it) => it).map((it) => it.path), ['sea.jpg']);
+ordinary.fire(ordinary.nodes['#libQueryClear'], 'click'); textSearch.focus();
+ordinary.fire(textSearch, 'keydown', { key: 'Enter' });
+check('empty Enter does not apply a frequent tag', ordinary.ctx.LIB.q === '' && !ordinary.ctx.LIB.tags.length);
+textSearch.value = 'mount'; textSearch.selectionStart = 5; ordinary.fire(textSearch, 'input');
+const composing = ordinary.fire(textSearch, 'keydown', { key: 'Enter', isComposing: true });
+check('IME confirmation does not pick a tag or intercept composition', !composing.prevented && ordinary.ctx.LIB.q === 'mount' && !ordinary.ctx.LIB.tags.length);
+console.log('All ' + passed + ' library multi-tag checks passed (plus array/token assertions).');

@@ -17,6 +17,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const Module = require('module');
+const { EventEmitter } = require('events');
 const { pathToFileURL } = require('url');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -35,6 +36,7 @@ function makeElectronStub(userData, options = {}) {
   const handlers = new Map();
   const calls = {
     dialogs: [],
+    removalQuestions: [],
     trashed: [],
     notifications: [],
     shortcuts: [],
@@ -130,6 +132,9 @@ function makeElectronStub(userData, options = {}) {
     }
     once(event, fn) { this.on(event, fn); }
     loadFile() {} show() {} hide() {} destroy() {}
+    setBounds(rect) {
+      this.placed = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    }
     isDestroyed() { return true; }
     setTitleBarOverlay() {}
   };
@@ -148,7 +153,8 @@ function makeElectronStub(userData, options = {}) {
         on: () => {},
         removeHandler: (channel) => handlers.delete(channel),
       },
-      nativeTheme: { shouldUseDarkColors: false, on: () => {} },
+      // TRG-004. A test about a theme flip has to see the flip land, as Windows would show it.
+      nativeTheme: options.nativeTheme || { shouldUseDarkColors: false, on: () => {} },
       dialog: {
         showMessageBox: async (...args) => {
           calls.dialogs.push(args[args.length - 1]);
@@ -157,7 +163,15 @@ function makeElectronStub(userData, options = {}) {
             : 0;
           return { response: answer };
         },
-        showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+        // Cancelled unless a test answers it: `onOpenDialog(options)` returns the files the
+        // user "picked" (LIB-022: the dialog routes of adding a photo are driven this way).
+        showOpenDialog: async (...args) => {
+          if (typeof options.onOpenDialog !== 'function') return { canceled: true, filePaths: [] };
+          const picked = await options.onOpenDialog(args[args.length - 1]);
+          return Array.isArray(picked) && picked.length
+            ? { canceled: false, filePaths: picked }
+            : { canceled: true, filePaths: [] };
+        },
         // Cancelled, deliberately: a test asking "was this file allowed through" wants to
         // see the handler REACH the dialog, not to write a file. A cancel is reported
         // differently from a refusal, so the two are easy to tell apart.
@@ -196,8 +210,8 @@ function makeElectronStub(userData, options = {}) {
         getAllDisplays: () => [],
         getPrimaryDisplay: () => ({ id: 1, bounds: {}, scaleFactor: 1 }),
         // Where the viewer opens. Enough for main to create that window under the stub.
-        getCursorScreenPoint: () => ({ x: 0, y: 0 }),
-        getDisplayNearestPoint: () => ({
+        getCursorScreenPoint: () => options.cursorPoint || { x: 0, y: 0 },
+        getDisplayNearestPoint: () => options.cursorDisplay || ({
           id: 1,
           bounds: { x: 0, y: 0, width: 1280, height: 720 },
           workArea: { x: 0, y: 0, width: 1280, height: 680 },
@@ -369,12 +383,35 @@ function loadMain(userData, options = {}) {
   };
   const invoke = (channel, ...args) => invokeRaw(eventFor(roleFor(channel)), channel, ...args);
   const invokeAs = (role, channel, ...args) => invokeRaw(eventFor(role), channel, ...args);
+  // LIB-019: questions are now delivered to the main renderer and answered through
+  // its real registered IPC door, rather than through Electron's native dialog stub.
+  const questionWindow = new EventEmitter();
+  const mainContents = senders.main && senders.main.sender;
+  if (mainContents && (options.onLibraryRemovalQuestion || options.holdRemovalQuestion)) {
+    Object.assign(mainContents, new EventEmitter());
+    mainContents.on = EventEmitter.prototype.on;
+    mainContents.removeListener = EventEmitter.prototype.removeListener;
+    mainContents.emit = EventEmitter.prototype.emit;
+    mainContents.isDestroyed = () => false;
+    mainContents.send = (channel, question) => {
+      if (channel !== 'library-removal-question') return;
+      stub.calls.removalQuestions.push(question);
+      if (options.holdRemovalQuestion) return;
+      Promise.resolve(typeof options.onLibraryRemovalQuestion === 'function'
+        ? options.onLibraryRemovalQuestion(question) : false)
+        .then((confirmed) => invokeAs('main', 'library-removal-answer', question.requestId, confirmed === true));
+    };
+    questionWindow.webContents = mainContents;
+    questionWindow.isDestroyed = () => false;
+    api.__test.useMainWindow(questionWindow);
+  }
   return {
     ...api,
     invoke,
     invokeAs,
     invokeRaw,
     senders,
+    questionWindow,
     handlers: stub.handlers,
     protocol: stub.electron.protocol,
     calls: stub.calls,

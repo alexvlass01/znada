@@ -199,6 +199,10 @@
     "removeConfirmCancel": "Anuluj",
     "searchPh": "Szukaj",
     "tagSearchPh": "Szukaj tagów",
+    "searchOrTagPh": "Nazwa lub kolejny tag…",
+    "clearSearch": "Wyczyść wyszukiwanie i tagi",
+    "tagSuggestions": "Podpowiedzi tagów",
+    "tagToggleHint": "Ctrl+klik: dodaj do zaznaczonych lub usuń",
     "noTagsFound": "Nie znaleziono pasujących tagów",
     "clearTagFilter": "Wyczyść filtr tagu",
     "collapseSidebar": "Zwiń panel",
@@ -255,7 +259,9 @@
     "massDeleteFailed": "Nie udało się usunąć niektórych elementów",
     "selectionActions": "Akcje zaznaczonych tapet",
     "clearSelection": "Wyczyść zaznaczenie",
-    "itemsCount": "Liczba elementów: {n}"
+    "itemsCount": "Liczba elementów: {n}",
+    "sortLabel": "Sortowanie",
+    "photosCount": "Zdjęcia: {n}"
   },
   "details": {
     "type": "Typ",
@@ -292,6 +298,11 @@
     "ratingSensitive": "Wrażliwe",
     "ratingQuestionable": "Dwuznaczne",
     "ratingExplicit": "Dla dorosłych"
+  },
+  "motion": {
+    "format": "Animacja · {format}",
+    "formatFrames": "Animacja · {format} · liczba klatek: {frames}",
+    "desktopFirstFrame": "Na razie pulpit pokazuje pierwszą klatkę."
   },
   "viewer": {
     "title": "Podgląd",
@@ -334,6 +345,9 @@
     "loading": "Wczytywanie…",
     "noResults": "Nie znaleziono wyników",
     "sourcesFailed": "Nie udało się wczytać wyników z: {sources}. Wyszukaj ponownie lub wybierz inne źródło.",
+    "sourcePaused": "Ta strona nie obsługuje tylu tagów",
+    "sourcePausedSort": "Przy tym sortowaniu ta strona nie obsługuje tylu tagów",
+    "allSourcesPaused": "Wybrane strony nie obsługują tylu tagów. Usuń tag lub włącz inną stronę.",
     "error": "Błąd: {e}",
     "add": "Dodaj do biblioteki",
     "adding": "Dodawanie…",

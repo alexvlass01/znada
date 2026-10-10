@@ -168,7 +168,6 @@ function settingKeysUsedByRenderer() {
       singleWallpaper: true,
       viewerBackground: 'charcoal',
       onlineSort: 'toplist',
-      libraryTagsExpanded: true,
       librarySidebarCollapsed: true,
     };
     for (const [key, value] of Object.entries(sent)) {
@@ -325,6 +324,7 @@ function settingKeysUsedByRenderer() {
     ['autostart', { autostart: true }],
     ['themeOverride', { themeOverride: 'dark' }],
     ['an unknown key', { totallyMadeUp: 1 }],
+    ['the removed local Tags toggle', { libraryTagsExpanded: true }],
     ['hotkeys (its own channel owns it)', { hotkeys: { nextWallpaper: { enabled: false, shortcut: '' } } }],
   ];
 

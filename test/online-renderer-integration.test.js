@@ -219,5 +219,70 @@ const loadInternetResults = vm.runInNewContext(`(${match[0]})`, context);
       'an ordinary server error lost its own wording');
   }
 
+  // BUG-048. The feed stopped at 13 cards: beatrice_(re:zero) under the screen filter, end
+  // of the feed still in view, no button, hundreds more on the site (real app, 2026-09-27).
+  // The watcher of the end reports on `observe` and on CHANGES only — the fake below does
+  // exactly that and the end never leaves the zone, which is the situation of a short feed.
+  // The real search, publish, finalize and auto-load functions run against it.
+  {
+    const pages = [
+      { items: Array.from({ length: 13 }, (_, i) => ({ id: `a${i}` })), resume: { p: 2 } },
+      { items: Array.from({ length: 5 }, (_, i) => ({ id: `b${i}` })), resume: { p: 3 } },
+      { items: [], resume: { p: 4 } },
+    ];
+    let asked = 0;
+    const note = { textContent: '' };
+    const more = { disabled: false, hidden: true };
+    const anchor = { name: 'end of the feed' };
+    class ChangeOnlyObserver {
+      constructor(cb) { this.cb = cb; }
+      observe(target) { setTimeout(() => this.cb([{ target, isIntersecting: true }]), 0); }
+      unobserve() {}
+    }
+    const ctx = {
+      LIB: { filter: 'online' },
+      ONLINE: { generation: 0, loading: false, loaded: false, view: 'search', entries: [] },
+      INTERNET: { q: '', sort: 'toplist', purity: {}, resume: null, sortTouched: false },
+      OnlineBrowse: { isBrowse: () => false, sortTouchedAfterSearch: (q, touched) => touched },
+      console: { error: () => {} },
+      t: (k) => k,
+      $: (sel) => ({ '#whNote': note, '#whMore': more, '#whQuery': { value: 'beatrice_(re:zero)' } }[sel] || null),
+      document: { querySelector: (sel) => (sel === '.lib-online-more' ? anchor : null) },
+      libScrollRoot: () => ({ name: 'scroll root' }),
+      IntersectionObserver: ChangeOnlyObserver,
+      activePage: 'library',
+      hideOnlineTagSuggest: () => {},
+      applyFavToggleUI: () => {},
+      replaceOnlineEntries: (list) => { ctx.ONLINE.entries = list.slice(); },
+      appendOnlineEntries: (batch) => { ctx.ONLINE.entries = ctx.ONLINE.entries.concat(batch); return batch.length; },
+      setLibViewHeader: () => {},
+      updatePurityToggle: () => {},
+      onlineGridDescriptor: (kind, item) => ({ kind, item, key: item.id }),
+      // Real loader; a short gap keeps the test fast and still makes the third page wait
+      // for it, because the fake site answers at once.
+      onlineAutoLoad: require('../renderer/auto-load').createAutoLoader({ minGapMs: 25 }),
+      onlineAutoLoadWatch: null,
+      onlineAutoLoadRetry: 0,
+      setTimeout,
+      clearTimeout,
+      window: { api: { internetSearch: async () => { asked += 1; return pages.shift() || { items: [], resume: null }; } } },
+    };
+    vm.createContext(ctx);
+    for (const n of ['onlineSearchIsCurrent', 'loadInternetResults', 'publishOnlineBatch',
+      'finalizeOnlineFeed', 'doOnlineSearch', 'loadMoreOnline',
+      'setupOnlineAutoLoad', 'recheckOnlineAutoLoad', 'maybeAutoLoadOnline']) {
+      vm.runInContext(fnSrc(n), ctx);
+    }
+    ctx.setupOnlineAutoLoad();
+    await new Promise((r) => { setTimeout(r, 5); });
+    await ctx.doOnlineSearch(true);
+    await new Promise((r) => { setTimeout(r, 400); });
+    assert.strictEqual(asked, 3,
+      `a short feed must keep filling while its end is in view (asked ${asked} times; 1 = stuck at the first page, 2 = stuck behind the gap)`);
+    assert.strictEqual(ctx.ONLINE.entries.length, 18, 'the cards of every page reached the feed');
+    assert.strictEqual(more.hidden, false,
+      'after a round that brought nothing the button must be back, not another automatic request');
+  }
+
   console.log('Online renderer resume integration OK across provider failures.');
 })().catch((err) => { console.error(err); process.exit(1); });

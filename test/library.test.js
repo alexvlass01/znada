@@ -290,4 +290,18 @@ ok('referencedFiles: folder paths are not file refs', !keep.has(key('C:/pics/dir
 ok('referencedFiles: empty/missing config -> empty set',
   L.referencedFiles(null).size === 0 && L.referencedFiles({}).size === 0);
 
+// LIB-024: a record that moved to a new name keeps its places on the monitors.
+const moveMonitors = {
+  A: { light: { itemIds: ['x', 'old', 'y'] }, dark: { itemIds: ['old'], legacyFallbackDisabled: true } },
+  B: { light: { itemIds: ['old', 'new'] }, dark: { itemIds: ['z'] } },
+};
+ok('replaceIdInSlots: counts the slots it changed', L.replaceIdInSlots(moveMonitors, 'old', 'new') === 3);
+ok('replaceIdInSlots: same position in the playlist', moveMonitors.A.light.itemIds.join() === 'x,new,y');
+ok('replaceIdInSlots: the "empty on purpose" marker is not touched',
+  moveMonitors.A.dark.itemIds.join() === 'new' && moveMonitors.A.dark.legacyFallbackDisabled === true);
+ok('replaceIdInSlots: already listed under the new id -> listed once', moveMonitors.B.light.itemIds.join() === 'new');
+ok('replaceIdInSlots: other slots untouched', moveMonitors.B.dark.itemIds.join() === 'z');
+ok('replaceIdInSlots: nothing to do for a missing or equal id',
+  L.replaceIdInSlots(moveMonitors, 'absent', 'q') === 0 && L.replaceIdInSlots(moveMonitors, 'new', 'new') === 0);
+
 console.log('\nAll ' + passed + ' library tests passed.');

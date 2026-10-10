@@ -347,6 +347,34 @@ function allowsLegacyFallback(slot) {
   return !(slot && slot.legacyFallbackDisabled === true);
 }
 
+// LIB-024. A record that moved to a new name keeps every place it had on the monitors,
+// at the same position. The slot never stood empty, so its "empty on purpose" marker is
+// left exactly as it was — clearing or setting it here would change what the monitor
+// falls back to. Returns how many slots changed.
+function replaceIdInSlots(monitors, oldId, newId) {
+  if (!oldId || !newId || oldId === newId) return 0;
+  let replaced = 0;
+  for (const monitor of Object.values(monitors || {})) {
+    for (const theme of ['light', 'dark']) {
+      const slot = monitor && monitor[theme];
+      if (!slot || !Array.isArray(slot.itemIds) || !slot.itemIds.includes(oldId)) continue;
+      const next = [];
+      let hasNew = false;
+      for (const id of slot.itemIds) {
+        const value = id === oldId ? newId : id;
+        if (value === newId) {
+          if (hasNew) continue;  // listed once, at the first of its places
+          hasNew = true;
+        }
+        next.push(value);
+      }
+      slot.itemIds = next;
+      replaced++;
+    }
+  }
+  return replaced;
+}
+
 // ---- tags (manual, on pool items) ----
 
 // Normalize a tag: trimmed, collapsed whitespace, lowercase (tags are categories).
@@ -449,6 +477,6 @@ module.exports = {
   toggleFavorite, normTag, addTag, removeTag, allTags,
   resolveIds, flattenImages, ephemeralFolderImages, recentImages,
   isPathInsideRoot, findConfirmedMissingLiveFolderImageIds,
-  findMissingIds, markSlotExplicitEmpty, clearSlotExplicitEmpty, allowsLegacyFallback,
+  findMissingIds, markSlotExplicitEmpty, clearSlotExplicitEmpty, allowsLegacyFallback, replaceIdInSlots,
   referencedFiles, listItems, migrateSlot, migrateConfig,
 };

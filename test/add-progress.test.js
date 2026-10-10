@@ -125,7 +125,7 @@ const CardTransfer = require('../renderer/card-transfer');
     vm.createContext(ctx);
     vm.runInContext(constSource(viewerSource, 'VIEWER'), ctx);
     vm.runInContext(constSource(viewerSource, 'VIEWER_NOTICE'), ctx);
-    for (const name of ['currentEntry', 'dismissViewerNotice', 'createViewerNotice', 'showViewerMessage',
+    for (const name of ['currentEntry', 'stopViewerNoticeClock', 'dismissViewerNotice', 'createViewerNotice', 'showViewerMessage',
       'syncAddAction', 'syncCurrentAddAction', 'addViewerCardToLibrary', 'downloadViewerCard', 'renderActions']) {
       vm.runInContext(functionSource(viewerSource, name), ctx);
     }
