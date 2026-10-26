@@ -5,15 +5,15 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const C = require('../src/config');
 const L = require('../src/library');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (n, c) => { assert.ok(c, n); console.log('  ✓ ' + n); passed++; };
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-cfg-'));
+const tmp = makeTempDir('lumina-cfg-');
 const p = (name) => path.join(tmp, name);
 
 // missing file -> defaults

@@ -60,6 +60,7 @@ const photo = (id, extra = {}) => ({ id, type: 'image', path: `C:/photos/${id}.p
   const empty = {};
   const reply = { expand: [], folder: { folders: [], images: [] }, removed: [] };
   const ctx = {
+    FAVORITES: { entries: [] },
     LIB: { filter: 'all', tags: [], q: '', sort: 'name', folderPath: null, crumbs: [], shuffleRank: {} },
     config: { library: {} },
     allViewToken: 1,
@@ -93,6 +94,7 @@ const photo = (id, extra = {}) => ({ id, type: 'image', path: `C:/photos/${id}.p
     Object.assign(ctx.LIB, { filter, q, tags, folderPath: filter === 'folder-open' ? 'C:/photos' : null });
     if (filter === 'folder-open') ctx.LIB.filter = 'folder';
     ctx.config.library = library;
+    ctx.FAVORITES.entries = Object.values(library).filter(item => item.favorite).map(item => ({ item }));
     ctx.emptyKey = undefined;
     empty.hidden = undefined;
   };

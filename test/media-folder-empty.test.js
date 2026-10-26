@@ -14,9 +14,9 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const H = require('./helpers/main-harness');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let checks = 0;
 async function check(name, fn) {
@@ -26,7 +26,7 @@ async function check(name, fn) {
 }
 
 function tempDir(label) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `znada-mfempty-${label}-`));
+  return makeTempDir(`znada-mfempty-${label}-`);
 }
 
 // A profile exactly as a watched-folders-only user has it: settings, no folder of ours.

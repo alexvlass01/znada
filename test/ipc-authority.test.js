@@ -28,6 +28,116 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const authority = require('../src/ipc-authority');
 const H = require('./helpers/main-harness');
+const { mainProcessSources, walk, keyName, writtenName, useOf, writtenInto } = require('./helpers/main-process-sources');
+const { ipcRegistrations } = require('./helpers/ipc-registrations');
+const { makeTempDir } = require('./helpers/temp-dir');
+
+// Electron's ways to an existing window; none of them makes one.
+const WINDOW_LOOKUPS = new Set(['fromWebContents', 'fromId', 'fromBrowserView', 'getAllWindows', 'getFocusedWindow']);
+
+// Every window the main-process code constructs, and where each one does not spread the
+// shared decision into the webPreferences written out at the call. A window is counted where
+// BrowserWindow is constructed under that name, written however the text likes (new
+// BrowserWindow, new deps.BrowserWindow, new (t ? BrowserWindow : X)). So BrowserWindow may
+// travel only under its own name: const { BrowserWindow } = require('electron'), handed on as
+// { BrowserWindow } or deps.BrowserWindow, and looked up with the calls above. Renamed
+// (the fourth re-review: const { BrowserWindow: Window } = deps; new Window(…)), handed to a
+// function by position, subclassed or read as a string, it would make windows this does not
+// count, so that throws, with the place, rather than passing with a count of three.
+function windowsIn(sources) {
+  const isDecision = (node) => {
+    if (node.type !== 'SpreadElement' || node.argument.type !== 'CallExpression') return false;
+    const written = writtenName(node.argument.callee, node.argument);
+    return !!written && written.name === 'windowSecurity';
+  };
+  const windows = new Set(); // new (t ? BrowserWindow : deps.BrowserWindow)(…) is one window
+  const unshared = [];
+  for (const { file, ast } of sources) {
+    walk(ast, (node, parent, ancestors) => {
+      const written = writtenName(node, parent);
+      if (!written || written.name !== 'BrowserWindow') return;
+      const { use, at, property } = useOf(node, ancestors);
+      if (use === 'kept' || use === 'looked' || (use === 'member' && WINDOW_LOOKUPS.has(property))) return;
+      const line = node.loc.start.line;
+      if (use !== 'constructed') {
+        const how = use === 'member' ? `has .${property} read off it` : use === 'called' ? 'is called without new'
+          : 'is handed on under another name or none';
+        throw new Error(`${file}:${line}: BrowserWindow ${how}. The window check counts a window where BrowserWindow`
+          + ' is constructed under that name, so hand it on only under that name ({ BrowserWindow }, deps.BrowserWindow).');
+      }
+      if (windows.has(at)) return;
+      windows.add(at);
+      const [options] = at.arguments;
+      const prefs = options && options.type === 'ObjectExpression' && options.properties.find((p) => p.type === 'Property'
+        && keyName(p) === 'webPreferences');
+      if (!prefs || prefs.value.type !== 'ObjectExpression' || !prefs.value.properties.some(isDecision)) {
+        unshared.push(`${file}:${at.loc.start.line}`);
+      }
+    });
+  }
+  return { count: windows.size, unshared };
+}
+
+// The three switches the shared decision owns, set by hand anywhere in main-process code:
+// as a key of an object written out ({ sandbox: false }, { ['sandbox']: x }) or a property
+// written into (prefs.sandbox = …, ({ x: prefs.sandbox } = o)), to anything but the safe value
+// written as a plain literal; or named as a string that something receives
+// (Reflect.set(prefs, 'sandbox', false), Object.defineProperty, const k = 'sandbox'). Only
+// windowSecurity in main.js, which is that decision, may compute them. This used to be a
+// search of the text for `sandbox: false`, which a comment before the value got past.
+// A Chromium switch (app.commandLine.appendSwitch('no-sandbox')) turns the sandbox off for
+// every window at once, past that decision; nothing in main uses one, so any is reported.
+const SAFE_SWITCHES = { sandbox: true, contextIsolation: true, nodeIntegration: false };
+const PROCESS_SWITCHES = new Set(['appendSwitch', 'appendArgument']);
+function handSetSwitches(sources) {
+  const found = [];
+  const isSwitch = (name) => Object.prototype.hasOwnProperty.call(SAFE_SWITCHES, name);
+  const safe = (name, value) => value.type === 'Literal' && value.value === SAFE_SWITCHES[name];
+  for (const { file, ast } of sources) {
+    const decision = new Set();
+    if (file === 'main.js') {
+      walk(ast, (node) => {
+        if (node.type === 'FunctionDeclaration' && node.id.name === 'windowSecurity') walk(node, (inner) => decision.add(inner));
+      });
+    }
+    walk(ast, (node, parent, ancestors) => {
+      if (decision.has(node)) return;
+      const at = `${file}:${node.loc.start.line}`;
+      if (node.type === 'Property' && parent.type === 'ObjectExpression') {
+        const name = keyName(node);
+        if (isSwitch(name) && !safe(name, node.value)) found.push(`${at} ${name}`);
+        return;
+      }
+      const written = writtenName(node, parent);
+      if (!written) return;
+      if (PROCESS_SWITCHES.has(written.name) && written.how !== 'name') { found.push(`${at} ${written.name}`); return; }
+      if (!isSwitch(written.name)) return;
+      if (writtenInto(node, ancestors)) {
+        if (!(parent.type === 'AssignmentExpression' && parent.operator === '=' && safe(written.name, parent.right))) {
+          found.push(`${at} ${written.name}`);
+        }
+      } else if (written.how === 'string' && useOf(node, ancestors).use !== 'looked') {
+        found.push(`${at} '${written.name}'`);
+      }
+    });
+  }
+  return found;
+}
+
+// A throwaway project for the source checks: { 'relative/path': 'text' }, with the two folders
+// the main-process set walks. The folder name has a space in it, as Windows profiles do.
+function withProject(files, fn) {
+  const root = makeTempDir('znada windows-');
+  try {
+    for (const [rel, text] of Object.entries({ 'diagnostics/main/.keep': '', 'src/.keep': '', ...files })) {
+      fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+      fs.writeFileSync(path.join(root, rel), text);
+    }
+    return fn(mainProcessSources(root));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
 
 let passed = 0;
 const failures = [];
@@ -183,10 +293,10 @@ ok('a refused call never reaches the handler', () => {
     const roles = m.__test.ipcAuthority.roles();
     const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
     const invoked = (text) => new Set([...text.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map((x) => x[1]));
-    // The diagnostics probe is not a bridge of its own: it is attached INSIDE the main
-    // and viewer preloads, so whatever it invokes is invoked by those two windows. Left
-    // out of this union, its two channels looked like they belonged to nobody - which is
-    // exactly the mistake that took diagnostics mode down once already.
+    // QA-009. The diagnostics probe is its own preload script, registered only for a
+    // diagnostics run, and it still runs inside the main and viewer windows. Whatever
+    // it invokes is invoked by those two windows. Left out of this union, its two
+    // channels looked like they belonged to nobody.
     const probe = invoked(read('diagnostics', 'renderer', 'preload-attach.js'));
     const bridges = {
       main: new Set([...invoked(read('preload.js')), ...probe]),
@@ -220,14 +330,71 @@ ok('a refused call never reaches the handler', () => {
       // - it throws. The first time that happened, diagnostics mode started with no
       // handlers whatsoever. Only a source scan can see registrations that live behind a
       // gate the harness never opens.
-      const files = ['main.js', path.join('diagnostics', 'main', 'controller.js')];
-      const registered = new Set();
-      for (const file of files) {
-        for (const m of read(file).matchAll(/ipcMain\.handle\('([^']+)'/g)) registered.add(m[1]);
-      }
+      // CODE-001: every main-process file, not a list of two. A handler moved out of main.js
+      // into a module would otherwise leave this scan without anything failing. And read off
+      // the syntax tree (test/helpers/ipc-registrations.js): the text search was got past by
+      // a comment before the channel.
+      const registered = new Set(ipcRegistrations(mainProcessSources()).map((r) => r.channel));
       assert.ok(registered.size > 90, `only ${registered.size} handlers found: the scan is broken`);
+      // Everything main registers when it starts is in the scan; the scan also holds what
+      // only a gate registers (diagnostics), which the harness never opens.
+      const notScanned = [...m.handlers.keys()].filter((c) => !registered.has(c));
+      assert.deepStrictEqual(notScanned, [], `registered at start but not found by the scan: ${notScanned.join(', ')}`);
       const undeclared = [...registered].filter((c) => !Array.isArray(roles[c]));
       assert.deepStrictEqual(undeclared, [], `channels with no declared role: ${undeclared.join(', ')}`);
+    });
+
+    ok('a registration is found however it is written, and refused where it cannot be read', () => {
+      // The third re-review hid a handler from the old text search with a comment before the
+      // channel; a module handed ipcMain under another name, double quotes or a template
+      // string did the same.
+      const make = (files) => {
+        const root = makeTempDir('znada ipc Ж-');
+        for (const [rel, text] of Object.entries({ 'main.js': '', 'src/.keep': '', 'diagnostics/main/.keep': '', ...files })) {
+          fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+          fs.writeFileSync(path.join(root, rel), text);
+        }
+        return root;
+      };
+      const roots = [];
+      const channelsIn = (files) => {
+        roots.push(make(files));
+        return ipcRegistrations(mainProcessSources(roots[roots.length - 1])).map((r) => `${r.file}:${r.line} ${r.channel}`);
+      };
+      try {
+        assert.deepStrictEqual(channelsIn({
+          'main.js': "require('./diagnostics/core/redaction');\n",
+          'diagnostics/core/redaction.js': [
+            'module.exports.register = (ipcMain, bus, protocol) => {',
+            "  ipcMain.handle(/* registration comment */ 'review-unfrozen', () => 1);",
+            '  bus.handle("review-double", async () => 2);',
+            '  bus["handleOnce"](`review-template`, function () { return 3; });',
+            "  protocol.handle('znada-thumb', () => null);", // a URL scheme, not a channel
+            '};',
+          ].join('\n'),
+        }), ['diagnostics/core/redaction.js:2 review-unfrozen', 'diagnostics/core/redaction.js:3 review-double',
+          'diagnostics/core/redaction.js:4 review-template']);
+        const refused = {
+          "const name = 'x';\nmodule.exports = (ipcMain) => ipcMain.handle(name, () => 1);": /src\/a\.js:2: \.handle\(\) of a channel that is not a plain string/,
+          "module.exports = (ipcMain, run) => ipcMain.handle('x', run);": /the handler for 'x' is not a function written out/,
+          "module.exports = (ipcMain) => ipcMain.handle.call(ipcMain, 'x', () => 1);": /\.handle is read without being called/,
+          "module.exports = (ipcMain) => { const { handle } = ipcMain; handle('x', () => 1); };": /\.handle is read without being called/,
+          "module.exports = (ipcMain) => Reflect.apply(Reflect.get(ipcMain, 'handle'), ipcMain, ['x', () => 1]);": /\.handle is read without being called/,
+        };
+        for (const [code, pattern] of Object.entries(refused)) {
+          roots.push(make({ 'src/a.js': code }));
+          assert.throws(() => ipcRegistrations(mainProcessSources(roots[roots.length - 1])), pattern);
+        }
+        // A door that passes on what its caller named is counted: a second one is refused.
+        roots.push(make({ 'src/ipc-authority.js': [
+          'exports.handle = (ipcMain, channel, fn) => ipcMain.handle(channel, (e) => fn(e));',
+          'exports.again = (ipcMain, channel, fn) => ipcMain.handle(channel, fn);',
+        ].join('\n') }));
+        assert.throws(() => ipcRegistrations(mainProcessSources(roots[roots.length - 1])),
+          /src\/ipc-authority\.js: 2 registrations of a channel that is not a plain string, where 1 pass/);
+      } finally {
+        for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+      }
     });
 
     ok('a channel is never allowed for a role with no window of that kind', () => {
@@ -346,24 +513,102 @@ ok('a refused call never reaches the handler', () => {
       // adds is that the three creation sites USE it, and no real BrowserWindow exists in
       // a test to observe that from the outside. A mutation replacing the spread with
       // hand-written options survived every behavioural test, which is precisely the gap.
-      const source = read('main.js');
-      const starts = [];
-      for (const m of source.matchAll(/new BrowserWindow\(/g)) starts.push(m.index);
-      assert.strictEqual(starts.length, 3, `expected 3 windows, found ${starts.length}`);
-      for (const start of starts) {
-        let depth = 0;
-        let end = start;
-        for (let i = source.indexOf('{', start); i < source.length; i++) {
-          if (source[i] === '{') depth++;
-          else if (source[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
-        }
-        const block = source.slice(start, end);
-        assert.ok(block.includes('...windowSecurity('),
-          `a window is created without the shared security decision:\n${block.slice(0, 120)}`);
+      // CODE-001: read over all main-process code. The windows will not stay in main.js,
+      // and a check that only looks there would pass the day they leave.
+      const sources = mainProcessSources();
+      const { count, unshared } = windowsIn(sources);
+      assert.deepStrictEqual(unshared, [], 'a window is created without the shared security decision');
+      assert.deepStrictEqual(handSetSwitches(sources), [], 'a window switch is set by hand outside windowSecurity');
+      assert.strictEqual(count, 3, `expected 3 windows, found ${count}`);
+    });
+
+    ok('a switch set by hand is found however it is written', () => {
+      const switches = withProject({
+        'main.js': [
+          "function windowSecurity(role) { return { sandbox: role !== 'x', contextIsolation: true, nodeIntegration: false }; }",
+          "const safe = { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } };",
+          'const { sandbox } = windowSecurity(1);',
+        ].join('\n'),
+        'src/a.js': [
+          'const prefs = { sandbox: /* off */ false };',
+          "const more = { 'contextIsolation': !1, ['nodeIntegration']: 1 };",
+          'prefs.nodeIntegration = true;',
+          'const computed = { sandbox: process.env.X === "1" };',
+          // Named by a string that something receives, and written into by destructuring.
+          "Reflect.set(prefs, 'sandbox', false);",
+          '({ off: prefs.contextIsolation } = { off: false });',
+          "const key = 'nodeIntegration';",
+          // Read, compared, or set to the safe value: nothing to report.
+          "if (key === 'sandbox' || prefs.sandbox) prefs.sandbox = true;",
+          // A Chromium switch is past the decision for every window at once.
+          "app.commandLine.appendSwitch('no-sandbox');",
+        ].join('\n'),
+      }, handSetSwitches);
+      assert.deepStrictEqual(switches, ['src/a.js:1 sandbox', 'src/a.js:2 contextIsolation', 'src/a.js:2 nodeIntegration',
+        'src/a.js:3 nodeIntegration', 'src/a.js:4 sandbox', "src/a.js:5 'sandbox'", 'src/a.js:6 contextIsolation',
+        "src/a.js:7 'nodeIntegration'", 'src/a.js:9 appendSwitch']);
+    });
+
+    ok('a window built in a module from what main hands it counts the same', () => {
+      // The re-review's question: the old text pattern saw only `new BrowserWindow(`, and a
+      // module is handed Electron by main (new deps.BrowserWindow). Options built elsewhere
+      // and passed by name cannot be read at the call, so they are not taken on trust.
+      const windows = withProject({
+        'main.js': "require('./src/viewer');\n",
+        'src/viewer.js': [
+          'module.exports = (deps, opts) => [',
+          "  new deps.BrowserWindow({ webPreferences: { ...deps.windowSecurity('viewer') } }),",
+          '  new deps.BrowserWindow({ webPreferences: { sandbox: true } }),',
+          '  new deps.BrowserWindow(opts),',
+          "  new deps.electron.BrowserWindow({ show: false, ...deps.windowSecurity('viewer') }),",
+          '];',
+        ].join('\n'),
+      }, windowsIn);
+      assert.deepStrictEqual(windows, { count: 4, unshared: ['src/viewer.js:3', 'src/viewer.js:4', 'src/viewer.js:5'] });
+    });
+
+    ok('a window class under another name is refused, not left out of the count', () => {
+      // The fourth re-review: the class renamed while destructuring made a window the check
+      // never counted, and the three real ones still added up to three. Every way of giving
+      // it another name, or none, is refused at the place it happens.
+      const reviewed = [
+        'module.exports.reviewAliasWindow = (deps) => {',
+        '  const { BrowserWindow: Window } = deps;',
+        '  return new Window({ show: false });',
+        '};',
+      ].join('\n');
+      const renamings = {
+        [reviewed]: 2,
+        'module.exports = (deps) => { const W = deps.BrowserWindow; return new W({}); };': 1,
+        'module.exports = (make, electron) => make(electron.BrowserWindow);': 1,
+        'module.exports = (deps) => class Viewer extends deps.BrowserWindow {};': 1,
+        'module.exports = (deps) => { const Window = ((_parts, value) => value)`${deps.BrowserWindow}`; return new Window({}); };': 1,
+        'module.exports = (deps) => Reflect.construct(deps.BrowserWindow, [{}]);': 1,
+        "module.exports = (electron) => Reflect.get(electron, 'BrowserWindow');": 1,
+        'module.exports = (deps) => deps.BrowserWindow.bind(null, {});': 1,
+        'module.exports = (deps) => deps.BrowserWindow;': 1,
+      };
+      for (const [code, line] of Object.entries(renamings)) {
+        assert.throws(() => withProject({
+          'main.js': "require('./diagnostics/core/redaction');\n",
+          'diagnostics/core/redaction.js': code,
+        }, windowsIn), new RegExp(`diagnostics/core/redaction\\.js:${line}: BrowserWindow`), code);
       }
-      assert.ok(!/sandbox:\s*false/.test(source), 'a window turns the sandbox off by hand');
-      assert.ok(!/contextIsolation:\s*false/.test(source), 'a window turns context isolation off by hand');
-      assert.ok(!/nodeIntegration:\s*true/.test(source), 'a window is given Node by hand');
+      // Under its own name it may be destructured, handed on, looked up and tested, and one
+      // `new` is one window, reported once, whichever way its class is chosen.
+      const windows = withProject({
+        'main.js': "require('./src/viewer');\n",
+        'src/viewer.js': [
+          'module.exports = (deps, win) => {',
+          '  const { BrowserWindow } = deps;',
+          '  const open = BrowserWindow.getAllWindows().length + (BrowserWindow.fromWebContents(win.webContents) ? 1 : 0);',
+          "  if (typeof BrowserWindow !== 'function' || win instanceof BrowserWindow) return open;",
+          '  const view = new (deps.ready ? deps.BrowserWindow : BrowserWindow)({ show: false });',
+          '  return { BrowserWindow, view };',
+          '};',
+        ].join('\n'),
+      }, windowsIn);
+      assert.deepStrictEqual(windows, { count: 1, unshared: ['src/viewer.js:5'] });
     });
 
     ok('this run is not a diagnostics run, so the exception below is not what was measured', () => {
@@ -386,11 +631,10 @@ ok('a refused call never reaches the handler', () => {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 
-  // The exception itself, driven rather than described: a diagnostics run turns the
-  // sandbox off for the two app windows, because their preloads pull in the measuring
-  // probe with a relative require and a sandboxed preload cannot do that. If this ever
-  // stops being true - because the probe got bundled - the sandbox should go back on
-  // everywhere, and this is the test that will say so.
+  // QA-009. A diagnostics run used to turn the sandbox off for the two app windows so
+  // their preloads could pull the measuring probe in with a relative load. The probe is
+  // now a separate script that loads only electron, so the sandbox stays on for every
+  // role. Context isolation and "no Node" were never relaxed and still must not be.
   {
     const dir = H.makeTempProfile('ipc-authority-diag');
     const real = { log: console.log, error: console.error };
@@ -409,13 +653,14 @@ ok('a refused call never reaches the handler', () => {
           'the diagnostics gate did not open, so the next two checks prove nothing');
       });
 
-      ok('the app windows drop the sandbox there, and only there', () => {
-        assert.strictEqual(diag.__test.windowSecurity('main').sandbox, false);
-        assert.strictEqual(diag.__test.windowSecurity('viewer').sandbox, false);
+      ok('every window keeps the sandbox on during a diagnostics run', () => {
+        for (const role of ['main', 'viewer', 'diagnostics']) {
+          assert.strictEqual(diag.__test.windowSecurity(role).sandbox, true, role);
+        }
       });
 
-      ok('the panel keeps it even then', () => {
-        assert.strictEqual(diag.__test.windowSecurity('diagnostics').sandbox, true);
+      ok('an unknown window role is refused rather than unsandboxed', () => {
+        assert.throws(() => diag.__test.windowSecurity('admin'), /unknown window role/);
       });
 
       ok('and nothing else about a window is relaxed for diagnostics', () => {

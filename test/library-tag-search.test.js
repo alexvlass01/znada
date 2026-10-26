@@ -47,6 +47,7 @@ for (const [filter, folderPath, photoVisible, folderVisible] of [
   const photo = { hidden: false, classList: { toggle: () => assert.fail('import must not compete with Search as a suggested action') } };
   const folder = { hidden: false, classList: photo.classList };
   vm.runInNewContext(renderer.slice(actionsStart, actionsEnd), {
+    FAVORITES: { entries: [] },
     LIB: { filter, folderPath }, $: (selector) => selector === '#libAddPhotos' ? photo : folder,
   });
   ok(`import visibility is preserved in ${filter}${folderPath ? '/nested' : ''}`,
@@ -71,6 +72,7 @@ function functionSource(source, name) {
 
 // A tag is an additional predicate, not a destination replacing Favorites.
 const localFilterContext = {
+  FAVORITES: { get entries() { return Object.values(localFilterContext.config.library).filter(item => item.favorite).map(item => ({ item })); } },
   LIB: { filter: 'favorite', tags: ['sameko_saba'], q: '' },
   config: { library: {
     a: { id: 'a', path: 'a.png', favorite: true, tags: ['sameko_saba', 'nature'] },
@@ -252,6 +254,8 @@ ok('context records the unified placeholder and empty-state roles', contexts.ent
   };
   const originalPool = JSON.stringify(pool);
   const ctx = {
+    contentBlur: { reset() {} },
+    FAVORITES: { entries: [] },
     LIB: { filter: 'all', tags: [], q: '', sort: 'name', folderPath: null, crumbs: [], shuffleRank: {} },
     ONLINE: { view: 'search', entries: [], generation: 0, renderEpoch: 0 },
     config: { library: pool }, allViewToken: 1,

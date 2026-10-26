@@ -42,9 +42,11 @@ let addFn = null;
 let addCalls = 0;
 const buildCloudCard = vm.runInNewContext(`(${functionSource('buildCloudCard')})`, {
   ...helpers,
+  contentBlur: { bind() {} },
   document: {
     createElement: () => ({
       className: '', title: '', style: {}, dataset: {},
+      setAttribute: () => {},
       addEventListener: () => {}, appendChild: () => {},
     }),
   },
@@ -53,6 +55,7 @@ const buildCloudCard = vm.runInNewContext(`(${functionSource('buildCloudCard')})
   galleryItemFromCloud,
   attachOnlineAddButton: (_card, kind, _item, fn) => { addKind = kind; addFn = fn; },
   bindOnlineCardContextMenu: () => {},
+  attachBookmarkStar: () => {},
   cloudSignedIn: () => false,
   setLibStatus: () => {},
   openGalleryFromCard: () => {},

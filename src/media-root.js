@@ -64,6 +64,8 @@ function managedFolderName(userDataPath) {
  * `anchor` is the folder the user picked (or the profile itself). It is what tells
  * "the drive is gone" apart from "the files were deleted": Znada may create its own
  * subfolder, but it must never create the place the user chose to put it.
+ *
+ * @param {{ userDataPath?: string, mediaFolder?: string }} [opts]
  */
 function resolveManagedRoot({ userDataPath, mediaFolder } = {}) {
   const profile = String(userDataPath || '');
@@ -84,6 +86,8 @@ function resolveManagedRoot({ userDataPath, mediaFolder } = {}) {
  *
  * `systemRoots` is injected (main passes Windows/Program Files/the install directory)
  * so the rule stays pure and the list can grow without touching this logic.
+ *
+ * @param {{ folder?: string, userDataPath?: string, systemRoots?: string[] }} [opts]
  */
 function folderProblem({ folder, userDataPath, systemRoots = [] } = {}) {
   const parent = normalizeFolder(folder);
@@ -119,6 +123,8 @@ function folderProblem({ folder, userDataPath, systemRoots = [] } = {}) {
  *
  * Owner's rule (2026-09-09): files on a missing DISK are only out of reach for now, so
  * nothing may be cleaned up or marked as gone. `unavailable` is a freeze, never a fallback.
+ *
+ * @param {{ rootExists?: boolean, anchorExists?: boolean, invalid?: boolean }} [opts]
  */
 function rootState({ rootExists, anchorExists, invalid = false } = {}) {
   if (invalid) return { state: 'unavailable', reason: 'invalid' };

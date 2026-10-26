@@ -14,16 +14,16 @@
 // are about the resulting files and config. Nothing here is mocked except Electron.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const Module = require('module');
 const { EventEmitter } = require('events');
 const { pathToFileURL } = require('url');
+const { makeTempDir } = require('./temp-dir');
 
 const ROOT = path.join(__dirname, '..', '..');
 
 function makeTempProfile(label) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `lumina-${label}-`));
+  const dir = makeTempDir(`lumina-${label}-`);
   fs.mkdirSync(path.join(dir, 'wallpapers'), { recursive: true });
   return dir;
 }
@@ -149,7 +149,13 @@ function makeElectronStub(userData, options = {}) {
       Tray: class { constructor() {} setToolTip(tip) { calls.trayTooltips.push(tip); } setContextMenu() {} on() {} destroy() {} setImage() {} },
       Menu: { buildFromTemplate: () => ({}), setApplicationMenu: () => {} },
       ipcMain: {
-        handle: (channel, fn) => handlers.set(channel, fn),
+        // Refused like Electron refuses it. The registered set is what the contract tests
+        // read (CODE-001: they no longer search main.js for the text of a registration),
+        // and a Map that quietly kept the second handler would hide a duplicate from them.
+        handle: (channel, fn) => {
+          if (handlers.has(channel)) throw new Error(`Attempted to register a second handler for '${channel}'`);
+          handlers.set(channel, fn);
+        },
         on: () => {},
         removeHandler: (channel) => handlers.delete(channel),
       },

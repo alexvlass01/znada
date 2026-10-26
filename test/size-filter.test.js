@@ -208,20 +208,11 @@ ok('the setting exists and ships off', config.DEFAULT_CONFIG.onlineSizeFilter.en
 ok('the window may change it, through the module that also does the matching',
   main.includes('onlineSizeFilter: asMergedObject({')
   && main.includes('const targets = sizeFilter.normalizeTargets(v);'));
-ok('every card is judged here whatever a site managed',
-  main.includes('.filter((item) => sizeFilter.matches(item, targets))'));
-ok('the sites are told the loosest bound, not the decision',
-  main.includes('const hints = sizeFilter.serverHints(targets);')
-  && main.includes('const first = await run({ sizeHints: hints });'));
-// The owner's instruction: top the page up, but the user must not be shown a problem —
-// and this must not become the request storm BUG-020 had just finished limiting.
-ok('a short page is topped up a bounded number of times and then left short',
-  main.includes('for (let round = 0; round < SIZE_FILTER_EXTRA_ROUNDS; round++)')
-  && main.includes('if (merged.items.length >= SIZE_FILTER_MIN_CARDS) break;')
-  && main.includes('if (!gained.length && !(next.items || []).length) break;'));
-// It is the user's setting, so it holds for a typed search exactly as for the front page.
-ok('the filter applies to a search as well as to the front page',
-  main.includes('const run = (extra) => (browsing') && main.includes('await searchFiltered(o, token, browsing)'));
+// CODE-001. How the filter is APPLIED — every card judged here, the sites given the loosest
+// bound, a short page topped up a bounded number of times, the same for a search and the front
+// page — moved with the search into src/online-search.js and is proved there as behaviour, on
+// sites of the test's own making: test/online-search.test.js. These lines used to be checks
+// that main.js contained certain text.
 
 ok('the window offers the switch, the mode and the manual list',
   html.includes('id="whSizeOn"') && html.includes('id="whSizeMode"') && html.includes('id="whSizeTargets"'));

@@ -649,7 +649,9 @@ function backupsIn(dir) {
     const photoId = idFor(photo);
     const storeText = JSON.stringify({
       version: 1,
-      library: { [photoId]: { id: photoId, type: 'image', path: photo, addedAt: 1, favorite: true, tags: ['keep'], rev: 3 } },
+      // This scenario starts with a current-format canonical record; legacy
+      // favorite-date migration has its own write/restart test (ONL-002).
+      library: { [photoId]: { id: photoId, type: 'image', path: photo, addedAt: 1, favorite: true, favoritedAt: 1, tags: ['keep'], rev: 3 } },
       trash: [],
     }, null, 2);
     writeProfile(dir, {

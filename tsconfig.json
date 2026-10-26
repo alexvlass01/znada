@@ -25,7 +25,10 @@
     "'this might be undefined' notes about code that has been working for a year, and the",
     "real findings would be lost among them. What is on already catches the class this task",
     "exists for. Tightening is the next step, per module, not a flag flipped in one go.",
-    "Adding `any` to silence a finding is not an acceptable way to pass this."
+    "Adding `any` to silence a finding is not an acceptable way to pass this.",
+    "",
+    "CODE-001: online-search and provider-access receive the registry and shared result",
+    "rules as dependencies, so checking them does not load adapters or machine-local keys."
   ],
   "compilerOptions": {
     "allowJs": true,
@@ -47,9 +50,20 @@
     "src/media-type.js",
     "src/fingerprint.js",
     "src/request-budget.js",
+    "src/iqdb.js",
     "src/image-motion.js",
     "src/wallpaper-host.js",
+    "src/wallpaper-platform.js",
+    "src/thumbnail-service.js",
     "src/child-runner.js",
-    "src/latest-intent.js"
+    "src/latest-intent.js",
+    "src/provider-access.js",
+    "src/online-search.js",
+    "src/metadata-lookup-service.js",
+    "src/library-freeze.js",
+    "src/cloud/session.js",
+    "src/config-store.js",
+    "src/managed-folder.js",
+    "src/library-service.js"
   ]
 }

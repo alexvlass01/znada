@@ -2,15 +2,15 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { createEventLog } = require('../src/event-log');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (name, condition) => { assert.ok(condition, name); console.log('  OK ' + name); passed++; };
 
 (async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-event-log-'));
+  const dir = makeTempDir('lumina-event-log-');
   const file = path.join(dir, 'event-log.json');
   let nowMs = 1000;
 

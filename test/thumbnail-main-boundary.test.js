@@ -5,18 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-const start = main.indexOf('const thumbCache = new Map();');
-const end = main.indexOf('function liveFolderDiscovery', start);
-assert.ok(start >= 0 && end > start, 'thumbnail integration block is present');
-const block = main.slice(start, end);
-
-assert.ok(block.includes('thumbnailHost.thumbnail(p, W, 82)'), 'main delegates extraction to ThumbnailHost');
-assert.ok(block.includes('result.dataBase64'), 'main consumes the encoded helper payload');
-assert.ok(block.includes("url: 'data:' + mime + ';base64,' + body"), 'thumbInfo keeps its data URL shape');
-assert.ok(block.includes("ipcMain.handle('thumb'"), 'thumb IPC remains registered');
-assert.ok(block.includes("ipcMain.handle('thumb-info'"), 'thumb-info IPC remains registered');
-assert.ok(block.includes("ipcMain.handle('thumb-aspects'"), 'thumb-aspects IPC remains registered');
-assert.ok(block.includes('thumbPending.get(key)'), 'matching pending work stays deduplicated');
+// Thumbnail extraction/cache/queue behaviour is exercised by thumbnail-service.test.js.
 
 // Renaming a sender guard must not leave a stale call behind. thumb-aspects once kept
 // calling isTrustedThumbnailSender after the helper became isTrustedMainWindowSender,
@@ -36,36 +25,20 @@ for (const name of guardCalls) {
     `${name}() is called but never defined in main.js`,
   );
 }
-assert.ok(block.includes('if (!isAuthorizedMediaPath(p))'),
-  'a thumbnail is only drawn for a path the app vouches for');
 const mainOnlyBlock = main.slice(main.indexOf('const IPC_MAIN_ONLY'), main.indexOf('const IPC_MAIN_AND_VIEWER'));
 for (const channel of ['thumb', 'thumb-info', 'thumb-aspects']) {
   assert.ok(mainOnlyBlock.includes("'" + channel + "'"),
     channel + ' must stay a main-window-only channel');
 }
-assert.ok(block.includes('runThumbnailTask(async () =>'), 'thumbnail work stays in the bounded task queue');
-assert.ok(block.includes('}, { priority }).finally'), 'current virtual window priority reaches the task queue');
-assert.ok(block.includes('queueLiveFolderAspect(p, data.width / data.height)'),
-  'successful thumbnails enqueue persistent live-folder aspect metadata');
 assert.ok(main.includes('library.setAspect(config.library, id, update.path, update.aspect)'),
   'materialized live-folder images receive the same persistent aspect metadata');
 assert.ok(main.includes('if (configChanged) saveLibrarySoon();'),
   'aspect-only pool backfill is saved without a renderer config broadcast');
-// Scoped to the function body rather than "up to the first }": saveLibrarySoon now has
-// a branch in it (the degraded mode where the store file cannot be written and the pool
-// has to go inline into config.json instead), and a `[^}]*` regex silently stopped
-// matching at that branch's brace.
-const saveLibrarySoonBody = (() => {
-  const start = main.indexOf('function saveLibrarySoon() {');
-  return start < 0 ? '' : main.slice(start, main.indexOf('\n}', start));
-})();
-assert.ok(saveLibrarySoonBody.includes('libraryWriter.markDirty'),
-  'the pool backfill path writes only the pool, and does so through the batched writer');
-assert.ok(!saveLibrarySoonBody.includes('broadcastConfig'),
-  'the pool backfill path still never broadcasts config');
-assert.ok(saveLibrarySoonBody.includes('keepInline: true'),
-  'an unusable store must not silently drop a pool edit: it goes inline into config.json');
-assert.ok(block.includes('const key = `${p}|${W}`;'), 'dedup key matches the helper scalar size');
+// CODE-001 2.1a. What saveLibrarySoon does — batched pool write, no broadcast, inline into
+// config.json while the pool file is unusable — is markPoolDirty() in src/config-store.js
+// and is tested there (test/config-store.test.js). main.js keeps a one-line wrapper.
+assert.ok(main.includes('function saveLibrarySoon() { configStore.markPoolDirty(); }'),
+  'the pool backfill path is the store\'s batched pool write, not a broadcast');
 assert.ok(!main.includes('createThumbnailFromPath'), 'main no longer runs Windows thumbnail extraction');
 assert.ok(main.includes('void thumbnailHost.dispose();'), 'app shutdown disposes the helper');
 assert.ok(/flushPendingLiveFolderAspects\(\);\r?\n {2}flushLiveFolderState\(\);/.test(main),

@@ -6,13 +6,13 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const F = require('../src/folder-state');
 // The playlist's `exclude` set is keyed by the shared canonical key, not by a plain
 // lowercase string — building it any other way is what let a removed photo keep
 // reaching the desktop while the grid hid it (src/path-key.js).
 const { pathKey } = require('../src/path-key');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (n, c) => { assert.ok(c, n); console.log('  ✓ ' + n); passed++; };
@@ -147,7 +147,7 @@ const names = (images) => images.map((i) => path.basename(i.path)).sort().join('
 // --- persisted format --------------------------------------------------------
 
 {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-hidden-'));
+  const dir = makeTempDir('lumina-hidden-');
   const file = path.join(dir, 'folder-state.json');
   F.saveState(file, F.setHidden(seeded(), [path.resolve(ROOT, 'b.png')]).state);
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -165,7 +165,7 @@ const names = (images) => images.map((i) => path.basename(i.path)).sort().join('
   const older = { version: 3, folders: { F1: { rootPath: ROOT, baselineComplete: true, files: {
     'a.png': { relativePath: 'a.png', firstSeenAt: 1, modifiedAt: 2 },
   } } } };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-hidden-old-'));
+  const dir = makeTempDir('lumina-hidden-old-');
   const file = path.join(dir, 'folder-state.json');
   fs.writeFileSync(file, JSON.stringify(older), 'utf8');
   const loaded = F.loadState(file);
@@ -222,7 +222,7 @@ const names = (images) => images.map((i) => path.basename(i.path)).sort().join('
 }
 
 {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-hdirs-'));
+  const dir = makeTempDir('lumina-hdirs-');
   const file = path.join(dir, 'folder-state.json');
   F.saveState(file, F.setHiddenDir(seeded(['a.png', 'sub/c.png']), [path.resolve(ROOT, 'sub')]).state);
   const loaded = F.loadState(file);
@@ -240,7 +240,7 @@ const names = (images) => images.map((i) => path.basename(i.path)).sort().join('
 // folder-state and playlist. These use real files and the real playlist.
 {
   const playlist = require('../src/playlist');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-slot-'));
+  const dir = makeTempDir('lumina-slot-');
   const a = path.join(dir, 'a.jpg');
   const b = path.join(dir, 'b.jpg');
   fs.writeFileSync(a, 'x');

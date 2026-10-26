@@ -4,9 +4,9 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { buildMenuTemplate, createTrayController } = require('../src/tray');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 const t = (k) => k; // identity i18n
 const A = { onOpen: 'open', onApplyCurrent: 'apply', onNextWallpaper: 'next', onInstallUpdate: 'upd', onQuit: 'quit' };
@@ -38,7 +38,7 @@ ok('reapply action remains available without a slideshow', m[1].click === A.onAp
 // ужимания. Если ICO нет — обязан работать прежний PNG-путь, иначе сборка без
 // новых иконок останется вообще без значка в трее.
 function trayWith(files, theme) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-tray-'));
+  const dir = makeTempDir('znada-tray-');
   for (const f of files) fs.writeFileSync(path.join(dir, f), 'x');
   const used = [];
   const ctl = createTrayController({
@@ -69,7 +69,7 @@ ok('иконка ставится сразу при создании, а не т
 // COLLAB-003. Проверочный запуск DEV/DIAG называет свой код и в подсказке трея: значок
 // виден, даже когда окно спрятано. Обычный запуск остаётся просто «Znada».
 function tooltipsOf(extra) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-tray-'));
+  const dir = makeTempDir('znada-tray-');
   fs.writeFileSync(path.join(dir, 'tray.png'), 'x');
   const tips = [];
   const ctl = createTrayController({

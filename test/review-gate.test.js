@@ -29,6 +29,7 @@ if (!fs.existsSync(GATE)) {
 }
 
 const gate = require(GATE);
+const { makeTempDir } = require('./helpers/temp-dir');
 
 const ids = (files) => gate.pickStages(files).map((s) => s.id);
 
@@ -191,46 +192,13 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
  */
 {
   const S = gate.nextStep;
-  const base = { hasRun: true, behind: 0, submittedCount: 0, pendingCount: 5, failedIds: [] };
-
-  assert.deepStrictEqual(S({ ...base, hasRun: false }), { action: 'prepare', from: 'tag' },
-    'без пакета первый запуск обязан собрать его сам');
-
-  assert.deepStrictEqual(S(base), { action: 'handoff' },
-    'свежий пакет — выдать этап, а не пересобирать');
-
-  assert.deepStrictEqual(S({ ...base, behind: 3 }), { action: 'prepare', from: 'base' },
-    'дельта уехала, сдано ничего — пересобрать, но с ТОЙ ЖЕ базой: иначе догоняющий пакет разрастается обратно до всей дельты релиза');
-
-  assert.deepStrictEqual(S({ ...base, behind: 3, reopenedCount: 1 }), { action: 'handoff' },
-    'снятый после починки вердикт — это отчёт: пересборка унесла бы след того, что дефект был');
-
-  assert.deepStrictEqual(S({ ...base, behind: 3, submittedCount: 2, pendingCount: 3 }),
-    { action: 'handoff' },
-    'пересборка поверх сданного стёрла бы чужую работу — именно этого гейт и избегает');
-
-  assert.deepStrictEqual(
-    S({ ...base, behind: 2, submittedCount: 2, pendingCount: 3, failedIds: ['02-diff'] }),
-    { action: 'reopen', stages: ['02-diff'] },
-    'дефект починен — этап обязан уйти на повторную проверку, а не остаться FAIL навсегда');
-
-  assert.deepStrictEqual(
-    S({ ...base, behind: 0, submittedCount: 5, pendingCount: 0, failedIds: ['02-diff'] }),
-    { action: 'verdict' },
-    'пока код не менялся, FAIL переспрашивать нечего — это итог, а не помеха');
-
-  assert.deepStrictEqual(S({ ...base, submittedCount: 5, pendingCount: 0 }),
-    { action: 'verdict' },
-    'всё сдано и дерево на месте — показать итог');
-
-  assert.deepStrictEqual(
-    S({ ...base, behind: 3, submittedCount: 5, pendingCount: 0, failedIds: ['02-diff'] }),
-    { action: 'reopen', stages: ['02-diff'] },
-    'пакет закрыт с дефектом: чинить надо переспросить ЗДЕСЬ, а не уводить вердикт в новый пакет');
-
-  assert.deepStrictEqual(S({ ...base, behind: 4, submittedCount: 5, pendingCount: 0 }),
-    { action: 'prepare', from: 'head' },
-    'новые коммиты поверх закрытого пакета проверяются от его головы, а не от тега заново');
+  assert.deepStrictEqual(S({ hasRun: false }), { action: 'prepare', from: 'tag' });
+  for (const behind of [0, 3, 9]) {
+    assert.deepStrictEqual(S({ hasRun: true, behind, pendingCount: 2 }), { action: 'handoff' },
+      'an active packet must preserve results, including when fixes advance HEAD');
+    assert.deepStrictEqual(S({ hasRun: true, behind, pendingCount: 0 }), { action: 'verdict' },
+      'no second packet for a revision already covered by all stages');
+  }
 }
 
 /*
@@ -395,9 +363,8 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
  * пакета во временном каталоге, а не наличие слов в исходнике.
  */
 {
-  const os = require('os');
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'review-gate-checks-'));
-  const next = fs.mkdtempSync(path.join(os.tmpdir(), 'review-gate-checks-next-'));
+  const tmp = makeTempDir('review-gate-checks-');
+  const next = makeTempDir('review-gate-checks-next-');
   try {
     const run = {
       base: 'v0', head: 'abc1234', stat: '', fileCount: 1, dirtyCount: 0,
@@ -442,8 +409,8 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
   }
 
   const source = fs.readFileSync(GATE, 'utf8');
-  assert.ok(/carryChecksFrom: step\.from === 'base' \? id : ''/.test(source),
-    'next пересобирает пакет с той же базой, но список ведущего с собой не берёт');
+  assert.deepStrictEqual(gate.nextStep({ hasRun: true, pendingCount: 1, behind: 9 }), { action: 'handoff' },
+    'next должен сохранить существующий пакет вместе со списком ведущего');
   assert.ok(source.includes("'  в задании есть список проверок от ведущего — каждый его пункт обязателен'"),
     'текст передачи не говорит, что в задании есть список ведущего');
 }
@@ -462,7 +429,7 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
   assert.ok(!gate.versionNewer('1.7.7', 'nightly'), 'нечитаемый тег не делает версию новее');
   assert.strictEqual(gate.releaseTextName('1.7.7'), 'release_text_1_7_7.md');
 
-  const ready = { version: '1.7.7', tag: 'v1.7.6', translationsLeft: 0, releaseText: true };
+  const ready = { version: '1.7.7', tag: 'v1.7.6', translationsLeft: 0, releaseText: true, whatsNewGaps: [] };
   assert.deepStrictEqual(gate.releasePrepGaps(ready), [], 'подготовленный выпуск задержан');
   const gaps = (over) => gate.releasePrepGaps({ ...ready, ...over }).join('\n');
   assert.ok(/не больше последнего выпуска v1\.7\.6/.test(gaps({ version: '1.7.6' })), 'старый номер не пойман');
@@ -471,16 +438,21 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
   assert.ok(/переводы не закончены: 9/.test(gaps({ translationsLeft: 9 })), 'хвост переводов не пойман');
   assert.ok(/не прочиталось/.test(gaps({ translationsLeft: null })), 'непрочитанные переводы сочтены готовыми');
   assert.ok(/release_text_1_7_7\.md/.test(gaps({ releaseText: false })), 'нет текста выпуска — не пойман');
+  // DESIGN-012: текст окна «Что нового» — часть подготовки, непрочитанный не считается готовым.
+  assert.ok(/Что нового.*нет текста 1\.7\.7 на языке ru/.test(gaps({ whatsNewGaps: ['нет текста 1.7.7 на языке ru'] })),
+    'нехватка «Что нового» не названа');
+  assert.ok(/«Что нового».*не прочитался/.test(gaps({ whatsNewGaps: null })), 'непрочитанный «Что нового» сочтён готовым');
+  assert.ok(/не прочитался/.test(gaps({ whatsNewGaps: undefined })), 'отсутствие факта о «Что нового» сочтено готовностью');
 
   const real = gate.readReleasePrep('v0.0.0');
   assert.strictEqual(real.version, require(path.join(ROOT, 'package.json')).version, 'версия читается не оттуда');
   assert.strictEqual(typeof real.translationsLeft, 'number', 'состояние переводов настоящего дерева не прочиталось');
+  assert.ok(Array.isArray(real.whatsNewGaps), '«Что нового» настоящего дерева не прочитался');
 }
 
 {
   const { spawnSync, execFileSync } = require('child_process');
-  const os = require('os');
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qa018-'));
+  const tmp = makeTempDir('qa018-');
   const copy = (rel) => fs.cpSync(path.join(ROOT, rel), path.join(tmp, rel), { recursive: true });
   const g = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'core.autocrlf=false',
     '-c', 'tag.gpgSign=false', '-c', 'commit.gpgSign=false', ...args], { cwd: tmp, stdio: 'pipe' });
@@ -496,7 +468,11 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
   };
   try {
     for (const rel of ['scripts/review-gate.js', 'scripts/review-gate', 'src/i18n-state.js',
-      'locales/en.json', 'locales/ru.json', 'locales/de.json', 'locales/state/de.json']) copy(rel);
+      'locales/en.json', 'locales/ru.json', 'locales/de.json', 'locales/state/de.json',
+      'src/whats-new.js']) copy(rel);
+    const writeWhatsNew = (data) => fs.writeFileSync(path.join(tmp, 'src', 'whats-new.json'), JSON.stringify(data));
+    const note = [{ title: 't', text: 'x' }];
+    writeWhatsNew({ '1.7.7': { en: note } }); // русского текста ещё нет
     setVersion('1.7.7');
     g('init', '-q');
     g('add', '-A');
@@ -514,7 +490,8 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
     let res = runGate('prepare', '--by', 't');
     assert.strictEqual(res.status, 1, 'пакет от тега собран без подготовки выпуска:\n' + res.stdout + res.stderr);
     assert.ok(/не подготовлен/.test(res.stderr) && /не больше последнего выпуска v1\.7\.7/.test(res.stderr)
-      && /переводы не закончены/.test(res.stderr) && /release_text_1_7_7\.md/.test(res.stderr),
+      && /переводы не закончены/.test(res.stderr) && /release_text_1_7_7\.md/.test(res.stderr)
+      && /«Что нового».*нет текста 1\.7\.7 на языке ru/.test(res.stderr),
       'отказ не называет, чего не хватает:\n' + res.stderr);
     assert.ok(/подготовь выпуск/.test(res.stderr), 'отказ не говорит владельцу, что делать дальше');
     assert.deepStrictEqual(packets(), [], 'отказ всё равно оставил пакет');
@@ -533,9 +510,37 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
     // (так лежат уже опубликованные), затем только среди текущих постановок — оба места считаются.
     setVersion('1.7.8');
     copy('locales/de.json');
+    // I18N-003 leaves the new plural forms out of the other catalogues on purpose.
+    // This scenario is "the translation tail is closed", so the fixture fills those
+    // leaves itself. The live de.json stays missing them until the freshness pass.
+    {
+      const i18n = require(path.join(ROOT, 'src', 'i18n-state'));
+      const read = (rel) => JSON.parse(fs.readFileSync(path.join(tmp, rel), 'utf8'));
+      const enDict = read('locales/en.json');
+      const ruDict = read('locales/ru.json');
+      const deDict = read('locales/de.json');
+      const fill = (target, source) => {
+        for (const [key, value] of Object.entries(source)) {
+          if (value && typeof value === 'object' && !Array.isArray(value)) {
+            if (!target[key] || typeof target[key] !== 'object' || Array.isArray(target[key])) target[key] = {};
+            fill(target[key], value);
+          } else if (typeof target[key] !== 'string' || target[key] === '') {
+            target[key] = value;
+          }
+        }
+      };
+      fill(deDict, enDict);
+      fs.writeFileSync(path.join(tmp, 'locales', 'de.json'), JSON.stringify(deDict, null, 2) + '\n');
+      const recorded = i18n.buildState({
+        enDict, ruDict, langDict: deDict, lang: 'de',
+        at: '2026-10-14T00:00:00.000Z', verification: 'mechanical',
+      });
+      fs.writeFileSync(path.join(tmp, 'locales', 'state', 'de.json'), JSON.stringify(recorded, null, 2) + '\n');
+    }
     const archived = path.join(tmp, 'plans', 'archive', 'releases', 'release_text_1_7_8.md');
     fs.mkdirSync(path.dirname(archived), { recursive: true });
     fs.writeFileSync(archived, '# 1.7.8\n');
+    writeWhatsNew({ '1.7.7': { en: note }, '1.7.8': { en: note, ru: note } });
     g('add', '-A');
     g('commit', '-q', '-m', 'prepare the release');
     res = runGate('prepare', '--by', 't');
@@ -554,6 +559,236 @@ const ids = (files) => gate.pickStages(files).map((s) => s.id);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+
+
+/* QA-025: a repeat FAIL at the fixed revision must not reopen itself forever. */
+{
+  const state = { hasRun: true, behind: 9, submittedCount: 5, pendingCount: 0,
+    failedIds: ['02-diff'], coverageKnown: true };
+  assert.deepStrictEqual(gate.nextStep(state), { action: 'verdict' },
+    'a result already covering current HEAD must finish in the same packet');
+  assert.deepStrictEqual(gate.nextStep({ ...state, pendingCount: 2 }), { action: 'handoff' },
+    'only stages with unchecked scope are assigned, without erasing reports');
+}
+
+/* QA-025: exercise the real CLI, including legacy records and revision drift. */
+{
+  const { spawnSync, execFileSync } = require('child_process');
+  const tmp = makeTempDir('qa025-coverage-');
+  const g = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t',
+    '-c', 'core.autocrlf=false', '-c', 'commit.gpgSign=false', ...args], { cwd: tmp, encoding: 'utf8' }).trim();
+  const cli = (...args) => spawnSync(process.execPath, [path.join(tmp, 'scripts/review-gate.js'), ...args],
+    { cwd: tmp, encoding: 'utf8' });
+  const ok = (...args) => { const r = cli(...args); assert.strictEqual(r.status, 0, r.stdout + r.stderr); return r.stdout; };
+  try {
+    fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true });
+    fs.copyFileSync(GATE, path.join(tmp, 'scripts/review-gate.js'));
+    fs.cpSync(TEMPLATES, path.join(tmp, 'scripts/review-gate'), { recursive: true });
+    for (const rel of ['src/i18n-state.js', 'src/whats-new.js']) {
+      fs.mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true });
+      fs.copyFileSync(path.join(ROOT, rel), path.join(tmp, rel));
+    }
+    fs.mkdirSync(path.join(tmp, 'locales'), { recursive: true });
+    for (const lang of ['en', 'ru']) fs.writeFileSync(path.join(tmp, 'locales', lang + '.json'), '{}');
+    fs.writeFileSync(path.join(tmp, '.gitignore'), '.tmp/\n');
+    fs.writeFileSync(path.join(tmp, 'main.js'), '// baseline\n');
+    fs.writeFileSync(path.join(tmp, 'package.json'), '{}\n');
+    g('init', '-q'); g('add', '-A'); g('commit', '-qm', 'baseline');
+    g('-c', 'tag.gpgSign=false', 'tag', 'v1.7.7');
+    g('commit', '--allow-empty', '-qm', 'explicit review base after the older release tag');
+    const base = g('rev-parse', 'HEAD');
+    fs.appendFileSync(path.join(tmp, 'main.js'), '// feature\n');
+    fs.writeFileSync(path.join(tmp, 'package.json'), '{"version":"1.8.0"}\n');
+    g('add', '-A'); g('commit', '-qm', 'feature');
+    const firstHead = g('rev-parse', 'HEAD');
+    ok('prepare', '--by', 'author', '--base', base);
+    const pointer = path.join(tmp, '.tmp/review/current.txt');
+    const id = fs.readFileSync(pointer, 'utf8').trim();
+    const root = path.join(tmp, '.tmp/review', id);
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'run.json'), 'utf8'));
+    const putReport = (stage, label) => {
+      const report = 'results/' + stage + '-' + label + '.md';
+      fs.writeFileSync(path.join(root, report), 'Inspected ' + label); return report;
+    };
+    const submit = (stage, verdict, head, label) => ok('submit', stage, '--verdict', verdict,
+      '--by', 'reviewer', '--head', head, '--report', putReport(stage, label));
+    for (const stage of manifest.stages) submit(stage.id, stage.id === '02-diff' ? 'fail' : 'pass', firstHead, 'first');
+    assert.strictEqual(cli('next').status, 2, 'unchanged FAIL must remain final, not reassign itself');
+    const old02 = fs.readFileSync(path.join(root, 'results/02-diff-first.md'), 'utf8');
+    // F2: BLOCKED is pending even at the very same revision.
+    submit('05-release', 'blocked', firstHead, 'blocked-same-head');
+    assert.ok(ok('next').includes('  05-release —'), 'same-SHA BLOCKED was not assigned');
+    submit('05-release', 'pass', firstHead, 'blocked-recovered');
+    // F2: explicit reopen must retain the previous result and report.
+    const releaseRecord = JSON.parse(fs.readFileSync(path.join(root, 'results/05-release.json')));
+    const historyDir = path.join(root, 'history/05-release');
+    const historyBefore = fs.readdirSync(historyDir).length;
+    ok('reopen', '05-release', '--why', 'exercise archive retention');
+    const historyAfter = fs.readdirSync(historyDir);
+    assert.strictEqual(historyAfter.length, historyBefore + 1, 'reopen lost the previous verdict');
+    assert.ok(historyAfter.some((name) => JSON.parse(fs.readFileSync(path.join(historyDir, name))).report
+      === releaseRecord.report));
+    assert.ok(fs.existsSync(path.join(root, releaseRecord.report)));
+    submit('05-release', 'pass', firstHead, 'manual-recheck');
+    // F2: a previously used report cannot be reused, even if it still exists.
+    const usedReport = 'results/05-release-manual-recheck.md';
+    const overwrite = cli('submit', '05-release', '--head', firstHead, '--report', usedReport,
+      '--verdict', 'pass', '--by', 'reviewer');
+    assert.strictEqual(overwrite.status, 1, 'submit allowed overwriting the previous report');
+    const historical = cli('submit', '05-release', '--head', firstHead,
+      '--report', 'results/05-release-first.md', '--verdict', 'pass', '--by', 'reviewer');
+    assert.strictEqual(historical.status, 1, 'submit allowed reuse of an older archived report');
+    const missingSha = cli('submit', '05-release', '--head', 'f'.repeat(40),
+      '--report', 'results/05-release-unknown.md', '--verdict', 'pass', '--by', 'reviewer');
+    assert.strictEqual(missingSha.status, 1);
+    assert.ok(missingSha.stderr.includes('проверенный SHA не найден') && !missingSha.stderr.includes('at checkExecSyncError'));
+    const otherStage = cli('submit', '05-release', '--head', firstHead,
+      '--report', 'results/02-diff-first.md', '--verdict', 'pass', '--by', 'reviewer');
+    assert.strictEqual(otherStage.status, 1, 'submit allowed the report of another stage');
+
+    assert.strictEqual(cli('prepare', '--new', '--afterRelease', '--by', 'author', '--base', base).status, 1,
+      'public --afterRelease bypassed the restart guard');
+    assert.strictEqual(cli('prepare', '--new', '--by', 'author', '--base', base).status, 1,
+      'a full restart of the failed packet was allowed without a reason');
+    assert.strictEqual(cli('prepare', '--by', 'author', '--base', base).status, 1,
+      'plain prepare restarted a fully submitted FAIL packet');
+    assert.strictEqual(fs.readFileSync(pointer, 'utf8').trim(), id);
+    // F1: a known data failure may be fixed outside the stage's static path list.
+    submit('03-data', 'fail', firstHead, 'outside-path-failure');
+    fs.mkdirSync(path.join(tmp, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'src/bookmark-store.js'), '// fix outside DATA_PATHS\n');
+    g('add', '-A'); g('commit', '-qm', 'fix outside data path classifier');
+    const outsideHead = g('rev-parse', 'HEAD');
+    submit('01-automated', 'pass', outsideHead, 'outside-rechecked');
+    submit('02-diff', 'pass', outsideHead, 'outside-rechecked');
+    const outside = ok('next');
+    assert.ok(outside.includes('  03-data —') && outside.includes('Предыдущий отчёт:'),
+      'FAIL outside DATA_PATHS was stuck or lost its previous report');
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(root, 'results/03-data.json'))).verdict, 'fail');
+    submit('03-data', 'fail', outsideHead, 'outside-repeat-fail');
+    assert.strictEqual(cli('next').status, 2, 'repeat FAIL without new changes was assigned again');
+    // Leave the original diff finding open for the rest of this scenario.
+    submit('02-diff', 'fail', outsideHead, 'original-diff-still-open');
+    // A source fix affects 01/02/03/04; release verification remains credited.
+    fs.appendFileSync(path.join(tmp, 'main.js'), '// fix\n');
+    g('add', '-A'); g('commit', '-qm', 'fix');
+    const fixedHead = g('rev-parse', 'HEAD');
+    const text = ok('next');
+    assert.ok(text.includes('01-automated') && text.includes('непроверенная дельта'), text);
+    assert.strictEqual(fs.readFileSync(pointer, 'utf8').trim(), id, 'fix created another packet');
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(root, 'results/02-diff.json'))).verdict, 'fail',
+      'assignment erased the defect');
+    assert.strictEqual(cli('verdict').status, 2, 'unfixed FAIL must still block release');
+    // A stale handoff cannot silently credit the newer HEAD.
+    let r = cli('submit', '02-diff', '--verdict', 'pass', '--by', 'reviewer', '--head', firstHead,
+      '--report', putReport('02-diff', 'drift'));
+    assert.strictEqual(r.status, 1); assert.ok(r.stderr.includes('HEAD изменился'), r.stderr);
+    r = cli('submit', '02-diff', '--verdict', 'pass', '--by', 'reviewer');
+    assert.strictEqual(r.status, 1); assert.ok(r.stderr.includes('--head'), r.stderr);
+    fs.appendFileSync(path.join(tmp, 'main.js'), '// uncommitted\n');
+    r = cli('submit', '02-diff', '--verdict', 'pass', '--by', 'reviewer', '--head', fixedHead,
+      '--report', putReport('02-diff', 'dirty'));
+    assert.strictEqual(r.status, 1); assert.ok(r.stderr.includes('незакоммиченные'), r.stderr);
+    g('checkout', '--', 'main.js');
+    // Repeat FAIL at fixedHead: keep that result and move to other pending work.
+    submit('02-diff', 'fail', fixedHead, 'repeat-fail');
+    assert.ok(!ok('next').includes('дефект, скорее всего, починен'));
+    const repeat = JSON.parse(fs.readFileSync(path.join(root, 'results/02-diff.json')));
+    assert.strictEqual(repeat.checkedHead, fixedHead);
+    assert.strictEqual(repeat.verdict, 'fail');
+    const assignment = ok('handoff', '02-diff', '--raw');
+    assert.ok(assignment.includes('git diff ' + fixedHead + '..' + fixedHead));
+    assert.ok(assignment.includes('если прежний отчёт оставил часть этапа'));
+    // Final fix: complete each affected stage once at the actual fixed revision.
+    fs.appendFileSync(path.join(tmp, 'main.js'), '// final fix\n');
+    g('add', '-A'); g('commit', '-qm', 'final fix');
+    const finalHead = g('rev-parse', 'HEAD');
+    for (const stage of ['01-automated', '02-diff', '03-data', '04-runtime']) submit(stage, 'pass', finalHead, 'final');
+    assert.ok(ok('next').includes('ИТОГ: PASS'), 'completed audit did not finish');
+    fs.appendFileSync(path.join(tmp, 'main.js'), '// dirty after all PASS\n');
+    const dirtyVerdict = cli('verdict');
+    assert.strictEqual(dirtyVerdict.status, 3, 'verdict accepted dirty code after all PASS');
+    assert.ok(dirtyVerdict.stdout.includes('незакоммиченные изменения'));
+    g('checkout', '--', 'main.js');
+    assert.strictEqual(cli('prepare', '--by', 'author', '--base', base).status, 1,
+      'plain prepare restarted the completed audit before its release');
+    assert.strictEqual(fs.readFileSync(pointer, 'utf8').trim(), id, 'completed recheck created a follow-up packet');
+    assert.strictEqual(fs.readFileSync(path.join(root, 'results/02-diff-first.md'), 'utf8'), old02);
+    assert.ok(fs.readdirSync(path.join(root, 'history/02-diff')).length >= 2, 'previous FAIL records were lost');
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(root, 'results/05-release.json'))).checkedHead, firstHead,
+      'unaffected release stage should retain its own checked revision');
+    const dataResultPath = path.join(root, 'results/03-data.json');
+    const dataResultBytes = fs.readFileSync(dataResultPath);
+    const unrelated = g('commit-tree', base + '^{tree}', '-m', 'unrelated reviewed history');
+    const foreignResult = JSON.parse(dataResultBytes); foreignResult.checkedHead = unrelated;
+    fs.writeFileSync(dataResultPath, JSON.stringify(foreignResult));
+    const rewritten = cli('status');
+    assert.strictEqual(rewritten.status, 1);
+    assert.ok(rewritten.stderr.includes('отсутствует в истории текущей ревизии')
+      && !rewritten.stderr.includes('at checkExecSyncError'));
+    fs.writeFileSync(dataResultPath, dataResultBytes);
+    // Legacy records are credited only to creation HEAD, never to the current checkout.
+    const legacyPath = path.join(root, 'results/01-automated.json');
+    const legacy = JSON.parse(fs.readFileSync(legacyPath)); delete legacy.checkedHead;
+    fs.writeFileSync(legacyPath, JSON.stringify(legacy));
+    assert.strictEqual(cli('verdict').status, 3, 'legacy PASS was incorrectly promoted to a newer revision');
+    assert.ok(ok('next').includes('01-automated'));
+    submit('01-automated', 'pass', finalHead, 'legacy-rechecked');
+    assert.ok(ok('next').includes('ИТОГ: PASS'));
+    // F2: publishing a tag on an uncovered commit cannot discard the active audit.
+    fs.appendFileSync(path.join(tmp, 'main.js'), '// uncovered tagged code\n');
+    g('add', '-A'); g('commit', '-qm', 'uncovered release commit');
+    const tagHead = g('rev-parse', 'HEAD');
+    g('-c', 'tag.gpgSign=false', 'tag', 'v1.8.0');
+    fs.appendFileSync(path.join(tmp, 'main.js'), '// work after uncovered tag\n');
+    g('add', '-A'); g('commit', '-qm', 'post-tag work before review');
+    ok('next');
+    assert.strictEqual(fs.readFileSync(pointer, 'utf8').trim(), id, 'uncovered tag reset the audit');
+    g('checkout', '--detach', tagHead);
+    for (const stage of ['01-automated', '02-diff', '03-data', '04-runtime']) submit(stage, 'pass', tagHead, 'tag-covered');
+    // No changes after an already checked release tag: show the finished audit.
+    assert.ok(ok('next').includes('ИТОГ: PASS'), 'tagging a covered HEAD tried to prepare another release');
+    // A real subsequent release uses a new package only AFTER the covered release is tagged.
+    g('checkout', '-');
+    fs.appendFileSync(path.join(tmp, 'main.js'), '// next release work\n');
+    fs.writeFileSync(path.join(tmp, 'package.json'), '{"version":"1.8.1"}\n');
+    const note = [{ title: 't', text: 'x' }];
+    fs.writeFileSync(path.join(tmp, 'src/whats-new.json'), JSON.stringify({ '1.8.1': { en: note, ru: note } }));
+    fs.mkdirSync(path.join(tmp, 'plans', 'features'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'plans', 'features', gate.releaseTextName('1.8.1')), '# 1.8.1\n');
+    g('add', '-A'); g('commit', '-qm', 'next release');
+    ok('next');
+    const nextId = fs.readFileSync(pointer, 'utf8').trim();
+    assert.notStrictEqual(nextId, id, 'a published release did not start a new release package');
+    const nextRun = JSON.parse(fs.readFileSync(path.join(tmp, '.tmp/review', nextId, 'run.json')));
+    assert.strictEqual(nextRun.base, 'v1.8.0', 'normal .bat path did not use the last published tag');
+    // New risks add stages in-place, even when the original package lacked them.
+    const minimal = { ...nextRun, stages: nextRun.stages.filter((stage) => ['01-automated', '02-diff'].includes(stage.id)) };
+    fs.writeFileSync(path.join(tmp, '.tmp/review', nextId, 'run.json'), JSON.stringify(minimal));
+    ok('next');
+    const expanded = JSON.parse(fs.readFileSync(path.join(tmp, '.tmp/review', nextId, 'run.json')));
+    assert.ok(expanded.stages.some((stage) => stage.id === '03-data'));
+    assert.ok(expanded.stages.some((stage) => stage.id === '04-runtime'));
+    assert.strictEqual(fs.readFileSync(pointer, 'utf8').trim(), nextId);
+    const nextRoot = path.join(tmp, '.tmp/review', nextId);
+    const currentHead = g('rev-parse', 'HEAD');
+    const initialHandoff = ok('handoff', '01-automated', '--raw');
+    const blockedReport = /--report "([^"]+)"/.exec(initialHandoff)[1];
+    fs.writeFileSync(path.join(nextRoot, blockedReport), 'GUI unavailable');
+    ok('submit', '01-automated', '--head', currentHead, '--report', blockedReport,
+      '--verdict', 'blocked', '--by', 'reviewer');
+    const retryText = ok('handoff', '01-automated', '--raw');
+    const retryReport = /--report "([^"]+)"/.exec(retryText)[1];
+    assert.notStrictEqual(retryReport, blockedReport, 'same-SHA BLOCKED retry reused its generated report name');
+    fs.writeFileSync(path.join(nextRoot, retryReport), 'GUI access recovered, same code');
+    ok('submit', '01-automated', '--head', currentHead, '--report', retryReport,
+      '--verdict', 'pass', '--by', 'reviewer');
+    assert.ok(fs.existsSync(path.join(nextRoot, blockedReport)));
+    assert.strictEqual(fs.readFileSync(path.join(nextRoot, blockedReport), 'utf8'), 'GUI unavailable');
+
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
 
 console.log('review-gate: ok');

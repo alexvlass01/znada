@@ -4,9 +4,9 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const motion = require('../src/image-motion');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let checks = 0;
 const pending = [];
@@ -92,7 +92,7 @@ function webp({ extended = false, flags = 0, frames = 0, oddPayload = false, wid
   return Buffer.concat([head, body]);
 }
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-motion-'));
+const dir = makeTempDir('znada-motion-');
 let fileNo = 0;
 function file(name, content) {
   const p = path.join(dir, `${fileNo++}-${name}`);

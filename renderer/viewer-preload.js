@@ -1,19 +1,15 @@
 'use strict';
 
 const { contextBridge, ipcRenderer } = require('electron');
+const invokeMetadataLookup = (id, options) => ipcRenderer.invoke('item-lookup-metadata', id, options);
 
-// Dev-only diagnostics probe for the viewer window (see preload.js for the rationale).
-// The viewer has no library cards, so no card selector is passed.
-try {
-  const hasDiag = process.argv.some((a) => typeof a === 'string' && a.indexOf('--znada-diagnostics-renderer') === 0);
-  if (hasDiag) {
-    const diag = require('../diagnostics/renderer/preload-attach');
-    diag.attachRendererProbe({ ipcRenderer, contextBridge, role: diag.parseRole(process.argv) });
-  }
-} catch { /* diagnostics is optional */ }
+// QA-009. The diagnostics probe is not loaded from this file. The viewer has no library
+// cards. The probe is a separate script, registered only for a diagnostics run.
 
 contextBridge.exposeInMainWorld('viewerApi', {
   getI18n: () => ipcRenderer.invoke('get-i18n'),
+  favoriteState: (card) => ipcRenderer.invoke('favorite-state', card),
+  favoriteSet: (card, on) => ipcRenderer.invoke('favorite-set', card, on),
   getPayload: () => ipcRenderer.invoke('gallery-payload'),
   close: () => ipcRenderer.invoke('gallery-close'),
   toggleFullscreen: () => ipcRenderer.invoke('gallery-toggle-fullscreen'),
@@ -33,7 +29,9 @@ contextBridge.exposeInMainWorld('viewerApi', {
   cardSaveAs: (card) => ipcRenderer.invoke('card-save-as', card),
   cardAssignTargets: () => ipcRenderer.invoke('card-assign-targets'),
   cardEnsureRecord: (p, type) => ipcRenderer.invoke('card-ensure-record', p, type),
-  itemLookupMetadata: (id) => ipcRenderer.invoke('item-lookup-metadata', id),
+  itemLookupMetadata: (id) => invokeMetadataLookup(id),
+  itemLookupVisualMetadata: (id) => invokeMetadataLookup(id, { action: 'visual' }),
+  itemConfirmVisualMetadata: (id, token, accept) => invokeMetadataLookup(id, { action: 'confirm', token, accept }),
   libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
   // BUG-035: whether a file on the disk moves, for the assign window's first-frame line.
   mediaMotion: (p) => ipcRenderer.invoke('media-motion', p),

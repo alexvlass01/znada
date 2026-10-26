@@ -25,11 +25,27 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/index.ts
 var index_exports = {};
 __export(index_exports, {
+  ADULT_CONFIRMED_HEADER: () => ADULT_CONFIRMED_HEADER,
   API_PATHS: () => API_PATHS,
   API_VERSION: () => API_VERSION,
   ApiError: () => ApiError,
   AuthExchangeRequest: () => AuthExchangeRequest,
   AuthExchangeResponse: () => AuthExchangeResponse,
+  BOOKMARK_LIMITS: () => BOOKMARK_LIMITS,
+  BOOKMARK_SOURCE_IDS: () => BOOKMARK_SOURCE_IDS,
+  BookmarkChangesResponse: () => BookmarkChangesResponse,
+  BookmarkConflictResponse: () => BookmarkConflictResponse,
+  BookmarkImportRequest: () => BookmarkImportRequest,
+  BookmarkImportResponse: () => BookmarkImportResponse,
+  BookmarkKey: () => BookmarkKey,
+  BookmarkMetadata: () => BookmarkMetadata,
+  BookmarkOperation: () => BookmarkOperation,
+  BookmarkOperationResponse: () => BookmarkOperationResponse,
+  BookmarkSnapshotRequestId: () => BookmarkSnapshotRequestId,
+  BookmarkSnapshotResponse: () => BookmarkSnapshotResponse,
+  BookmarkSource: () => BookmarkSource,
+  BookmarkState: () => BookmarkState,
+  CATALOG_BOOKMARK_SOURCE: () => CATALOG_BOOKMARK_SOURCE,
   CatalogItem: () => CatalogItem,
   CatalogPage: () => CatalogPage,
   ContentCard: () => ContentCard,
@@ -39,18 +55,27 @@ __export(index_exports, {
   ContentWarning: () => ContentWarning,
   DownloadResponse: () => DownloadResponse,
   EntitlementKey: () => EntitlementKey,
+  ExplicitSettingRequest: () => ExplicitSettingRequest,
   FavoritesResponse: () => FavoritesResponse,
   HealthResponse: () => HealthResponse,
   LogoutResponse: () => LogoutResponse,
   MeResponse: () => MeResponse,
   PublicUser: () => PublicUser,
   UPLOAD_LIMITS: () => UPLOAD_LIMITS,
+  USAGE_PING: () => USAGE_PING,
   UploadCreateRequest: () => UploadCreateRequest,
   UploadCreateResponse: () => UploadCreateResponse,
   UploadImageMime: () => UploadImageMime,
   UploadStatus: () => UploadStatus,
   UploadStatusResponse: () => UploadStatusResponse,
-  UserRole: () => UserRole
+  UsagePingRequest: () => UsagePingRequest,
+  UserRole: () => UserRole,
+  VideoTestCreateRequest: () => VideoTestCreateRequest,
+  VideoTestCreateResponse: () => VideoTestCreateResponse,
+  VideoTestListResponse: () => VideoTestListResponse,
+  VideoTestPlaybackResponse: () => VideoTestPlaybackResponse,
+  VideoTestResponse: () => VideoTestResponse,
+  VideoTestStatus: () => VideoTestStatus
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -14568,6 +14593,150 @@ function date4(params) {
 // ../../node_modules/zod/v4/classic/external.js
 config(en_default());
 
+// src/bookmarks.ts
+var BOOKMARK_LIMITS = {
+  /** Every key the account ever had, removed ones included (storage ceiling). */
+  known_keys: 1e4,
+  /** Active bookmarks per account; a removal frees a place at once. */
+  active_keys: 2e3,
+  daily_events: 1e4,
+  request_bytes: 16 * 1024,
+  default_page: 100,
+  max_page: 200,
+  history_ms: 30 * 24 * 60 * 60 * 1e3,
+  /** Lifetime of a snapshot cursor, counted from its first page. */
+  snapshot_ms: 15 * 60 * 1e3,
+  /** No longer enforced: snapshots page live rows and store nothing. Kept so
+   * existing client bundles keep compiling. */
+  active_snapshots: 2,
+  /** POST /v1/bookmarks/import: keys per request and the whole UTF-8 body. */
+  import_items: 100,
+  import_request_bytes: 256 * 1024,
+  /** An unfinished import moves the history floor after this much idle time. */
+  import_idle_ms: 15 * 60 * 1e3
+};
+var BOOKMARK_SOURCE_IDS = {
+  gelbooru: /^[1-9][0-9]{0,19}$/,
+  danbooru: /^[1-9][0-9]{0,19}$/,
+  /** A published wallpaper of the Znada catalog, by its ULID. The server reads
+   * its title, tags, size, rating and date from the catalog; a client sends
+   * only its own `user_tags`. Added one by one, not through import. */
+  znada: /^[0-9A-HJKMNP-TV-Z]{26}$/,
+  /** A Wallhaven wallpaper id, as in wallhaven.cc/w/<id>. The API documents no
+   * formal rule; its ids are lowercase letters and digits, 6 today (`94x38z`),
+   * so up to 16 leaves room without accepting arbitrary text. */
+  wallhaven: /^[0-9a-z]{1,16}$/
+};
+var BookmarkSource = external_exports.enum(["gelbooru", "danbooru", "znada", "wallhaven"]);
+var CATALOG_BOOKMARK_SOURCE = "znada";
+function checkKey(key, ctx) {
+  if (!BOOKMARK_SOURCE_IDS[key.source].test(key.post_id))
+    ctx.addIssue({ code: "custom", path: ["post_id"], message: "invalid id for this source" });
+  if (key.source === CATALOG_BOOKMARK_SOURCE && key.metadata && Object.keys(key.metadata).some((field) => field !== "user_tags"))
+    ctx.addIssue({
+      code: "custom",
+      path: ["metadata"],
+      message: "the catalog provides these fields; send only user_tags"
+    });
+}
+var keyShape = { source: BookmarkSource, post_id: external_exports.string().max(64) };
+var BookmarkKey = external_exports.object(keyShape).strict().superRefine(checkKey);
+var epochMs = external_exports.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+var tags = external_exports.array(external_exports.string().min(1).max(128)).max(100).refine((values) => new Set(values).size === values.length, "tags must be unique");
+var BookmarkMetadata = external_exports.object({
+  title: external_exports.string().max(300).optional(),
+  author: external_exports.string().max(200).optional(),
+  source_tags: tags.optional(),
+  user_tags: tags.optional(),
+  width: external_exports.number().int().min(1).max(1e5).optional(),
+  height: external_exports.number().int().min(1).max(1e5).optional(),
+  source_rating: external_exports.enum(["general", "suggestive", "explicit"]).optional(),
+  /** When the post was published on its source. */
+  posted_at: epochMs.optional()
+}).strict().refine((m) => m.width === void 0 === (m.height === void 0), "dimensions must be paired");
+var operation = {
+  operation_id: external_exports.uuid(),
+  ...keyShape,
+  expected_revision: external_exports.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1)
+};
+var BookmarkOperation = external_exports.discriminatedUnion("type", [
+  external_exports.object({ ...operation, type: external_exports.literal("add"), metadata: BookmarkMetadata }).strict().superRefine(checkKey),
+  external_exports.object({ ...operation, type: external_exports.literal("update"), metadata: BookmarkMetadata }).strict().superRefine(checkKey),
+  external_exports.object({ ...operation, type: external_exports.literal("remove") }).strict().superRefine(checkKey)
+]);
+var BookmarkImportRequest = external_exports.object({
+  items: external_exports.array(
+    external_exports.object({
+      ...keyShape,
+      metadata: BookmarkMetadata,
+      favorited_at: epochMs.optional()
+    }).strict().superRefine((item, ctx) => {
+      checkKey(item, ctx);
+      if (item.source === CATALOG_BOOKMARK_SOURCE)
+        ctx.addIssue({
+          code: "custom",
+          path: ["source"],
+          message: "catalog bookmarks are added one by one, not imported"
+        });
+    })
+  ).max(100).refine(
+    (items) => new Set(items.map((i) => `${i.source}:${i.post_id}`)).size === items.length,
+    "keys must be unique in one request"
+  ),
+  final: external_exports.boolean()
+}).strict();
+var BookmarkImportResponse = external_exports.object({
+  imported: external_exports.number().int().min(0),
+  skipped: external_exports.number().int().min(0)
+});
+var BookmarkState = external_exports.object({
+  source: external_exports.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
+  post_id: external_exports.string().min(1).max(64),
+  revision: external_exports.number().int().positive(),
+  state: external_exports.enum(["active", "removed"]),
+  favorited_at: external_exports.number().int().nullable(),
+  /** Kept for old client builds; always false: own bookmarks are returned in full. */
+  restricted: external_exports.boolean(),
+  metadata: BookmarkMetadata.optional()
+}).strict();
+var BookmarkOperationResponse = external_exports.object({ item: BookmarkState });
+var BookmarkSnapshotRequestId = external_exports.uuid();
+var BookmarkConflictResponse = external_exports.object({
+  error: external_exports.object({ code: external_exports.literal("revision_conflict"), message: external_exports.string() }),
+  current: BookmarkState.nullable()
+});
+var BookmarkChangesResponse = external_exports.object({
+  items: external_exports.array(
+    external_exports.object({
+      sequence: external_exports.number().int().positive(),
+      type: external_exports.enum(["add", "update", "remove"]),
+      item: BookmarkState
+    })
+  ),
+  next_cursor: external_exports.string(),
+  done: external_exports.boolean()
+});
+var BookmarkSnapshotResponse = external_exports.object({
+  items: external_exports.array(BookmarkState),
+  next_cursor: external_exports.string().nullable(),
+  changes_cursor: external_exports.string().nullable(),
+  done: external_exports.boolean(),
+  expires_at: external_exports.number().int()
+});
+
+// src/usage.ts
+var UsagePingRequest = external_exports.object({
+  app_version: external_exports.string().max(32).regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9._-]+)?$/)
+}).strict();
+var USAGE_PING = {
+  path: "/v1/usage/ping",
+  maxBodyBytes: 256,
+  anonIdPattern: "^[A-Za-z0-9_-]{8,128}$",
+  windowHours: 6,
+  maxRetriesPerWindow: 1,
+  clientTimeoutMs: 5e3
+};
+
 // src/index.ts
 var API_VERSION = "v1";
 var ContentType = external_exports.enum(["image"]);
@@ -14629,8 +14798,13 @@ var MeResponse = external_exports.object({
   // choke on a key it does not know yet (§9.1 additive-only rule).
   entitlements: external_exports.array(external_exports.string())
 });
+var ExplicitSettingRequest = external_exports.discriminatedUnion("explicit_opt_in", [
+  external_exports.object({ explicit_opt_in: external_exports.literal(true), age_confirmed: external_exports.literal(true) }).strict(),
+  external_exports.object({ explicit_opt_in: external_exports.literal(false) }).strict()
+]);
+var ADULT_CONFIRMED_HEADER = "X-Znada-Adult-Confirmed";
 var LogoutResponse = external_exports.object({ ok: external_exports.literal(true) });
-var UploadImageMime = external_exports.enum(["image/jpeg", "image/png", "image/webp"]);
+var UploadImageMime = external_exports.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 var UPLOAD_LIMITS = {
   maxBytes: 20 * 1024 * 1024,
   // 20 MB per file
@@ -14671,6 +14845,11 @@ var CatalogItem = external_exports.object({
   published_at: external_exports.number().int(),
   width: external_exports.number().int(),
   height: external_exports.number().int(),
+  // Known server-side from the original asset, so the browse card can show it
+  // without a second request. Added 2026-08-28; older vendored bundles simply
+  // drop the extra keys (zod strips unknowns), so this stays backward safe.
+  bytes: external_exports.number().int(),
+  format: external_exports.string(),
   thumb_url: external_exports.string()
 });
 var CatalogPage = external_exports.object({
@@ -14701,23 +14880,81 @@ var FavoritesResponse = external_exports.object({
   items: external_exports.array(CatalogItem)
 });
 var API_PATHS = {
+  usagePing: "/v1/usage/ping",
+  bookmarkOperations: "/v1/bookmarks/operations",
+  bookmarkChanges: "/v1/bookmarks/changes",
+  bookmarkSnapshot: "/v1/bookmarks/snapshot",
+  bookmarkImport: "/v1/bookmarks/import",
   health: "/v1/health",
   authGoogleStart: "/v1/auth/google/start",
   authExchange: "/v1/auth/exchange",
   logout: "/v1/auth/logout",
   me: "/v1/me",
+  meExplicit: "/v1/me/explicit",
   uploads: "/v1/uploads",
   catalog: "/v1/catalog",
   content: "/v1/content",
-  favorites: "/v1/favorites"
+  favorites: "/v1/favorites",
+  /** Permanent, shareable HTML page for one published item: `/c/<id>`. */
+  contentPage: "/c"
 };
+var VideoTestCreateRequest = external_exports.object({
+  name: external_exports.string().trim().min(1).max(200),
+  mime: external_exports.literal("video/mp4"),
+  bytes: external_exports.number().int().min(8).max(20 * 1024 * 1024)
+});
+var VideoTestStatus = external_exports.enum([
+  "pending",
+  "uploaded",
+  "processing",
+  "ready",
+  "failed",
+  "expired"
+]);
+var VideoTestCreateResponse = external_exports.object({
+  id: external_exports.string(),
+  put_url: external_exports.string().url(),
+  expires_at: external_exports.number()
+});
+var VideoTestResponse = external_exports.object({
+  id: external_exports.string(),
+  name: external_exports.string(),
+  status: VideoTestStatus,
+  bytes: external_exports.number().nullable(),
+  width: external_exports.number().nullable(),
+  height: external_exports.number().nullable(),
+  duration_seconds: external_exports.number().nullable(),
+  last_error: external_exports.string().nullable(),
+  created_at: external_exports.number(),
+  expires_at: external_exports.number()
+});
+var VideoTestListResponse = external_exports.object({ items: external_exports.array(VideoTestResponse) });
+var VideoTestPlaybackResponse = external_exports.object({
+  media_url: external_exports.string().startsWith("/admin/video-tests/")
+});
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  ADULT_CONFIRMED_HEADER,
   API_PATHS,
   API_VERSION,
   ApiError,
   AuthExchangeRequest,
   AuthExchangeResponse,
+  BOOKMARK_LIMITS,
+  BOOKMARK_SOURCE_IDS,
+  BookmarkChangesResponse,
+  BookmarkConflictResponse,
+  BookmarkImportRequest,
+  BookmarkImportResponse,
+  BookmarkKey,
+  BookmarkMetadata,
+  BookmarkOperation,
+  BookmarkOperationResponse,
+  BookmarkSnapshotRequestId,
+  BookmarkSnapshotResponse,
+  BookmarkSource,
+  BookmarkState,
+  CATALOG_BOOKMARK_SOURCE,
   CatalogItem,
   CatalogPage,
   ContentCard,
@@ -14727,16 +14964,25 @@ var API_PATHS = {
   ContentWarning,
   DownloadResponse,
   EntitlementKey,
+  ExplicitSettingRequest,
   FavoritesResponse,
   HealthResponse,
   LogoutResponse,
   MeResponse,
   PublicUser,
   UPLOAD_LIMITS,
+  USAGE_PING,
   UploadCreateRequest,
   UploadCreateResponse,
   UploadImageMime,
   UploadStatus,
   UploadStatusResponse,
-  UserRole
+  UsagePingRequest,
+  UserRole,
+  VideoTestCreateRequest,
+  VideoTestCreateResponse,
+  VideoTestListResponse,
+  VideoTestPlaybackResponse,
+  VideoTestResponse,
+  VideoTestStatus
 });

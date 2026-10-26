@@ -30,6 +30,9 @@ const DEFAULT_SOURCE_FILES = [
   // ONL-016 moved the same way: which rows the details sheet contains, and therefore
   // which labels it names, is decided here rather than in renderer.js.
   'renderer/card-details.js',
+  // The move-folder dialog names its own strings, including the counted bodies.
+  // Without this file those forms reach a translator with no screen (I18N-003).
+  'renderer/media-folder.js',
 ];
 
 // Dynamic templates cannot reveal their finite members by syntax alone. Keep the
@@ -41,6 +44,10 @@ const DYNAMIC_KEY_FAMILIES = {
     'online.ratingExplicit',
   ],
 };
+
+// I18N-003. t() picks these at runtime (`key + '_' + category`). The call site
+// names only the base key, so a form would otherwise reach a translator with no screen.
+const PLURAL_FORM_SUFFIXES = ['_one', '_few', '_many', '_other'];
 
 const I18N_ATTRS = {
   'data-i18n': 'data-i18n',
@@ -908,6 +915,23 @@ function buildContextCatalog({ reference, sources } = {}) {
     for (const ref of result.definiteReferences) definiteReferences.add(ref);
     for (const occurrence of result.contexts) {
       if (byKey.has(occurrence.key)) byKey.get(occurrence.key).push(occurrence.context);
+    }
+  }
+
+  // A plural form is shown in place of its base key. Copy that place onto each
+  // sibling the catalogue actually has. A form is not itself a base: photosCount_one
+  // must not grow a further photosCount_one_few.
+  for (const key of referenceKeys) {
+    if (PLURAL_FORM_SUFFIXES.some((suffix) => key.endsWith(suffix))) continue;
+    const contexts = byKey.get(key);
+    if (!contexts || contexts.length === 0) continue;
+    for (const suffix of PLURAL_FORM_SUFFIXES) {
+      const form = `${key}${suffix}`;
+      const forms = byKey.get(form);
+      if (!forms) continue;
+      for (const context of contexts) {
+        forms.push({ ...context, via: 'plural-form', pattern: `${key}_{one|few|many|other}` });
+      }
     }
   }
 

@@ -2,7 +2,7 @@
   "version": 2,
   "lang": "en",
   "verification": "reference",
-  "verifiedAt": "2026-08-03T12:52:04.010Z",
+  "verifiedAt": "2026-10-15T19:39:30.425Z",
   "keys": {
     "nav.home": "80de4a754def:3b13e25257b1",
     "nav.library": "c1d3d27ce171:3b72dc853d23",
@@ -352,6 +352,11 @@
     "viewerBg.charcoal": "4c00310b9fb2:1c6516e58a25",
     "viewerBg.aurora": "cf0ddeb579f1:4f47a2565cf5",
     "viewerBg.color": "7dbe09f11e46:cbc41e512eb7",
-    "viewerBg.soon": "3810c667e50f:789e0daecbd6"
+    "viewerBg.soon": "3810c667e50f:789e0daecbd6",
+    "contentBlur.title": "30ea5dc92ed5:e1e14288184a",
+    "contentBlur.nsfw": "810fcfb6501b:f51100f0f03f",
+    "contentBlur.sketchy": "70270171f6b5:bcd87f9ec726",
+    "contentBlur.nsfwSub": "9b23b5a6e2bf:01362a03d832",
+    "contentBlur.sketchySub": "3d2316bef347:c042a55ae09b"
   }
 }

@@ -421,7 +421,17 @@ async function suggestTags(params, ctx) {
   return { items: parseTagSuggestions(res.json) };
 }
 
+async function lookup(id, ctx) {
+  if (!/^[1-9][0-9]{0,19}$/.test(id)) return { error: 'badItem' };
+  const res = await ctx.fetchJson(`${API_BASE}?tags=id%3A${id}&limit=1`);
+  if (res.error) return { error: res.error };
+  const post = Array.isArray(res.json) && res.json.find((entry) => String(entry.id) === id);
+  const item = mapItem(post);
+  return item ? { item } : { error: '404' };
+}
+
 module.exports = {
+  lookup,
   PROVIDER,
   search,
   findByFingerprint,

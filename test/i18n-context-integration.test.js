@@ -67,7 +67,7 @@ ok('indirect, conditional, helper and dynamic references stay lint-visible', (()
     'details.copyFailed',
     'design.monitorNoteSingle',
     'viewer.fullscreen',
-    'online.favAdd',
+    'library.favoriteAdd', // ONL-002 replaced the catalogue-only heart with the shared star.
     'online.ratingGeneral',
     'journal.thumbs',
     'journal.themeSchedule',

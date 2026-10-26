@@ -23,11 +23,11 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const H = require('./helpers/main-harness');
 const library = require('../src/library');
 const grantsMod = require('../src/path-grants');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const failures = [];
@@ -97,7 +97,7 @@ function seedProfile(dir) {
 
 // Deliberately outside the profile: a real file the user never gave Znada.
 function outsideFile(name = 'private.png') {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-elsewhere-'));
+  const dir = makeTempDir('znada-elsewhere-');
   return { dir, file: writeImage(path.join(dir, name)) };
 }
 

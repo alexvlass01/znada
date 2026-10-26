@@ -534,9 +534,13 @@ console.log('\nmain.js orchestration\n');
 
     const m = H.loadMain(dir);
     m.__test.loadConfig();
+    // ONL-002 backfills old stars through updateItem before a removal. Assert
+    // that migration separately, then measure the removal's own revision step.
+    const beforeRemoval = m.__test.getConfig().library[id].rev;
+    assert.strictEqual(m.__test.getConfig().library[id].favoritedAt, 1);
     await m.invoke('library-remove-many', [{ id, path: photo, type: 'image' }]);
     const tombstone = JSON.parse(JSON.stringify(m.__test.getConfig().libraryTrash[0]));
-    assert.strictEqual(tombstone.rev, 6, 'precondition: removal revision was not recorded');
+    assert.strictEqual(tombstone.rev, beforeRemoval + 1, 'precondition: removal revision was not recorded');
 
     await m.invoke('library-undo-remove');
     const restored = m.__test.getConfig().library[id];

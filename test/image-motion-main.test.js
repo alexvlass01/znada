@@ -7,10 +7,10 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const H = require('./helpers/main-harness');
 const library = require('../src/library');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let checks = 0;
 async function check(name, fn) {
@@ -41,7 +41,7 @@ function gif(frames) {
   fs.writeFileSync(moving, gif(3));
   fs.writeFileSync(still, gif(1));
   fs.writeFileSync(photo, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0]));
-  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-motion-out-'));
+  const elsewhere = makeTempDir('znada-motion-out-');
   const outside = path.join(elsewhere, 'elsewhere.gif');
   fs.writeFileSync(outside, gif(3));
   // The details sheet reads only what the pool vouches for, so the moving GIF gets a record.

@@ -6,10 +6,10 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const F = require('../src/folder-state');
 const { pathKey } = require('../src/path-key');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (name, condition) => { assert.ok(condition, name); console.log('  ✓ ' + name); passed++; };
@@ -197,7 +197,7 @@ const city = file('city.jpg', 200, 6000.5);
 // --- the scan measures exactly what it has to ------------------------------------
 
 (async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-moved-files-'));
+  const dir = makeTempDir('lumina-moved-files-');
   try {
     fs.writeFileSync(path.join(dir, 'measured.jpg'), Buffer.alloc(300, 1));
     fs.writeFileSync(path.join(dir, 'unmeasured.jpg'), Buffer.alloc(400, 1));

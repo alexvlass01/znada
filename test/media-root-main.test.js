@@ -14,9 +14,9 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const H = require('./helpers/main-harness');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let checks = 0;
 function check(name, fn) {
@@ -26,7 +26,7 @@ function check(name, fn) {
 }
 
 function tempDir(label) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `znada-${label}-`));
+  return makeTempDir(`znada-${label}-`);
 }
 
 function filesIn(dir) {

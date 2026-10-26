@@ -7,7 +7,7 @@
   --accent-hover: #2b75d0;
   --accent-fg: #ffffff;
   --destructive: #e01b24;
-
+  --rail-motion: 200ms cubic-bezier(.2, 0, 0, 1);
   /* Light palette */
   --bg: #fafafa;
   --headerbar: #ffffff;
@@ -244,12 +244,12 @@ body {
   font-weight: 600;
   padding: 5px 16px;
   border-radius: 7px;
-  cursor: pointer;
+  cursor: pointer; position: relative; /* above the pill, which comes first in the switcher */
 }
-.navbtn.active {
-  background: var(--card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
-}
+/* DESIGN-010i: the active tab's highlight is one element that travels between tabs (nav-pill.js). */
+.tb-nav-pill { position: absolute; top: 3px; bottom: 3px; left: 0; width: 0; border-radius: 7px; pointer-events: none;
+  background: var(--card); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+.tb-nav-pill.off { opacity: 0; } @media (prefers-reduced-motion: no-preference) { .tb-nav-pill { transition: opacity var(--rail-motion); } }
 /* When no tab is active (e.g. Settings page is open), dim the switcher */
 .tb-nav:not(:has(.navbtn.active)) {
   opacity: 0.45;
@@ -1475,7 +1475,7 @@ select option {
 }
 
 /* ---------- Library (content pool, GNOME Files-inspired) ---------- */
-#viewLibrary { --rail-width: 174px; --rail-gap: 22px; --rail-motion: 200ms cubic-bezier(.2, 0, 0, 1); }
+#viewLibrary { --rail-width: 174px; --rail-gap: 22px; }
 .lib { display: flex; gap: var(--rail-gap); align-items: flex-start; min-height: 100%; }
 .lib-rail {
   flex: 0 0 var(--rail-width);
@@ -1596,6 +1596,18 @@ html.dark .lib-navigation { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); 
 .lib-account-popover .menu-sep { margin: 4px 6px; }
 .lib-account-popover .lib-cloud-acc-msg { line-height: 1.4; margin: 0; padding: 8px 10px; }
 .lib-account-popover .pill { margin: 4px; white-space: normal; }
+/* ONL-002 stage 4: favorites sync state, as in the mockup the owner accepted.
+   A failure wears the same dot as an expired session; everything else is a quiet row. */
+.lib-account-toggle.sync-error .lib-avatar::after {
+  content: ''; position: absolute; top: -1px; right: -1px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--destructive); box-shadow: 0 0 0 2px var(--bg);
+}
+.lib-sync-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; font-size: 13px; line-height: 1.4; color: var(--text-dim); }
+.lib-sync-row svg { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; }
+.lib-sync-row.ok svg { color: var(--accent); }
+.lib-sync-row.error { color: var(--text); }
+.lib-sync-row.error svg { color: var(--destructive); }
 .lib-favorite-views { display: flex; gap: 4px; margin-bottom: 12px; }
 .lib-favorite-views .pill { background: transparent; }
 .lib-favorite-views .pill.active { background: var(--accent-soft); color: var(--accent); }
@@ -2004,6 +2016,11 @@ html.dark .lib-folder-front { fill: #d99a34; }
   padding: 12px 16px;
   border-top: 1px solid var(--card-border);
 }
+/* DESIGN-012. «Что нового»: короткие пункты, заголовок пункта жирным, текст под ним. */
+.whats-new-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.whats-new-list li { display: flex; flex-direction: column; gap: 3px; }
+.whats-new-list strong { font-size: 13.5px; font-weight: 600; }
+.whats-new-list p { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-dim); }
 .lib-modal-foot .pill:disabled,
 .details-link:disabled { opacity: .55; cursor: wait; }
 
@@ -2567,11 +2584,16 @@ html.dark #libActiveTags .lib-active-tag { color: #99c1f1; }
 /* Hovered-item name: a compact floating pill at the bottom, not a full-width strip.
    It is offset past the rail (rail width + .lib gap) because it describes the hovered
    CARD: sitting at the page's left edge it covered the last rows of the tag list. */
+/* Overlay the status pill without adding a row below the viewport-height rail.
+   A normal-flow pill made even a one-image library scroll and move its account row. */
+/* BUG-058: keep the pill above card controls (7) and their backdrop blur,
+   but below the selection bar (150), menus (200) and dialogs (250). */
+.lib-statusbar-slot { position: sticky; bottom: 10px; height: 0; z-index: 10; }
 .lib-statusbar {
-  position: sticky; bottom: 10px;
+  position: relative; transform: translateY(-100%);
   width: fit-content; margin-left: calc(var(--rail-width) + var(--rail-gap));
   max-width: calc(100% - var(--rail-width) - var(--rail-gap));
-  margin-top: 12px; padding: 5px 12px;
+  padding: 5px 12px;
   font-size: 11.5px; color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   background: var(--card);

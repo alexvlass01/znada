@@ -573,6 +573,7 @@ function withinASecond(promise) {
         items: [{
           id: 'private-to-a', title: 'A favorite', rating: 'general', published_at: 1700000000,
           width: 1920, height: 1080, thumb_url: 'https://example.test/a.jpg',
+          bytes: 12345, format: 'jpg',
         }],
       })); });
     };
@@ -601,6 +602,7 @@ function withinASecond(promise) {
         items: [{
           id: 'catalog-a', title: 'For account A', rating: 'general', published_at: 1700000000,
           width: 1920, height: 1080, thumb_url: 'https://example.test/catalog-a.jpg',
+          bytes: 12345, format: 'jpg',
         }],
         next_cursor: null,
       })); });

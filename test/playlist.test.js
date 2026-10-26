@@ -6,9 +6,9 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const P = require('../src/playlist');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (name, cond) => { assert.ok(cond, name); console.log('  ✓ ' + name); passed++; };
@@ -61,7 +61,7 @@ ok('usesInterval: legacy slideshow stays enabled unless explicitly disabled',
   && P.usesInterval({ enabled: false, intervalEnabled: true }) === false);
 
 // ---- resolveSlot (real temp folder) ----
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-pl-'));
+const dir = makeTempDir('lumina-pl-');
 fs.writeFileSync(path.join(dir, 'b.jpg'), 'x');
 fs.writeFileSync(path.join(dir, 'a.png'), 'x');
 fs.writeFileSync(path.join(dir, 'note.txt'), 'x'); // not an image
@@ -110,7 +110,7 @@ ok('resolvedIndexOf: extended-length and separator alias maps to the same frame'
 fs.rmSync(dir, { recursive: true, force: true });
 
 // ---- scanFolderEntries + scanFolderImagesDeep (real temp tree with nesting) ----
-const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-fold-'));
+const tree = makeTempDir('lumina-fold-');
 fs.writeFileSync(path.join(tree, 'top.jpg'), 'x');
 fs.writeFileSync(path.join(tree, 'note.txt'), 'x'); // not an image
 const sub = path.join(tree, 'sub');
@@ -140,7 +140,7 @@ fs.rmSync(tree, { recursive: true, force: true });
 
 // ONL-015. Exercise the actual scanners, not only their exported Set: casing comes from
 // real filenames and every one of the six formats must cross all three local paths.
-const formatsTree = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-formats-'));
+const formatsTree = makeTempDir('znada-formats-');
 const formatNames = ['a.JPG', 'b.JpEg', 'c.PNG', 'd.BmP', 'e.WeBp', 'f.GIF'];
 formatNames.forEach((name) => fs.writeFileSync(path.join(formatsTree, name), 'x'));
 fs.writeFileSync(path.join(formatsTree, 'moving.WEBM'), 'x');

@@ -52,8 +52,8 @@ function revOf(item) {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-// The ONLY place a revision moves. Everything that changes a record goes through it,
-// including the fields main.js used to assign directly.
+// The ONLY place a revision moves. User edits go through it, including the fields
+// main.js used to assign directly. Deterministic schema backfills preserve revisions.
 function bumpRev(item, afterRev = 0) {
   if (item && typeof item === "object") {
     // A restore/re-import is a NEW event after the tombstone it supersedes. Merely
@@ -64,6 +64,19 @@ function bumpRev(item, afterRev = 0) {
     item.rev = Math.max(revOf(item), floor) + 1;
   }
   return item;
+}
+
+// Positive pixel size worth keeping on a record. The same bounds as the caption:
+// zero, junk and absurd values are "unknown", not a size. Rounded so a later
+// caption and a ratio agree on whole pixels.
+function storedPixels(width, height) {
+  const w = Number(width);
+  const h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  const rw = Math.round(w);
+  const rh = Math.round(h);
+  if (rw <= 0 || rh <= 0 || rw > 1000000 || rh > 1000000) return null;
+  return { width: rw, height: rh };
 }
 
 function makeItem(type, p, extra = {}) {
@@ -79,7 +92,19 @@ function makeItem(type, p, extra = {}) {
     rev: revOf(extra),
   };
   const aspect = aspectOf(extra);
+  if (item.favorite) item.favoritedAt = validFavoriteDate(extra.favoritedAt)
+    ? extra.favoritedAt : (validFavoriteDate(item.addedAt) ? item.addedAt : 0);
   if (aspect) item.aspect = aspect;
+  // META-002. A download already knows its pixel size. Keep it on the image so a
+  // later caption can say "1920 × 1080" without opening the file. A folder is not
+  // a picture, so a size on it would be a lie.
+  if (item.type === 'image') {
+    const dims = storedPixels(extra.width, extra.height);
+    if (dims) {
+      item.width = dims.width;
+      item.height = dims.height;
+    }
+  }
   // Preserve the live-folder discovery's modified time when materializing a folder
   // image, so the pool card sorts (newest-first secondary key) exactly like its
   // ephemeral form did and does not jump. Absent/invalid → omitted (treated as 0).
@@ -108,6 +133,25 @@ function setAspect(library, id, p, aspect) {
   if (!it || it.type !== 'image' || it.path !== p || !Number.isFinite(value) || value <= 0) return false;
   if (Math.abs(aspectOf(it) - value) < 0.0001) return false;
   it.aspect = value;
+  bumpRev(it);
+  return true;
+}
+
+// Fill a blank pixel size on an image that was saved before the site's dimensions
+// were kept. An existing size is left alone, and a no-op does not bump the
+// revision: an untouched record must not start winning merges (DATA-005).
+function rememberDimensions(library, id, width, height) {
+  const it = getItem(library, id);
+  if (!it || it.type !== 'image') return false;
+  if (storedPixels(it.width, it.height)) return false;
+  const dims = storedPixels(width, height);
+  if (!dims) return false;
+  // Read the ratio first. After the pixels are stored, aspectOf would derive one
+  // from them and the record's own aspect field would stay empty.
+  const hadAspect = aspectOf(it);
+  it.width = dims.width;
+  it.height = dims.height;
+  if (!hadAspect) it.aspect = dims.width / dims.height;
   bumpRev(it);
   return true;
 }
@@ -157,11 +201,32 @@ function removeItem(library, id) {
   return false;
 }
 
-function toggleFavorite(library, id) {
+function validFavoriteDate(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function needsFavoriteDates(library) {
+  return Object.values(library || {}).some((it) => it && it.favorite
+    && !validFavoriteDate(it.favoritedAt));
+}
+
+function migrateFavoriteDates(library) {
+  for (const it of Object.values(library || {})) {
+    if (it && it.favorite && !validFavoriteDate(it.favoritedAt)) {
+      // A deterministic fallback: never make an old star look newly selected.
+      // BUG-060: filling a derived date is not a newer user action. Bumping only
+      // the live revision would discard an equal-revision tombstone on next load,
+      // along with its exclusive metadata and slot snapshot.
+      it.favoritedAt = validFavoriteDate(it.addedAt) ? it.addedAt : 0;
+    }
+  }
+}
+
+function toggleFavorite(library, id, now = Date.now()) {
   const it = getItem(library, id);
   if (!it) return false;
-  it.favorite = !it.favorite;
-  bumpRev(it);
+  if (!validFavoriteDate(now)) throw new TypeError('Invalid favorite timestamp');
+  updateItem(library, id, { favorite: !it.favorite, favoritedAt: it.favorite ? null : now });
   return it.favorite;
 }
 
@@ -466,14 +531,16 @@ function migrateConfig(cfg) {
   for (const p of [cfg.lightWallpaper, cfg.darkWallpaper]) {
     if (p && typeof p === 'string') addPath(lib, 'image', p);
   }
+  migrateFavoriteDates(lib);
   return cfg;
 }
 
 module.exports = {
   revOf,
   bumpRev,
+  needsFavoriteDates, migrateFavoriteDates,
   updateItem,
-  pathKey, isUnderPath, idFor, baseName, makeItem, aspectOf, setAspect, addItem, addPath, getItem, removeItem,
+  pathKey, isUnderPath, idFor, baseName, makeItem, aspectOf, setAspect, rememberDimensions, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
   resolveIds, flattenImages, ephemeralFolderImages, recentImages,
   isPathInsideRoot, findConfirmedMissingLiveFolderImageIds,

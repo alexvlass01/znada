@@ -19,12 +19,12 @@
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const H = require('./helpers/main-harness');
 const library = require('../src/library');
 const folderState = require('../src/folder-state');
 const { pathKey } = require('../src/path-key');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const failures = [];
@@ -51,7 +51,7 @@ const ROUTES = {
 
 async function test(name, fn) {
   const dir = H.makeTempProfile('add-photo');
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-add-photo-src-'));
+  const outside = makeTempDir('znada-add-photo-src-');
   const quiet = { log: console.log, error: console.error, warn: console.warn };
   console.error = () => {}; console.warn = () => {};
   try {
@@ -186,7 +186,7 @@ console.log('\nLIB-022: the copy carries the original name\n');
       writePhoto(path.join(ctx.outside, 'Закат.png'), one),
       writePhoto(path.join(ctx.outside, 'beach day.png'), two),
     ]);
-    const chosen = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-add-photo-move-'));
+    const chosen = makeTempDir('znada-add-photo-move-');
     try {
       const report = await m.__test.moveManagedFolder(chosen);
       assert.strictEqual(report.status, 'done', `move status: ${report.status} ${report.error || ''}`);

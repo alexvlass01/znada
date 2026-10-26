@@ -156,11 +156,15 @@ ok('bulk delete-from-disk skips folder cards, like the card menu does',
 // test/library-orchestration.test.js, which executes these handlers for real. Do not
 // treat a green result here as evidence that removal works.
 const assignment = readSrc('src', 'library-assignment.js');
+// CODE-001 2.2a: the funnel, the lock and "in use" live in src/library-service.js; main.js
+// keeps one-line wrappers. Behaviour of the module itself: test/library-service.test.js.
+const service = readSrc('src', 'library-service.js');
 ok('there is one funnel into the pool, and it clears the removed state',
-  main.includes('function addToPool(type, srcPath, extra) {')
-  && main.includes('const revisionMoved = markRecordRevived(item);')
-  && main.includes('clearRemovedState(srcPath) || revisionMoved')
-  && (main.match(/library\.addPath\(config\.library/g) || []).length === 1);
+  main.includes('function addToPool(type, srcPath, extra) { return libraryService.addToPool(type, srcPath, extra); }')
+  && service.includes('const revisionMoved = markRecordRevived(item);')
+  && service.includes('clearRemovedState(srcPath) || revisionMoved')
+  && (service.match(/library\.addPath\(/g) || []).length === 1
+  && !main.includes('library.addPath('));
 // The funnel is worthless if another module creates pool entries beside it: the
 // assignment path did exactly that, so a photo could land in a slot while still
 // marked removed.
@@ -174,8 +178,8 @@ ok('the assignment module creates pool entries through the same funnel',
 // it actually serves. Behaviour: test/library-invariants.test.js.
 ok('deleting from disk asks the playlist what is in use, not a parallel list',
   purge.includes('const activePaths = () => inUsePaths();')
-  && main.includes('function inUsePaths() {')
-  && main.includes('resolved = playlist.resolveSlot(slotFor(monitorId, theme), config.library, {')
+  && main.includes('function inUsePaths() { return libraryService.inUsePaths(); }')
+  && service.includes('resolved = playlist.resolveSlot(slotFor(monitorId, theme), getConfig().library, {')
   && purge.includes('allowed.has(pathKey(p)) && !before.has(pathKey(p))'));
 // One re-check after the dialog says nothing about the state between the second and
 // the third file. Every target is re-checked immediately before it is erased, inside
@@ -185,7 +189,8 @@ ok('deleting from disk asks the playlist what is in use, not a parallel list',
 ok('each deletion is guarded at the moment it happens, inside the library lock',
   purge.includes('return withLibraryLock(async () => {')
   && purge.includes('if (!deletable().has(key) || activePaths().has(key)) { skipped++; continue; }')
-  && main.includes('function withLibraryLock(fn) {'));
+  && main.includes('function withLibraryLock(fn) { return libraryService.withLock(fn); }')
+  && service.includes('const result = mutationQueue.then(fn, fn);'));
 // Windows hands the same file back as C:/x/a.jpg and C:\x\a.jpg; comparing raw
 // lowercased strings let a guard miss the file it was meant to protect. One module
 // owns that key and both the pool and the playlist use it (test/path-key.test.js).
@@ -254,28 +259,15 @@ ok('bulk delete-from-disk stays hidden without an image, and while the feature i
   && preload.includes("getFeatureFlags: () => ipcRenderer.invoke('feature-flags')"));
 ok('the removed view keeps a folder a folder',
   renderer.includes("kind: im.type === 'folder' ? 'subfolder' : undefined,"));
-// Deciding by entry counts was wrong: a tag or a favourite leaves the counts identical,
-// so those edits were never written. Saving the pool is safe by default now, and the
-// cheap path is opt-in for handlers that provably touch settings only.
-// The window is generous on purpose: this reads source text, so it fails on a comment
-// being added as readily as on the call being removed, and it did exactly that when the
-// write ORDER changed for DATA-005. What it really guards is covered behaviourally in
-// test/pool-consistency.test.js, which asserts the record is on disk before the settings
-// that name it. This stays as a cheap tripwire, not as the proof.
-ok('persisting the pool is safe by default',
-  main.includes('function saveConfig() {')
-  && /function saveConfig\(\)[\s\S]{0,1200}saveLibrarySoon\(\);/.test(main)
+// CODE-001 2.1a. What the four source-text checks here used to read out of main.js — the
+// pool is saved by default, the settings path never touches it, an unusable pool file
+// suppresses its writes, and the inline copy goes only after a confirmed pool write — is
+// now the behaviour of src/config-store.js, proven by test/config-store.test.js and, end
+// to end, by test/pool-consistency.test.js and test/library-store-recovery.test.js.
+// Only the call site stays a text check: the settings handler is in main.js.
+ok('the settings handler uses the settings-only save',
+  main.includes('if (!saveSettingsOnly()) { // settings only: never touches the pool')
   && !main.includes('poolCounts()'));
-ok('the cheap settings path exists and is used by the settings handler',
-  main.includes('function saveSettingsOnly() {')
-  && main.includes('if (!saveSettingsOnly()) { // settings only: never touches the pool')
-  && !/function saveSettingsOnly\(\)[\s\S]{0,240}saveLibrarySoon\(\);/.test(main));
-ok('an unreadable pool file suppresses every write instead of overwriting it',
-  main.includes('if (libraryUnsafeToWrite) return;')
-  && main.includes('libraryUnsafeToWrite = true;'));
-ok('the inline copy is only dropped once the pool write is confirmed',
-  /const ok = libraryStore\.save\(config\.library,[\s\S]{0,500}if \(ok\) \{[\s\S]{0,300}keepInline: false/.test(main)
-  && /const ok = libraryStore\.save\(config\.library,[\s\S]{0,900}else \{[\s\S]{0,300}enterLibraryWriteDegradedMode\(\);/.test(main));
 
 ok('the count is in cards, not in internal bookkeeping rows',
   main.includes('const affected = records.filter((rec) => (')
@@ -366,8 +358,8 @@ ok('Online reset and pagination are guarded by a generation token',
   && online.includes('function onlineSearchIsCurrent(generation)')
   && online.includes('generation === ONLINE.generation')
   && online.includes("ONLINE.view === 'search'"));
-ok('Cloud favorite removal updates the shared model',
-  online.includes('removeOnlineEntry(`cloud:${item.id}`)'));
+ok('catalogue cards use the shared star instead of the retired separate collection',
+  online.includes("attachBookmarkStar(card, 'cloud', item)") && !online.includes('window.api.cloudFavorite(item.id'));
 ok('both local and Online adapters call the same mount function',
   renderer.includes('mountUnifiedGrid(grid, descriptors, LOCAL_GRID_ADAPTER')
   && renderer.includes('mountUnifiedGrid(grid, ONLINE.entries, ONLINE_GRID_ADAPTER'));

@@ -29,9 +29,15 @@ ok('our own limiter is not reported as a failure', key({ status: 'busy', retryAf
 ok('and it says how long to wait, rounded up to whole seconds',
   CardMetadata.outcomeMessage({ status: 'busy', retryAfterMs: 4100 }).params.n === 5
   && CardMetadata.outcomeMessage({ status: 'busy', retryAfterMs: 0 }).params.n === 1);
-ok('an error says the check failed', key({ status: 'error', reason: 'timeout' }) === 'card.lookupFailed');
+ok('a timeout explains that the site did not respond', key({ status: 'error', reason: 'timeout' }) === 'card.lookupTimeout');
+ok('network errors differ from absence', key({ status: 'error', reason: 'network' }) === 'card.lookupNetwork');
+ok('HTTP errors preserve the status', CardMetadata.outcomeMessage({ status: 'error', reason: '403' }).params.n === 403);
 ok('no answer at all is a failure, never a silent success',
   key(null) === 'card.lookupFailed' && key({}) === 'card.lookupFailed' && key({ status: 'weird' }) === 'card.lookupFailed');
+// DATA-009. A move refused the write; nothing failed, so "could not check" would be wrong.
+ok('a lookup refused because files are being moved says that, not "could not check"',
+  key({ status: 'error', reason: 'media_move_running' }) === 'mediaFolder.frozen'
+  && !CardMetadata.changedRecord({ status: 'error', reason: 'media_move_running' }));
 
 // --- only a real change counts as one -------------------------------------
 ok('only a found result with new tags counts as changing the record',
@@ -138,13 +144,67 @@ function harness(reply, opts = {}) {
   ok('the viewer no longer refuses a photo that has no record yet',
     lookupFn.length > 0
     && !lookupFn.includes('if (!pooled || !pooled.id) return Promise.resolve(null);')
-    && lookupFn.includes('await ensureViewerPoolId(entry)'));
+    && lookupFn.includes('await ensureViewerRecord(entry)'));
   ok('and when it truly cannot look one up, it says so instead of going quiet',
-    lookupFn.includes("showViewerMessage(t('card.lookupFailed'))"));
+    lookupFn.includes("showViewerMessage(viewerFailureText(made.error, 'card.lookupFailed'))"));
   ok('the record is made through the viewer’s one authorized channel',
-    viewerSrc.includes('async function ensureViewerPoolId(entry)')
+    viewerSrc.includes('async function ensureViewerRecord(entry)')
     && viewerSrc.includes('window.viewerApi.cardEnsureRecord(entry.path')
     && !viewerSrc.includes('libraryMaterialize'));
+
+  // DATA-009. The two viewer functions run for real, extracted the way
+  // test/ipc-contract.test.js runs applyViewerUndoResult: main's actual refusal shapes in,
+  // what the user reads out.
+  const vm = require('vm');
+  const extract = (pattern, context) => {
+    const found = viewerSrc.match(pattern);
+    assert.ok(found, 'viewer function present: ' + pattern);
+    return vm.runInNewContext(`(${found[0]})`, context);
+  };
+  const CardTransfer = require('../renderer/card-transfer');
+  const tKey = (k) => k;
+  const viewerFailureText = extract(/function viewerFailureText\([^)]*\) \{[\s\S]*?\n\}/,
+    { CardTransfer, t: tKey });
+  ok('a refusal during a move is worded as the move, in every viewer action',
+    viewerFailureText('media_move_running', 'card.lookupFailed') === 'mediaFolder.frozen'
+    && viewerFailureText('media_move_running', 'library.assignMissingToast') === 'mediaFolder.frozen');
+  ok('any other failure keeps the action’s own words',
+    viewerFailureText('', 'card.lookupFailed') === 'card.lookupFailed'
+    && viewerFailureText('missing_file', 'library.assignMissingToast') === 'library.assignMissingToast'
+    && viewerFailureText(undefined, 'library.assignMissingToast') === 'library.assignMissingToast');
+
+  const ensureWith = (reply) => extract(/async function ensureViewerRecord\([^)]*\) \{[\s\S]*?\n\}/, {
+    window: { viewerApi: { cardEnsureRecord: async () => {
+      if (reply instanceof Error) throw reply;
+      return reply;
+    } } },
+  });
+  const refusedEntry = { kind: 'path', path: 'C:/photos/a.png' };
+  const refused = await ensureWith({ id: '', error: 'media_move_running' })(refusedEntry);
+  ok('a refused record says why and leaves the entry as it was',
+    refused.id === '' && refused.error === 'media_move_running'
+    && !refusedEntry.added && !refusedEntry.pooled);
+  const madeEntry = { kind: 'library', path: 'C:/photos/b.png' };
+  const made = await ensureWith({ id: 'p-b' })(madeEntry);
+  ok('a made record is remembered on the entry, with no error',
+    made.id === 'p-b' && made.error === ''
+    && madeEntry.added === true && madeEntry.pooled.id === 'p-b');
+  const thrown = await ensureWith(new Error('bridge gone'))({ kind: 'path', path: 'C:/x.png' });
+  ok('a broken bridge is "no record", not a move',
+    thrown.id === '' && thrown.error === '');
+  const pooledEntry = { kind: 'library', path: 'C:/c.png', pooled: { id: 'p-c' } };
+  ok('an entry that already has a record is not asked about again',
+    (await ensureWith(new Error('must not be called'))(pooledEntry)).id === 'p-c');
+  // A source scan, as the lines above it: the assignment chooser needs a real window.
+  const viewerAssign = viewerSrc.slice(
+    viewerSrc.indexOf('onPick: async (monitorId, theme) => {'),
+    viewerSrc.indexOf('window.MotionBadge.appendFirstFrameNote(pop, t)'),
+  );
+  ok('assigning from the viewer words a refused assignment, never as "Assigned"',
+    viewerAssign.length > 0
+    && viewerAssign.includes('const made = await ensureViewerRecord(entry);')
+    && viewerAssign.includes("viewerFailureText(made.error, 'library.assignMissingToast')")
+    && viewerAssign.includes("viewerFailureText(res && res.error, 'library.assignMissingToast')"));
   ok('removing from the viewer no longer requires a record either',
     !viewerSrc.includes('if (!entry || !entry.added || !entry.pooled) return false;')
     && viewerSrc.includes("path: (pooled && pooled.path) || entry.path || ''"));

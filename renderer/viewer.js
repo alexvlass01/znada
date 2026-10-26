@@ -82,7 +82,7 @@ function setStageAlt(text) {
 
 // BUG-039. Пропорции фотографии, известные ДО загрузки: карточки сайтов несут ширину и
 // высоту, а если их нет — разрешение обычно записано текстом в заголовке или подписи
-// («2560x1280»), тем же шаблоном, который читает updateResolutionInSubtitle.
+// («2560x1280» или «1920 × 1080»), тем же шаблоном, который читает updateResolutionInSubtitle.
 function knownAspect(entry) {
   if (!entry) return 0;
   const raw = entry.raw && typeof entry.raw === 'object' ? entry.raw : {};
@@ -90,7 +90,7 @@ function knownAspect(entry) {
   const h = Number(raw.height) || 0;
   if (w > 0 && h > 0) return w / h;
   const text = `${entry.title || ''} ${entry.subtitle || ''}`;
-  const m = text.match(/(\d{2,6})x(\d{2,6})/);
+  const m = text.match(/(\d{2,6})\s*[x×]\s*(\d{2,6})/);
   if (!m) return 0;
   const tw = Number(m[1]);
   const th = Number(m[2]);
@@ -314,16 +314,9 @@ function setFullscreenUi(on) {
   }
 }
 
-function tPath(obj, key) {
-  return key.split('.').reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj);
-}
-
+// Same lookup as the main window. Forms of a count live in renderer/plural.js.
 function t(key, params) {
-  let value = tPath(I18N.dict, key);
-  if (value == null) value = tPath(I18N.fallback, key);
-  if (value == null) value = key;
-  if (params) for (const k in params) value = value.split('{' + k + '}').join(params[k]);
-  return value;
+  return ZnadaPlural.format(key, params, I18N.dict, I18N.fallback, document.documentElement.lang);
 }
 
 async function loadI18n() {
@@ -694,7 +687,10 @@ function createViewerNotice(message, { wrap = false } = {}) {
   const text = document.createElement('span');
   text.textContent = message;
   element.appendChild(text);
-  root.appendChild(element);
+  // Ordinary/action notices share layout with persistent operation notices. Their
+  // replacement/Undo clocks still own only VIEWER_NOTICE, never the lookup rows.
+  const target = $('#notificationStack') || root;
+  target.appendChild(element);
   VIEWER_NOTICE.element = element;
   return { element, text };
 }
@@ -830,7 +826,7 @@ function showRemovalResult(entry, pooled, res) {
 // What it CANNOT do is a separate question from what the picture can: there is no tag
 // editor, favourites list or details sheet in this window, so those are left out by
 // naming what this surface implements. Everything named here is genuinely wired.
-const VIEWER_ACTIONS = ['add', 'assign', 'lookupMeta', 'saveAs', 'copyFile', 'copyLink', 'openSource', 'remove'];
+const VIEWER_ACTIONS = ['add', 'assign', 'favorite', 'lookupMeta', 'saveAs', 'copyFile', 'copyLink', 'openSource', 'remove'];
 
 function viewerSubjectFor(entry) {
   if (!entry) return null;
@@ -904,8 +900,9 @@ async function openViewerAssign(entry, descriptor, point) {
         // A local photo needs a record, not a download. Sending it down the online add
         // path asked main to fetch a file already on the disk, and main answered
         // 'badItem' over a picture the user was looking at full-screen.
-        id = await ensureViewerPoolId(entry);
-        if (!id) { showViewerMessage(t('library.assignMissingToast')); return; }
+        const made = await ensureViewerRecord(entry);
+        id = made.id;
+        if (!id) { showViewerMessage(viewerFailureText(made.error, 'library.assignMissingToast')); return; }
       }
       if (!id) {
         showViewerMessage(t('card.downloading'), 20000);
@@ -915,7 +912,9 @@ async function openViewerAssign(entry, descriptor, point) {
       let res;
       try { res = await window.viewerApi.libraryAssign(id, monitorId, theme); }
       catch { res = null; }
-      showViewerMessage(t(res && res.ok !== false ? 'library.assignedToast' : 'library.assignMissingToast'));
+      showViewerMessage(res && res.ok !== false
+        ? t('library.assignedToast')
+        : viewerFailureText(res && res.error, 'library.assignMissingToast'));
     },
   });
   if (moving) window.MotionBadge.appendFirstFrameNote(pop, t);
@@ -983,10 +982,13 @@ async function downloadViewerCard(entry, descriptor) {
   return res.id || '';
 }
 
-function openViewerCardMenu(entry, point) {
+async function openViewerCardMenu(entry, point) {
   const subject = viewerSubjectFor(entry);
   if (!subject) return;
   const descriptor = CardActions.descriptorFor(subject);
+  let favorite;
+  try { favorite = await window.viewerApi.favoriteState(descriptor); } catch { favorite = { on: false }; }
+  if (currentEntry() !== entry) return;
   const groups = CardActions.menuGroupsFor(subject, { only: VIEWER_ACTIONS });
   if (!groups.length) return;
 
@@ -1003,6 +1005,18 @@ function openViewerCardMenu(entry, point) {
   });
 
   const handlers = {
+    favorite: async () => {
+      if (subject.kind === 'local' && !subject.id) {
+        const ensured = await ensureViewerRecord(entry);
+        if (!ensured.id) { showViewerMessage(viewerFailureText(ensured.error, 'library.assignMissingToast')); return; }
+      }
+      const card = CardActions.descriptorFor(viewerSubjectFor(entry));
+      try {
+        const state = await window.viewerApi.favoriteState(card);
+        const result = await window.viewerApi.favoriteSet({ ...card, owner: state.owner }, !state.on);
+        if (result?.error) showViewerMessage(CardTransfer.errorMessage(t, result.error));
+      } catch { showViewerMessage(t('bookmarks.writeFailed')); }
+    },
     add: () => addViewerCardToLibrary(entry, descriptor),
     assign: () => openViewerAssign(entry, descriptor, point),
     remove: () => removeViewerCard(entry),
@@ -1018,7 +1032,7 @@ function openViewerCardMenu(entry, point) {
     point,
     ariaLabel: t('library.cardActions'),
     root: $('#viewerRoot') || document.body,
-    labelFor: (action) => t(action.labelKey),
+    labelFor: (action) => t(action.id === 'favorite' && favorite.on ? 'library.favoriteRemove' : action.labelKey),
     onPick: (action) => { const run = handlers[action.id]; if (run) run(); },
   });
 }
@@ -1028,19 +1042,30 @@ function openViewerCardMenu(entry, point) {
 // registry offers lookup and remove for a local photo whether or not it has a record
 // (card-actions.js, and the comment above `lookupMeta` says why); this is what makes that
 // true here instead of only in the grid.
-async function ensureViewerPoolId(entry) {
-  if (!entry) return '';
-  if (entry.pooled && entry.pooled.id) return entry.pooled.id;
-  if (entry.kind !== 'library' && entry.kind !== 'path') return '';
-  if (!entry.path) return '';
+//
+// Answers `{ id, error }`: with no id, the caller needs to know whether main refused
+// (DATA-009, a move is running) or there simply is no record to make.
+async function ensureViewerRecord(entry) {
+  const none = { id: '', error: '' };
+  if (!entry) return none;
+  if (entry.pooled && entry.pooled.id) return { id: entry.pooled.id, error: '' };
+  if (entry.kind !== 'library' && entry.kind !== 'path') return none;
+  if (!entry.path) return none;
   let res;
   try { res = await window.viewerApi.cardEnsureRecord(entry.path, 'image'); }
-  catch { return ''; }
+  catch { return none; }
   const id = (res && res.id) || '';
   // The same bookkeeping addViewerCardToLibrary does after an add, so the menu and the
   // action button cannot disagree about what this entry now is.
   if (id) { entry.added = true; entry.pooled = { id, path: entry.path, type: 'image' }; }
-  return id;
+  return { id, error: (res && res.error) || '' };
+}
+
+// DATA-009. While Znada moves its files the main window sits behind its own modal, but
+// this window keeps taking clicks. A refusal met then says why, rather than "file is no
+// longer available" or "could not check" over a photo that is perfectly fine.
+function viewerFailureText(error, fallbackKey) {
+  return error === 'media_move_running' ? CardTransfer.errorMessage(t, error) : t(fallbackKey);
 }
 
 // META-001 from the fullscreen view. The same shared operation the main window runs —
@@ -1050,14 +1075,14 @@ async function ensureViewerPoolId(entry) {
 // Nothing on this screen displays tags, so there is nothing to redraw afterwards; the
 // updated record reaches the library grid through the ordinary config broadcast.
 async function lookupViewerCardMetadata(entry) {
-  const id = await ensureViewerPoolId(entry);
+  const made = await ensureViewerRecord(entry);
   // Never a bare return. card-metadata.js exists because a lookup that answers with
   // silence is one the user concludes is broken, and this was the one path in the app
   // that bypassed it entirely: the menu offered the action and the click did nothing.
-  if (!id) { showViewerMessage(t('card.lookupFailed')); return null; }
+  if (!made.id) { showViewerMessage(viewerFailureText(made.error, 'card.lookupFailed')); return null; }
   return CardMetadata.run({
     bridge: window.viewerApi,
-    id,
+    id: made.id,
     t,
     notify: (message) => { if (message) showViewerMessage(message); },
   });
@@ -1134,7 +1159,7 @@ function updateResolutionInSubtitle(width, height, entry) {
 
   // If the title or the original base subtitle already contains a resolution pattern,
   // we do not need to append any temporary or loaded resolutions.
-  const hasOriginalRes = /\d+x\d+/.test(titleText) || /\d+x\d+/.test(baseSubtitle);
+  const hasOriginalRes = /\d+\s*[x×]\s*\d+/.test(titleText) || /\d+\s*[x×]\s*\d+/.test(baseSubtitle);
 
   const subtitle = $('#viewerSubtitle');
   if (subtitle) {

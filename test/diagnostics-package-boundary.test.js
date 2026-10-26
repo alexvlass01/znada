@@ -3,9 +3,9 @@
 const assert = require('assert');
 const { execFileSync } = require('child_process');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const pkg = require('../package.json');
+const { makeTempDir } = require('./helpers/temp-dir');
 const {
   ALWAYS_IGNORED,
   KEYLESS_IGNORED,
@@ -50,9 +50,14 @@ ok('the package verifier accepts that guarded require as a dev-only dependency',
 // both git and the packager, so anything dropped there would have ridden into app.asar. It
 // was empty at the time, which is exactly why nobody noticed — the v1.4.6 leak started the
 // same way.
-for (const leak of ['/plans/index.md', '/STATUS.md', '/ROADMAP.md', '/CLAUDE.md', '/AGENTS.md', '/.tmp/x', '/.tmp-stealth-ui.err.log', '/scratch/x', '/.agents', '/.codex', '/test/config.test.js', '/Znada-DEV.bat', '/Znada-DIAG.bat', '/Znada-Review.bat', '/Znada-Check.bat', '/Znada-Next.bat']) {
+for (const leak of ['/plans/index.md', '/STATUS.md', '/ROADMAP.md', '/CLAUDE.md', '/AGENTS.md', '/.tmp/x', '/.tmp-stealth-ui.err.log', '/scratch/x', '/.agents', '/.codex', '/test/config.test.js', '/Znada-DEV.bat', '/Znada-DIAG.bat', '/Znada-Review.bat', '/Znada-Check.bat', '/Znada-Next.bat', '/assets/readme-banner.png', '/assets/readme-showcase.png']) {
   ok(`package command excludes ${leak}`,
     ignorePatterns.some((pattern) => pattern.test(leak)));
+}
+// DIST-001: the README pictures are fenced by name inside assets/, so the icons beside them must still ship.
+for (const icon of ['/assets/icon.png', '/assets/icon.ico', '/assets/tray-light.ico', '/assets/tray-dark.ico']) {
+  ok(`package command keeps ${icon}`,
+    !ignorePatterns.some((pattern) => pattern.test(icon)));
 }
 // BUG-045. What a root entry does in a package is decided by two hand-kept lists: the ignore
 // patterns above and the verifier's allow-list of runtime roots. Znada-Check.bat joined the
@@ -157,7 +162,7 @@ ok('diagnostics launcher requires env and CLI opt-in',
   /--diagnostics/.test(pkg.scripts['dev:diagnostics']));
 
 {
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-package-boundary-'));
+  const fixture = makeTempDir('znada-package-boundary-');
   try {
     fs.writeFileSync(path.join(fixture, '.gitignore'),
       [`plans${path.posix.sep}`, 'AGENTS.md', 'wallhaven-key.json', 'gelbooru-key.json', ''].join('\n'), 'utf8');

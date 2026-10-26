@@ -64,6 +64,7 @@ const DUAL_MODE_FILES = [
   'src/hotkey.js',
   'src/next-change.js',
   'src/online-add.js',
+  'src/card-caption.js',
   'src/online-sources.js',
   'src/online-quick-filters.js',
   'src/online-identity.js',
@@ -71,6 +72,7 @@ const DUAL_MODE_FILES = [
   'src/path-key.js',
   'src/gallery-payload.js',
   'src/size-filter.js',
+  'src/whats-new.js',
   'renderer/*.js',
 ];
 
@@ -80,10 +82,10 @@ const DUAL_MODE_FILES = [
 const RENDERER_SHARED = [
   'TagSuggest', 'LibrarySearch',
   'LibraryRemovalDialog', 'UndoDeadline',
-  'AssignRows', 'AutoLoad', 'CardActions', 'CardDetails', 'CardInteraction', 'CardMenu', 'CardMetadata', 'ViewScroll',
+  'AssignRows', 'AutoLoad', 'CardActions', 'CardCaption', 'CardDetails', 'CardInteraction', 'CardMenu', 'CardMetadata', 'ViewScroll',
   'CardTransfer', 'DeferredRefresh', 'JustifiedLayout', 'MediaFolder', 'NextChange', 'OnlineAdd',
   'OnlineBrowse', 'OnlineFound', 'OnlineSources','OnlineQuickFilters', 'OnlineIdentity', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
-  'VirtualWindow', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaMediaProxy', 'ZnadaPathKey',
+  'VirtualWindow', 'WhatsNew', 'WhatsNewDialog', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaMediaProxy', 'ZnadaPathKey', 'ZnadaPlural',
 ].reduce((all, name) => Object.assign(all, { [name]: 'readonly' }), {});
 
 // Pages that are only ever a page.

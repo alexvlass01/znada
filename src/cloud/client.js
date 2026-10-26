@@ -117,6 +117,14 @@ function buildGoogleStartUrl(baseUrl, { port, challenge, state } = {}) {
 
 function enc(id) { return encodeURIComponent(String(id)); }
 
+// Retry-After as milliseconds. The server sends whole seconds; anything else (missing,
+// a date, junk) is 0 — it grants no extra attempts, it just sets no extra wait.
+function parseRetryAfter(headers) {
+  const raw = headers && typeof headers.get === 'function' ? headers.get('retry-after') : null;
+  if (typeof raw !== 'string' || !/^\s*\d{1,9}\s*$/.test(raw)) return 0;
+  return Number(raw) * 1000;
+}
+
 // ---------------------------------------------------------------------------
 // Pure parameter validation
 // ---------------------------------------------------------------------------
@@ -170,7 +178,11 @@ function parseJsonResponse(res, schema) {
     if (r.success) return ok(r.data);
     return fail({ code: 'invalid_response', message: 'Response did not match the expected contract.', status, kind: 'contract' });
   }
-  return fail(normalizeApiError(status, body));
+  const error = normalizeApiError(status, body);
+  // ONL-002. A bookmark revision_conflict carries the server's current state beside the
+  // ApiError. It is passed through unvalidated; the sync engine checks it before use.
+  if (body && typeof body === 'object' && Object.hasOwn(body, 'current')) error.current = body.current;
+  return fail(error);
 }
 
 // ---------------------------------------------------------------------------
@@ -250,9 +262,44 @@ function createClient({ baseUrl, fetchImpl, anonId, timeoutMs, makeTimeoutSignal
     return parseJsonResponse({ status: res.status, body }, schema);
   }
 
+  // TELEM-001. The usage signal needs what request() normalizes away: the Retry-After
+  // header, and a 204 that is never parsed. One call, no hidden retries (the scheduler in
+  // src/usage-ping.js owns every repeat), one deadline for the whole exchange.
+  async function usagePing(appVersion) {
+    if (typeof anonId !== 'string' || !ANON_ID_RE.test(anonId)) {
+      return { status: 0, code: 'missing_anon_id' };
+    }
+    const init = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...anonHeaders(anonId) },
+      body: JSON.stringify({ app_version: appVersion }),
+    };
+    const signal = timeoutSignal(C.USAGE_PING.clientTimeoutMs);
+    if (signal) init.signal = signal;
+    let res;
+    try {
+      res = await doFetch(joinUrl(baseUrl, C.API_PATHS.usagePing), init);
+      const status = Number(res.status);
+      const retryAfterMs = parseRetryAfter(res.headers);
+      // Read inside the deadline too: a timeout does not prove the server did not record.
+      const body = status === 204 ? null : await readBody(res);
+      const parsed = C.ApiError.safeParse(body);
+      return { status, code: parsed.success ? parsed.data.error.code : null, retryAfterMs };
+    } catch (err) {
+      // Headers already arrived: the status still stands, only its explanation was lost.
+      // That holds for a deadline hit while reading the body too: a 429 or 400 must stay
+      // a 4xx (never retried) and keep its Retry-After, not turn into "no answer".
+      if (res) {
+        return { status: Number(res.status), code: null, retryAfterMs: parseRetryAfter(res.headers) };
+      }
+      return { network: true, code: isAbortError(err) ? 'timeout' : 'network' };
+    }
+  }
+
   return {
     request,
     baseUrl,
+    usagePing,
 
     // --- public catalog (token only personalizes explicit) ---
     health: () => request('GET', C.API_PATHS.health, { schema: C.HealthResponse }),
@@ -290,6 +337,20 @@ function createClient({ baseUrl, fetchImpl, anonId, timeoutMs, makeTimeoutSignal
       return request('DELETE', `${C.API_PATHS.favorites}/${enc(contentId)}`, { token, requireToken: true, timeoutMs: SHORT_TIMEOUT_MS });
     },
 
+    // --- bookmark sync (ONL-002; a server without these routes answers a plain 404) ---
+    bookmarkOperation: (operation, token) => request('POST', C.API_PATHS.bookmarkOperations, {
+      json: operation, token, requireToken: true, schema: C.BookmarkOperationResponse, timeoutMs: SHORT_TIMEOUT_MS,
+    }),
+    bookmarkSnapshot: ({ cursor, limit } = {}, token) => request('GET', C.API_PATHS.bookmarkSnapshot, {
+      query: { cursor, limit }, token, requireToken: true, schema: C.BookmarkSnapshotResponse,
+    }),
+    bookmarkChanges: ({ cursor, limit } = {}, token) => request('GET', C.API_PATHS.bookmarkChanges, {
+      query: { cursor, limit }, token, requireToken: true, schema: C.BookmarkChangesResponse,
+    }),
+    bookmarkImport: (batch, token) => request('POST', C.API_PATHS.bookmarkImport, {
+      json: batch, token, requireToken: true, schema: C.BookmarkImportResponse,
+    }),
+
     // --- auth code exchange (PKCE handshake step 5; see client-integration §2) ---
     exchangeAuth: (payload = {}) => {
       const { code, pkce_verifier } = payload;
@@ -311,6 +372,7 @@ module.exports = {
   buildUrl,
   authHeaders,
   anonHeaders,
+  parseRetryAfter,
   buildGoogleStartUrl,
   validateCatalogParams,
   catalogQuery,

@@ -279,7 +279,17 @@ function loadCredentials() {
   } catch { return null; }
 }
 
+async function lookup(id, ctx) {
+  const url = buildWallpaperUrl(id, { apikey: ctx.credentials?.key || '' });
+  if (!url) return { error: 'badItem' };
+  const res = await ctx.fetchJson(url);
+  if (res.error) return { error: res.error };
+  const item = mapItem(res.json?.data);
+  return item && item.id === id ? { item: { ...item, tags: tagsFromWallpaper(res.json) } } : { error: '404' };
+}
+
 module.exports = {
+  lookup,
   PROVIDER,
   loadCredentials,
   search,

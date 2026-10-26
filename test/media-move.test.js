@@ -9,12 +9,12 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const mediaMove = require('../src/media-move');
 const profileMigration = require('../src/profile-migration');
 const library = require('../src/library');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let checks = 0;
 async function check(name, fn) {
@@ -24,7 +24,7 @@ async function check(name, fn) {
 }
 
 function tempDir(label) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `znada-move-${label}-`));
+  return makeTempDir(`znada-move-${label}-`);
 }
 
 function writeFile(file, content) {

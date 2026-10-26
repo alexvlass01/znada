@@ -1,0 +1,108 @@
+{
+  "1.8.0": {
+    "en": [
+      {
+        "title": "One place for favorites",
+        "text": "Keep local photos and links from Znada, Gelbooru, Danbooru and Wallhaven together. Star an online picture without downloading the original."
+      },
+      {
+        "title": "Favorites across computers",
+        "text": "Sign in to Znada Cloud to sync online favorites and your tags. Image files stay on your computer. Favorites beyond the account limit stay local."
+      },
+      {
+        "title": "Find a picture’s source",
+        "text": "Look up a local picture’s source and tags, even when the file is a different size. Compare the proposed match before accepting its tags."
+      },
+      {
+        "title": "Blur sensitive thumbnails",
+        "text": "Choose whether to blur NSFW or Sketchy thumbnails using the source rating. Reveal a thumbnail with a click; original files are unchanged."
+      },
+      {
+        "title": "What’s new in the app",
+        "text": "Open Settings → About → What’s new to read this version’s highlights."
+      },
+      {
+        "title": "Small fixes",
+        "text": "Settings labels follow language changes, Home opens at the top after the welcome screen, and the Library status bar stays clear above blurred photos."
+      }
+    ],
+    "ru": [
+      {
+        "title": "Всё избранное вместе",
+        "text": "Личные фото и ссылки из Znada, Gelbooru, Danbooru и Wallhaven теперь в одном разделе. Онлайн-картинку можно отметить звездой без скачивания оригинала."
+      },
+      {
+        "title": "Избранное на разных компьютерах",
+        "text": "Войдите в Znada Cloud, чтобы синхронизировать онлайн-избранное и свои теги. Файлы изображений остаются на компьютере. Не поместившееся в аккаунт избранное остаётся локально."
+      },
+      {
+        "title": "Найти источник картинки",
+        "text": "Ищите источник и теги для локальной картинки, даже если её размер отличается. Сравните найденный вариант перед принятием его тегов."
+      },
+      {
+        "title": "Размытие миниатюр",
+        "text": "Выберите размытие NSFW или Sketchy по рейтингу источника. Миниатюра раскрывается по клику; оригинальные файлы не меняются."
+      },
+      {
+        "title": "Что нового — внутри приложения",
+        "text": "Откройте Настройки → О программе → Что нового, чтобы прочитать об этой версии."
+      },
+      {
+        "title": "Небольшие исправления",
+        "text": "Подписи в Настройках обновляются при смене языка, Главная после приветствия открывается сверху, а плашка Библиотеки остаётся чёткой над размытыми фото."
+      }
+    ],
+    "uk": [
+      {
+        "title": "Усе обране разом",
+        "text": "Власні фото й посилання зі Znada, Gelbooru, Danbooru та Wallhaven тепер в одному розділі. Онлайн-зображення можна позначити зіркою без завантаження оригіналу."
+      },
+      {
+        "title": "Обране на різних комп’ютерах",
+        "text": "Увійдіть у Znada Cloud, щоб синхронізувати онлайн-обране та власні теги. Файли зображень залишаються на комп’ютері. Обране, що не вмістилося в обліковий запис, залишається локально."
+      },
+      {
+        "title": "Знайти джерело зображення",
+        "text": "Шукайте джерело й теги для локального зображення, навіть якщо його розмір відрізняється. Порівняйте знайдений варіант перед прийняттям його тегів."
+      },
+      {
+        "title": "Розмиття мініатюр",
+        "text": "Виберіть розмиття NSFW або Sketchy за рейтингом джерела. Мініатюра відкривається натисканням; оригінальні файли не змінюються."
+      },
+      {
+        "title": "Що нового — у застосунку",
+        "text": "Відкрийте Налаштування → Про програму → Що нового, щоб прочитати про цю версію."
+      },
+      {
+        "title": "Невеликі виправлення",
+        "text": "Підписи в Налаштуваннях оновлюються зі зміною мови, Головна після привітання відкривається згори, а панель Бібліотеки лишається чіткою над розмитими фото."
+      }
+    ]
+  },
+  "1.7.7": {
+    "en": [
+      { "title": "Search by name and tags at once", "text": "The Library search box finds tags as well as names. Picked tags stay in the box, and a picture shows only if it has all of them." },
+      { "title": "Moving pictures are marked", "text": "GIFs and other animated pictures carry a small \"GIF\" label and play while the pointer rests on the card." },
+      { "title": "Fewer questions when you remove", "text": "Removing one picture happens at once, and Undo brings it back. The Undo notice now stays for 8 seconds." },
+      { "title": "Renamed files keep their place", "text": "Rename or move a photo inside a folder you added, and it keeps its star, tags and monitors." },
+      { "title": "Several tags in Online", "text": "Type as many tags as you like. Sources shows how many results each site found." },
+      { "title": "Fixes", "text": "The full-size viewer opens correctly on a vertical monitor, and wallpaper and theme changes are more reliable." }
+    ],
+    "ru": [
+      { "title": "Поиск по имени и тегам сразу", "text": "Поиск в Библиотеке находит и теги, и имена. Выбранные теги остаются в поле, и видны только фото, у которых есть все они." },
+      { "title": "Движущиеся картинки отмечены", "text": "У GIF и других анимированных картинок есть метка «GIF», и они играют, пока указатель лежит на карточке." },
+      { "title": "Меньше вопросов при удалении", "text": "Одно фото убирается сразу, а «Отменить» возвращает его. Плашка «Отменить» теперь держится 8 секунд." },
+      { "title": "Переименованные файлы на месте", "text": "Переименуйте или переместите фото внутри добавленной папки — у него останутся звезда, теги и мониторы." },
+      { "title": "Несколько тегов в «Онлайн»", "text": "Вводите сколько угодно тегов. В «Источниках» видно, сколько нашёл каждый сайт." },
+      { "title": "Исправления", "text": "Просмотрщик правильно открывается на вертикальном мониторе, а смена обоев и темы стала надёжнее." }
+    ],
+    "uk": [
+      { "title": "Пошук за назвою і тегами водночас", "text": "Пошук у Бібліотеці знаходить і теги, і назви. Вибрані теги лишаються в полі, і видно лише фото, що мають їх усі." },
+      { "title": "Рухомі картинки позначені", "text": "GIF та інші анімовані картинки мають позначку «GIF» і грають, поки вказівник лежить на картці." },
+      { "title": "Менше запитань під час вилучення", "text": "Одне фото прибирається одразу, а «Скасувати» повертає його. Плашка «Скасувати» тепер тримається 8 секунд." },
+      { "title": "Перейменовані файли на місці", "text": "Перейменуйте або перемістіть фото всередині доданої теки — у нього лишаться зірка, теги й монітори." },
+      { "title": "Кілька тегів в «Онлайн»", "text": "Вводьте скільки завгодно тегів. У «Джерелах» видно, скільки знайшов кожен сайт." },
+      { "title": "Виправлення", "text": "Переглядач правильно відкривається на вертикальному моніторі, а зміна шпалер і теми стала надійнішою." }
+    ]
+  }
+}

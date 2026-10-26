@@ -2,9 +2,9 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { JsonlWriter } = require('../diagnostics/core/writer');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (name, condition) => {
@@ -14,7 +14,7 @@ const ok = (name, condition) => {
 };
 
 function tmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'znada-diagnostics-writer-'));
+  return makeTempDir('znada-diagnostics-writer-');
 }
 
 function event(category, name = 'sample') {

@@ -18,6 +18,7 @@ const ROOT = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8').split('\r\n').join('\n');
 const renderer = read('renderer/renderer.js');
 const css = read('renderer/styles.css');
+const viewerCss = read('renderer/viewer.css');
 const html = read('renderer/index.html');
 
 let passed = 0;
@@ -202,6 +203,24 @@ ok('the styles keep icons still, clip without breaking the sticky panel, and hon
     'clip, not hidden: hidden would make .lib a scroll container and unstick the panel');
   assert.ok(!/\.sidebar-collapsed[^{]*\.lib-railbtn \{[^}]*padding/.test(css),
     'collapsed rows keep the expanded padding, so the icons do not move');
+  const withoutComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '\n');
+  const liveCss = withoutComments(css);
+  const liveViewerCss = withoutComments(viewerCss);
+  const rootBlock = liveCss.match(/^\s*:root\s*\{([^}]*)\}/);
+  const viewerRootBlock = liveViewerCss.match(/^\s*:root\s*\{([^}]*)\}/);
+  const libBlock = liveCss.match(/(?:^|\n)#viewLibrary\s*\{[^}]*\}/);
+  const motionDefs = (source) => source.match(/--rail-motion\s*:[^;}]*;?/g) || [];
+  const rootDecls = (block) => (block ? block[1].split(';').map((d) => d.trim()).filter(Boolean) : []);
+  assert.deepStrictEqual(motionDefs(liveCss), ['--rail-motion: 200ms cubic-bezier(.2, 0, 0, 1);'],
+    'DESIGN-010a: styles.css has exactly one live --rail-motion declaration');
+  assert.deepStrictEqual(motionDefs(liveViewerCss), ['--rail-motion: 200ms cubic-bezier(.2, 0, 0, 1);'],
+    'DESIGN-010a: viewer.css has exactly one live --rail-motion declaration');
+  assert.ok(rootBlock && rootDecls(rootBlock).includes('--rail-motion: 200ms cubic-bezier(.2, 0, 0, 1)'),
+    'DESIGN-010a: the only styles.css definition is a standalone declaration on top-level :root');
+  assert.deepStrictEqual(rootDecls(viewerRootBlock), ['--rail-motion: 200ms cubic-bezier(.2, 0, 0, 1)'],
+    'DESIGN-010a: viewer.css top-level :root defines --rail-motion');
+  assert.ok(libBlock && !/--rail-motion\s*:/.test(libBlock[0]),
+    'DESIGN-010a: #viewLibrary inherits --rail-motion from :root instead of keeping a private copy');
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce) {\n  .lib-rail-section-body'));
   assert.ok(/\.lib-rail-toggle-divider, \.lib-navigation > \.lib-railbtn span, \.lib-account-caption \{ transition: none; \}/.test(reduced.slice(0, 400)));
 });

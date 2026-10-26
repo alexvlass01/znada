@@ -100,6 +100,7 @@
     timeout: 'online.timeout',
     session_changed: 'online.sessionChanged',
     storage: 'online.storageFailed',
+    bookmark_write_failed: 'bookmarks.writeFailed',
     // DATA-006. The main window is behind its own modal while a move runs, but the
     // viewer is a window of its own and keeps taking clicks. Saying why beats a card
     // that silently does nothing.

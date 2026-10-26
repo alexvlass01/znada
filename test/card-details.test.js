@@ -187,9 +187,8 @@ ok('the menu hands the sheet the whole card', rendererSrc.includes('details: () 
 // Without this the sheet would ask the disk about a picture that has no file.
 ok('an online sheet stops before the disk read', rendererSrc.includes('if (!model.readsDisk) return;'));
 
-const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-ok('main tells the window what the sites are called',
-  /providers:\s*providerRegistry\.PROVIDERS\.map\(\(p\) => \(\{\s*id: p\.id, name: p\.name[,\s}]/.test(mainSrc));
+// CODE-001. That main tells the window what every site is called (retired ones included) is
+// proved on the module that now does it: test/online-search.test.js.
 
 const en = require('../locales/en.json');
 const ru = require('../locales/ru.json');

@@ -127,6 +127,25 @@ console.log('\nPERF-010: adding what main already has\n');
     assert.strictEqual(path.basename(record.path), md5name(JPEG, 'jpg'), 'the same content-addressed name');
     assert.ok(fs.readFileSync(record.path).equals(JPEG), 'the file holds the original bytes');
     assert.ok(record.path.startsWith(path.join(dir, 'wallpapers')));
+    assert.strictEqual(record.width, 1920);
+    assert.strictEqual(record.height, 1080);
+    assert.strictEqual(record.aspect, 1920 / 1080);
+    // An older record has no pixels. A download that still knows the size fills
+    // them; makeItem does not run again for a path that is already in the pool.
+    delete record.width;
+    delete record.height;
+    delete record.aspect;
+    const filled = await m.invoke('internet-add', danbooru(), '');
+    assert.strictEqual(filled.error, null);
+    const restored = recordFor(m, 'https://danbooru.donmai.us/posts/7');
+    assert.strictEqual(restored.width, 1920);
+    assert.strictEqual(restored.height, 1080);
+    // A later add that no longer carries a size must not wipe the one we stored.
+    const again = await m.invoke('internet-add', { ...danbooru(), width: '', height: 0 }, '');
+    assert.strictEqual(again.error, null);
+    const kept = recordFor(m, 'https://danbooru.donmai.us/posts/7');
+    assert.strictEqual(kept.width, 1920);
+    assert.strictEqual(kept.height, 1080);
   });
 
   await test('kept bytes go through the same format check', async (m) => {
@@ -277,6 +296,48 @@ console.log('\nPERF-010: adding what main already has\n');
     assert.ok(fs.existsSync(path.join(dir, 'export-cache', md5name(JPEG, 'jpg'))));
   });
 
+  // BUG-063. After a restart a Favorites bookmark card holds only its key until its
+  // background resolve fills in `full`, yet the menu already offers save/copy. Main must
+  // resolve the key itself, as `internet-add` does. The network goes in BEFORE the star:
+  // starring starts a resolve, and the resolver briefly remembers its answer.
+  const WH_DETAIL = 'https://wallhaven.cc/api/v1/w/abc123';
+  const whDetail = () => Response.json({ data: {
+    id: 'abc123', url: 'https://wallhaven.cc/w/abc123', path: WH_FULL, resolution: '1920x1080', file_type: 'image/jpeg', tags: [],
+  } });
+  const keyOnly = (key = 'wallhaven:abc123') => ({ kind: 'internet', id: '', path: '',
+    item: { provider: 'wallhaven', id: 'abc123', bookmarkKey: key, page: 'https://wallhaven.cc/w/abc123' } });
+  async function starWallhaven(m) {
+    const card = { kind: 'internet', item: { provider: 'wallhaven', id: 'abc123', page: 'https://wallhaven.cc/w/abc123' } };
+    assert.strictEqual((await m.invoke('favorite-set', card, true)).error, null, 'the bookmark was not stored');
+  }
+
+  await test('save as / copy of a key-only bookmark resolves the key first', async (m, dir) => {
+    const net = network({ [WH_DETAIL]: whDetail, [WH_FULL]: image(JPEG) });
+    await starWallhaven(m);
+    const copied = await m.invoke('card-copy-file', keyOnly());
+    assert.strictEqual(copied.error, 'badImage', 'copy did not resolve the bookmark key: ' + copied.error);
+    assert.strictEqual(net.count(WH_FULL), 1);
+    assert.ok(fs.existsSync(path.join(dir, 'export-cache', md5name(JPEG, 'jpg'))));
+    const saved = await m.invoke('card-save-as', keyOnly());
+    assert.strictEqual(saved.error, null, 'save as did not reach the dialog: ' + saved.error);
+  });
+
+  await test('a bookmark whose post is gone reports an error, not a file', async (m) => {
+    network({ [WH_DETAIL]: () => new Response('', { status: 404 }) });
+    await starWallhaven(m);
+    const copied = await m.invoke('card-copy-file', keyOnly());
+    assert.strictEqual(copied.ok, false);
+    assert.ok(copied.error, 'a gone post must not look like a success');
+  });
+
+  await test('a key that is not a stored bookmark is not fetched', async (m) => {
+    const net = network({ [WH_DETAIL]: whDetail, [WH_FULL]: image(JPEG) });
+    await starWallhaven(m);
+    const copied = await m.invoke('card-copy-file', keyOnly('wallhaven:zzz999'));
+    assert.strictEqual(copied.error, 'badItem');
+    assert.strictEqual(net.count(WH_FULL), 0);
+  });
+
   await test('two adds of one catalogue picture share one signed URL and one download', async (m) => {
     const BYTES = Buffer.from('cloud-original');
     const URL = 'https://storage.example.test/one.jpg';
@@ -310,6 +371,17 @@ console.log('\nPERF-010: adding what main already has\n');
     assert.strictEqual(a.id, b.id);
     assert.strictEqual(signed, 1, 'a second signed URL was asked for');
     assert.strictEqual(downloads, 1, 'the picture was downloaded twice');
+    const stored = m.__test.getConfig().library[a.id];
+    assert.strictEqual(stored.width, 1920);
+    assert.strictEqual(stored.height, 1080);
+    delete stored.width;
+    delete stored.height;
+    delete stored.aspect;
+    const refilled = await m.invokeAs('main', 'cloud-add', item);
+    assert.strictEqual(refilled.error, null);
+    const again = m.__test.getConfig().library[a.id];
+    assert.strictEqual(again.width, 1920);
+    assert.strictEqual(again.height, 1080);
   });
 
   finished = true;

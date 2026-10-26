@@ -26,7 +26,43 @@ ok('aspectOf: accepts direct aspect or dimensions and rejects junk',
   L.aspectOf({ aspect: 1.5 }) === 1.5
   && L.aspectOf({ width: 1920, height: 1080 }) === 1920 / 1080
   && L.aspectOf({ aspect: -1, width: 0, height: 10 }) === 0);
-ok('makeItem: preserves valid aspect metadata', L.makeItem('image', 'C:/wide.jpg', { width: 1600, height: 900 }).aspect === 1600 / 900);
+const wide = L.makeItem('image', 'C:/wide.jpg', { width: 1600, height: 900 });
+ok('makeItem: preserves valid aspect metadata', wide.aspect === 1600 / 900);
+ok('makeItem: stores whole pixels from a download', wide.width === 1600 && wide.height === 900);
+const junkPx = L.makeItem('image', 'C:/junk.jpg', { width: 0, height: 1080, aspect: 1.2 });
+ok('makeItem: omits junk pixels and still keeps a direct aspect',
+  !('width' in junkPx) && !('height' in junkPx) && junkPx.aspect === 1.2);
+const hugePx = L.makeItem('image', 'C:/huge.jpg', { width: 1000001, height: 10 });
+ok('makeItem: omits a size past a million pixels', !('width' in hugePx) && !('height' in hugePx));
+const folderPx = L.makeItem('folder', 'C:/dir', { width: 100, height: 50 });
+ok('makeItem: a folder does not store a pixel size', !('width' in folderPx) && !('height' in folderPx));
+const blankLib = {};
+const blankId = L.addPath(blankLib, 'image', 'C:/blank.jpg');
+ok('rememberDimensions: fills a blank size, sets the ratio and bumps rev',
+  L.rememberDimensions(blankLib, blankId, '1920', '1080') === true
+  && blankLib[blankId].width === 1920 && blankLib[blankId].height === 1080
+  && blankLib[blankId].aspect === 1920 / 1080 && blankLib[blankId].rev === 1);
+const revAfterFill = blankLib[blankId].rev;
+ok('rememberDimensions: a different size does not clobber or bump',
+  L.rememberDimensions(blankLib, blankId, 800, 600) === false
+  && blankLib[blankId].width === 1920 && blankLib[blankId].rev === revAfterFill);
+ok('rememberDimensions: zero and a missing record write nothing',
+  L.rememberDimensions(blankLib, blankId, 0, 1080) === false
+  && L.rememberDimensions(blankLib, null, 10, 10) === false
+  && L.rememberDimensions(null, blankId, 10, 10) === false
+  && blankLib[blankId].width === 1920);
+const keptAspect = {};
+const keptId = L.addPath(keptAspect, 'image', 'C:/kept.jpg', { aspect: 1.5 });
+ok('rememberDimensions: keeps a ratio the record already had',
+  L.rememberDimensions(keptAspect, keptId, 1920, 1080) === true
+  && keptAspect[keptId].aspect === 1.5 && keptAspect[keptId].width === 1920);
+const freshLib = {};
+const freshId = L.addPath(freshLib, 'image', 'C:/new.jpg', { width: 800, height: 600 });
+const freshRev = freshLib[freshId].rev;
+ok('rememberDimensions: a size stored at creation is left alone',
+  freshLib[freshId].width === 800 && freshLib[freshId].height === 600
+  && L.rememberDimensions(freshLib, freshId, 10, 10) === false
+  && freshLib[freshId].width === 800 && freshLib[freshId].rev === freshRev);
 // modifiedAt is carried only when valid (>0), so a materialized live-folder image keeps
 // the same secondary sort key as its ephemeral form instead of jumping under "newest first".
 ok('makeItem: keeps valid modifiedAt', L.makeItem('image', 'C:/m.jpg', { addedAt: 100, modifiedAt: 42 }).modifiedAt === 42);

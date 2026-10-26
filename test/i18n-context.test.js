@@ -231,4 +231,27 @@ node.dataset.i18n = 'prefs.title'; api.open('after.dataset.com');
     C.normalizeEol('{\r\n  "a": 1\r\n}\r\n') === '{\n  "a": 1\n}\n');
 }
 
+{
+  const catalog = C.buildContextCatalog({
+    reference: {
+      library: {
+        photosCount: '{n} photos',
+        photosCount_one: '{n} photo',
+        photosCount_other: '{n} photos',
+        selected: 'Selected: {n}',
+      },
+    },
+    sources: [{
+      file: 'renderer/renderer.js',
+      content: "function renderTags() { button.textContent = t('library.photosCount', { n: 1 }); t('library.selected', { n: 1 }); }\n",
+    }],
+  });
+  const form = catalog.entries['library.photosCount_one'].contexts;
+  ok('a count form is used where its base key is used',
+    form.some((item) => item.via === 'plural-form' && item.function === 'renderTags')
+    && catalog.entries['library.photosCount_other'].contexts.some((item) => item.via === 'plural-form')
+    && catalog.entries['library.photosCount'].contexts.every((item) => item.via !== 'plural-form')
+    && !Object.prototype.hasOwnProperty.call(catalog.entries, 'library.selected_one'));
+}
+
 console.log(`\nAll ${passed} i18n-context tests passed.`);

@@ -665,7 +665,18 @@ function loadCredentials() {
   } catch { return null; }
 }
 
+async function lookup(id, ctx) {
+  const url = buildPostUrl(id, ctx.credentials || {});
+  if (!url) return { error: ctx.credentials ? 'badItem' : 'unavailable' };
+  const res = await ctx.fetchJson(url);
+  if (res.error) return { error: res.error };
+  const post = postsFromResponse(res.json).find((entry) => String(entry.id) === id);
+  const item = mapItem(post);
+  return item ? { item } : { error: '404' };
+}
+
 module.exports = {
+  lookup,
   PROVIDER,
   loadCredentials,
   search,

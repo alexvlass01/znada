@@ -46,7 +46,8 @@ function harness(library = {}) {
   nodes['#toolbar'].append(nodes['#libQueryBox'], nodes['#libTagSection']);
   nodes['#libTagSection'].append(nodes['#libTagsPanel']);
   nodes['#libTagsPanel'].append(nodes['#libTags']);
-  const ctx = { LIB: { filter: 'all', q: '', tags: [], tagMenu: '', availableTags: null }, config: { library },
+  const ctx = { contentBlur: { bind() {}, syncSettings() {}, enabled: () => false }, LIB: { filter: 'all', q: '', tags: [], tagMenu: '', availableTags: null }, config: { library },
+    FAVORITES: { get entries() { return Object.values(ctx.config.library).filter(item => item.favorite).map(item => ({ item })); } },
     LibrarySearch, document, $: (id) => nodes[id], t: (key, vars) => key === 'library.photosCount' ? vars.n + ' фото' : key, baseName: (name) => name.split('/').pop(),
     inRemovedView: () => ctx.LIB.filter === 'removed', libOpenSection: () => ctx.LIB.filter,
     closeLibPopup() {}, clearSelection() { ctx.clears++; }, syncSelectionUI() {},

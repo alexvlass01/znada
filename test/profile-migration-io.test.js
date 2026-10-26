@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const library = require('../src/library');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 const CLI = path.resolve(__dirname, '..', 'scripts', 'migrate-profile.js');
 // The owner-only CLI is deliberately absent from the public export, so this file has
@@ -96,7 +97,7 @@ function runCli(source, target, extra = []) {
 
 function withTemp(name, fn) {
   const tempBase = path.resolve(os.tmpdir());
-  const root = fs.mkdtempSync(path.join(tempBase, 'znada-profile-migration-'));
+  const root = makeTempDir('znada-profile-migration-');
   const rel = path.relative(tempBase, root);
   assert.ok(rel && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel),
     'test temp escaped os.tmpdir');

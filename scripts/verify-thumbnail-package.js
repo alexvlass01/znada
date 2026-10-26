@@ -15,6 +15,7 @@ const {
   isSensitiveRuntimePath,
   validateProviderCredential,
 } = require('./package-app');
+const { STAMP_FILE, stampDate } = require('../src/whats-new');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_PACKAGE_ROOT = path.join(ROOT, 'dist', 'Znada-win32-x64');
@@ -136,6 +137,15 @@ function credentialLikeEntries(entries) {
   }).sort();
 }
 
+// DIST-001: README pictures share assets/ with the runtime icons, so the prefix list of
+// forbidden paths cannot fence them; they are fenced by name. A function of its own so a test
+// can hand it a list of entries — the check otherwise runs only inside a full package build.
+// Every leak in one refusal, as verifyRootBoundary does.
+function verifyNoReadmeMedia(entries) {
+  const leaked = entries.filter((entry) => /^\/assets\/readme-[^/]*$/i.test(entry));
+  if (leaked.length) fail(`README media leaked into app.asar: ${leaked.join(', ')}`);
+}
+
 function verifyRootBoundary(entries, official) {
   const allowed = new Set(ALLOWED_RUNTIME_ROOTS);
   if (official) for (const name of PROVIDER_FILES) allowed.add(name);
@@ -250,14 +260,24 @@ function verifyRuntimeClosure(appAsar, entries) {
   ));
 }
 
-function verifyExternalResources(packageRoot) {
+// DESIGN-012: an official package also carries the release-date stamp, and only it does —
+// a keyless build is not a release and must not claim a release date.
+function verifyExternalResources(packageRoot, { official = false, version = null } = {}) {
   const resources = path.join(packageRoot, 'resources');
   let roots;
   try { roots = fs.readdirSync(resources, { withFileTypes: true }); }
   catch (_) { fail('resources directory is missing or unreadable'); }
   const actualRoots = roots.map((entry) => entry.name).sort();
-  if (JSON.stringify(actualRoots) !== JSON.stringify(['app.asar', 'thumbnail-helper'])) {
-    fail(`resources must contain exactly app.asar and thumbnail-helper, found: ${actualRoots.join(', ')}`);
+  const expectedRoots = (official ? ['app.asar', STAMP_FILE, 'thumbnail-helper'] : ['app.asar', 'thumbnail-helper']).sort();
+  if (JSON.stringify(actualRoots) !== JSON.stringify(expectedRoots)) {
+    fail(`resources must contain exactly ${expectedRoots.join(', ')}, found: ${actualRoots.join(', ')}`);
+  }
+  if (official) {
+    const stampEntry = roots.find((entry) => entry.name === STAMP_FILE);
+    if (!stampEntry?.isFile() || stampEntry.isSymbolicLink()) fail(`resources/${STAMP_FILE} must be a regular file`);
+    if (!stampDate(fs.readFileSync(path.join(resources, STAMP_FILE), 'utf8'), version)) {
+      fail(`resources/${STAMP_FILE} must stamp version ${version} with a real date`);
+    }
   }
   const asarEntry = roots.find((entry) => entry.name === 'app.asar');
   const helperEntry = roots.find((entry) => entry.name === 'thumbnail-helper');
@@ -283,7 +303,8 @@ function verifyExternalResources(packageRoot) {
 }
 
 function verifyPackage({ packageRoot = DEFAULT_PACKAGE_ROOT, official = false, sourcePackagePath } = {}) {
-  const { helper, appAsar } = verifyExternalResources(packageRoot);
+  const sourceVersion = JSON.parse(fs.readFileSync(sourcePackagePath || path.join(ROOT, 'package.json'), 'utf8')).version;
+  const { helper, appAsar } = verifyExternalResources(packageRoot, { official, version: sourceVersion });
   const executable = path.join(packageRoot, 'Znada.exe');
 
   if (!fs.existsSync(executable) || !fs.statSync(executable).isFile()) fail('Znada.exe is missing');
@@ -309,6 +330,7 @@ function verifyPackage({ packageRoot = DEFAULT_PACKAGE_ROOT, official = false, s
       fail(`development-only path leaked into app.asar: ${forbidden}`);
     }
   }
+  verifyNoReadmeMedia(entries);
   verifyRootBoundary(entries, official);
   for (const required of REQUIRED_RUNTIME_FILES) {
     if (!entries.includes(required)) fail(`required runtime file is missing: ${required}`);
@@ -349,6 +371,7 @@ module.exports = {
   normalizeAsarEntries,
   parseCli,
   verifyCredentialBoundary,
+  verifyNoReadmeMedia,
   verifyPackage,
   verifyPackageMetadata,
   verifyRootBoundary,

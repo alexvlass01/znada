@@ -2,10 +2,10 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const F = require('../src/folder-state');
 const { pathKey } = require('../src/path-key');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (name, condition) => { assert.ok(condition, name); console.log('  ✓ ' + name); passed++; };
@@ -133,7 +133,7 @@ const emptyBaseline = F.reconcileFolder(F.emptyState(), {
 });
 ok('baseline completion without files is metadata-only', emptyBaseline.changed && !emptyBaseline.contentChanged);
 
-const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-folder-state-'));
+const temp = makeTempDir('lumina-folder-state-');
 const statePath = path.join(temp, 'folder-state.json');
 try {
   fs.writeFileSync(statePath, JSON.stringify({ version: 1, folders: {
@@ -163,7 +163,7 @@ try {
 }
 
 async function testScanner() {
-  const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-folder-scan-'));
+  const tree = makeTempDir('lumina-folder-scan-');
   try {
     fs.writeFileSync(path.join(tree, 'top.jpg'), 'x');
     fs.writeFileSync(path.join(tree, 'ignore.txt'), 'x');
@@ -176,7 +176,7 @@ async function testScanner() {
       && complete.entries.length === 2
       && complete.entries.every((x) => Number.isFinite(x.modifiedAt)));
 
-    const formatTree = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-folder-formats-'));
+    const formatTree = makeTempDir('znada-folder-formats-');
     try {
       const accepted = ['a.JPG', 'b.JpEg', 'c.PNG', 'd.BmP', 'e.WeBp', 'f.GIF'];
       accepted.forEach((name) => fs.writeFileSync(path.join(formatTree, name), 'x'));

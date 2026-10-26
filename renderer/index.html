@@ -6,6 +6,9 @@
         content="default-src 'self'; img-src 'self' file: data: https://th.wallhaven.cc https://w.wallhaven.cc https://*.r2.cloudflarestorage.com znada-media:; style-src 'self' 'unsafe-inline';" />
   <title>Znada</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="content-blur.css" />
+  <link rel="stylesheet" href="card-metadata.css" />
+  <link rel="stylesheet" href="notifications.css" />
 </head>
 <body>
   <header class="titlebar" id="titlebar">
@@ -15,6 +18,7 @@
       <span class="tb-dev-launch" id="tbDevLaunch" hidden></span>
     </div>
     <div class="tb-nav" id="tbNav">
+      <span class="tb-nav-pill off" aria-hidden="true"></span>
       <button class="navbtn active" data-page="home" data-i18n="nav.home">Главная</button>
       <button class="navbtn" data-page="library" data-i18n="nav.library">Библиотека</button>
       <button class="navbtn" data-page="design" data-i18n="nav.design">Оформление</button>
@@ -680,7 +684,9 @@
         <button type="button" id="libSelPurge" class="pill destructive" hidden></button>
         <button type="button" id="libSelClear" class="pill">✕</button>
       </div>
-      <div class="lib-statusbar" id="libStatus"></div>
+      <div class="lib-statusbar-slot">
+        <div class="lib-statusbar" id="libStatus"></div>
+      </div>
     </section>
 
     <!-- ===================== PREFS (настройки приложения) ===================== -->
@@ -757,7 +763,7 @@
         <div class="row">
           <div class="row-text">
             <div class="row-title" data-i18n="prefs.telemetryTitle">Сбор анонимной статистики</div>
-            <div class="row-sub" data-i18n="prefs.telemetrySub">Помогает находить и исправлять ошибки. По умолчанию выключено; сейчас ничего не отправляется.</div>
+            <div class="row-sub" data-i18n="prefs.telemetrySub">Помогает находить и исправлять ошибки. По умолчанию выключено.</div>
           </div>
           <button class="gtkswitch" id="swTelemetry" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
@@ -781,6 +787,24 @@
             <div class="row-sub" data-i18n="prefs.welcomeSub">Показать стартовый экран первого запуска снова</div>
           </div>
           <button class="pill" id="btnShowWelcome" data-i18n="prefs.welcomeBtn">Показать</button>
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="contentBlur.title">Размытие изображений</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" id="blurNsfwLabel" data-i18n="contentBlur.nsfw">Размывать NSFW</div>
+            <div class="row-sub" data-i18n="contentBlur.nsfwSub">Размывает миниатюры откровенных изображений по рейтингу источника.</div>
+          </div>
+          <button class="gtkswitch" id="blur-nsfw" role="switch" aria-checked="false" aria-labelledby="blurNsfwLabel"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" id="blurSketchyLabel" data-i18n="contentBlur.sketchy">Размывать Sketchy</div>
+            <div class="row-sub" data-i18n="contentBlur.sketchySub">Размывает миниатюры потенциально откровенных изображений по рейтингу источника.</div>
+          </div>
+          <button class="gtkswitch" id="blur-sketchy" role="switch" aria-checked="false" aria-labelledby="blurSketchyLabel"><span class="knob"></span></button>
         </div>
       </div>
 
@@ -840,6 +864,15 @@
           <div class="row-text"><div class="row-title">Znada</div><div class="row-sub" data-i18n="prefs.aboutSub">Автосмена обоев при переключении темы Windows</div></div>
           <div class="status-val" id="appVersion">—</div>
         </div>
+        <div class="row clickable" id="btnWhatsNew" role="button" tabindex="0" hidden>
+          <div class="row-text">
+            <div class="row-title" data-i18n="whatsNew.button">Что нового</div>
+            <div class="row-sub" id="whatsNewReleased" hidden></div>
+          </div>
+          <svg viewBox="0 0 16 16" width="16" height="16" class="row-link-icon" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m6 4 4 4-4 4"/>
+          </svg>
+        </div>
         <div class="row clickable" id="btnWebsite">
           <div class="row-text">
             <div class="row-title" data-i18n="prefs.websiteTitle">Сайт проекта</div>
@@ -864,10 +897,15 @@
     </section>
   </main>
 
-  <div class="toast" id="toast"></div>
+  <div class="notification-stack" id="notificationStack">
+    <div class="lookup-notices" id="lookupNotices"></div>
+    <div class="toast" id="toast"></div>
+  </div>
 
   <script src="dev-launch-badge.js"></script>
   <script src="../src/next-change.js"></script>
+  <script src="../src/whats-new.js"></script>
+  <script src="whats-new-dialog.js"></script>
   <script src="../src/path-key.js"></script>
   <script src="../src/gallery-payload.js"></script>
   <script src="../src/hotkey.js"></script>
@@ -902,6 +940,11 @@
   <script src="../src/library-search.js"></script>
   <script src="library-removal-dialog.js"></script>
   <script src="undo-deadline.js"></script>
+  <script src="../src/card-caption.js"></script>
+  <script src="plural.js"></script>
+  <script src="../src/content-rating.js"></script>
+  <script src="content-blur.js"></script>
+  <script src="nav-pill.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

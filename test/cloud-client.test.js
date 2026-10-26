@@ -34,6 +34,7 @@ function fakeFetch(responder) {
 const sampleCatalogItem = {
   id: 'c1', title: 'Sunset', rating: 'general', published_at: 1700000000,
   width: 1920, height: 1080, thumb_url: 'https://acct.r2.cloudflarestorage.com/t/c1.jpg',
+  bytes: 12345, format: 'jpg',
 };
 const sampleUser = {
   id: 'u1', display_name: 'Alex', email: null, role: 'user',
@@ -154,6 +155,8 @@ ok('createClient: throws without a fetch', (() => {
     ok('client.getCatalog: query assembled', url.includes('rating=suggestive') && url.includes('limit=24') && url.includes('tag=space') && url.includes('cursor=CUR'));
     ok('client.getCatalog: bearer header when token given', ff.calls[0].init.headers.Authorization === 'Bearer TOK');
     ok('client.getCatalog: parsed CatalogPage', r.ok === true && r.data.items.length === 1 && r.data.next_cursor === 'NEXT');
+    ok('client.getCatalog: preserves original file details already supplied by production',
+      r.ok === true && r.data.items[0].bytes === 12345 && r.data.items[0].format === 'jpg');
   }
 
   // anon id: sent on requests when the client is created with one (even anonymously)
@@ -394,6 +397,13 @@ ok('createClient: throws without a fetch', (() => {
       baseUrl: `${base}/${route}`, makeTimeoutSignal: () => AbortSignal.timeout(ms),
     });
     try {
+      // QA-024. Prove the local transport works BEFORE expecting network failures:
+      // a sandbox-denied loopback connection otherwise passes all three cut-200
+      // checks and misleadingly fails only at the lost-401 assertion.
+      const good = await at('valid').getMe('tok');
+      assert.ok(good.ok, `Local HTTP fixture unavailable: ${JSON.stringify(good)}. `
+        + 'Check loopback access (sandbox/firewall) before interpreting cut-body results.');
+      ok('a whole valid answer still parses', good.data.user.id === 'u1');
       for (const route of ['cut-length', 'cut-chunked']) {
         const r = await at(route).getMe('tok');
         ok(`a success cut off mid-body (${route}) is a broken connection, not a broken contract`,
@@ -410,8 +420,6 @@ ok('createClient: throws without a fetch', (() => {
       const junk = await at('malformed').getMe('tok');
       ok('a complete body that is not JSON is still the server breaking the contract',
         junk.ok === false && junk.error.kind === 'contract' && junk.error.code === 'invalid_response');
-      const good = await at('valid').getMe('tok');
-      ok('a whole valid answer still parses', good.ok === true && good.data.user.id === 'u1');
       const empty = await at('empty').addFavorite('c1', 'tok');
       ok('an empty 204 is still a success', empty.ok === true && empty.data === null);
       const late = await at('stall', 150).getMe('tok');

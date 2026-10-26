@@ -1,17 +1,12 @@
 'use strict';
 
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const invokeMetadataLookup = (id, options) => ipcRenderer.invoke('item-lookup-metadata', id, options);
 
-// Dev-only diagnostics probe. Attached only when main passed the gated launch argument
-// (unpackaged diagnostics run); a packaged build never sees the arg, so the diagnostics
-// module is never required. Wrapped so a probe fault can never break the real preload.
-try {
-  const hasDiag = process.argv.some((a) => typeof a === 'string' && a.indexOf('--znada-diagnostics-renderer') === 0);
-  if (hasDiag) {
-    const diag = require('./diagnostics/renderer/preload-attach');
-    diag.attachRendererProbe({ ipcRenderer, contextBridge, role: diag.parseRole(process.argv), cardSelector: '.lib-card' });
-  }
-} catch { /* diagnostics is optional */ }
+// QA-009. The diagnostics probe is not loaded from this file. A sandboxed preload may
+// load only electron and a few built-ins; a relative load here once took the whole
+// bridge down in ordinary DEV while every diagnostics check still passed. The probe is
+// a separate script, registered only for a diagnostics run.
 
 // COLLAB-003. A DEV/DIAG check launch passes the label of the code it runs, and the title
 // bar shows it. Read here with no module loading at all: in DEV this preload is sandboxed,
@@ -41,10 +36,21 @@ contextBridge.exposeInMainWorld('api', {
   devLaunch,
   getPathForFile: (file) => webUtils.getPathForFile(file),
   getConfig: () => ipcRenderer.invoke('get-config'),
+  favoritesList: () => ipcRenderer.invoke('favorites-list'),
+  favoriteState: (card) => ipcRenderer.invoke('favorite-state', card),
+  favoriteSet: (card, on) => ipcRenderer.invoke('favorite-set', card, on),
+  bookmarkResolve: (key) => ipcRenderer.invoke('bookmark-resolve', key),
+  bookmarkTags: (card, tags) => ipcRenderer.invoke('bookmark-tags', card, tags),
+  onFavoritesChanged: (cb) => ipcRenderer.on('favorites-changed', () => cb()),
+  bookmarkSyncStatus: () => ipcRenderer.invoke('bookmark-sync-status'),
+  bookmarkSyncRetry: () => ipcRenderer.invoke('bookmark-sync-retry'),
+  onBookmarkSyncStatus: (cb) => ipcRenderer.on('bookmark-sync-changed', (_e, status) => cb(status)),
+  onContentBlurReset: (cb) => ipcRenderer.on('content-blur-reset', () => cb()),
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
   setHotkey: (nextWallpaper) => ipcRenderer.invoke('set-hotkey', nextWallpaper),
   setHotkeyRecording: (recording) => ipcRenderer.invoke('set-hotkey-recording', recording),
   getVersion: () => ipcRenderer.invoke('get-version'),
+  getReleaseInfo: () => ipcRenderer.invoke('get-release-info'),
   getI18n: () => ipcRenderer.invoke('get-i18n'),
   getFeatureFlags: () => ipcRenderer.invoke('feature-flags'),
   getMonitors: () => ipcRenderer.invoke('get-monitors'),
@@ -106,7 +112,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('media-move-progress', handler);
   },
 
-  libraryToggleFavorite: (id) => ipcRenderer.invoke('library-toggle-favorite', id),
+  libraryToggleFavorite: (id, owner) => ipcRenderer.invoke('library-toggle-favorite', id, owner),
   libraryAddTag: (id, tag) => ipcRenderer.invoke('library-add-tag', id, tag),
   libraryRemoveTag: (id, tag) => ipcRenderer.invoke('library-remove-tag', id, tag),
   libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
@@ -123,7 +129,9 @@ contextBridge.exposeInMainWorld('api', {
   itemOpenSource: (id) => ipcRenderer.invoke('item-open-source', id),
   itemCopyPath: (p) => ipcRenderer.invoke('item-copy-path', p),
   // META-001: ask an online catalogue what it knows about this exact file.
-  itemLookupMetadata: (id) => ipcRenderer.invoke('item-lookup-metadata', id),
+  itemLookupMetadata: (id) => invokeMetadataLookup(id),
+  itemLookupVisualMetadata: (id) => invokeMetadataLookup(id, { action: 'visual' }),
+  itemConfirmVisualMetadata: (id, token, accept) => invokeMetadataLookup(id, { action: 'confirm', token, accept }),
 
   // Znada Cloud (C2): safe capability state only (environment/available/reason).
   getCloudCapability: () => ipcRenderer.invoke('get-cloud-capability'),

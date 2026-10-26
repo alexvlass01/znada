@@ -86,7 +86,7 @@
       inLibrary: !!pooled,
       page: str(source.page),
       stableFileUrl: !!str(source.full),
-      freshFileUrl: false,
+      freshFileUrl: !!source.bookmarkKey,
       removedView: false,
       // Declared, not omitted: an online card is not placed anywhere until it has been
       // downloaded, and an absent field would read as 'nobody looked into it'.
@@ -145,6 +145,7 @@
   function canProduceFile(subject) {
     if (!isSubject(subject) || subject.type !== IMAGE) return false;
     if (subject.path) return true;                        // already on disk
+    if (subject.raw && subject.raw.unavailable) return false;
     // Asked of the CARD, not of which catalogue it came from: either the picture has a
     // lasting URL, or its catalogue can mint a fresh one on demand. A new source that
     // works either way needs nothing added here.
@@ -201,9 +202,7 @@
       group: 'primary',
       multi: true,
       needsFile: false,
-      // Online favourites are deliberately absent until the unified model lands; the
-      // debt is tracked with the unified-favourites work.
-      applies: (s) => s.kind === 'local' && !s.removedView,
+      applies: (s) => !s.removedView && ['local', 'internet', 'cloud'].includes(s.kind),
     },
     {
       id: 'tags',
@@ -211,7 +210,7 @@
       group: 'primary',
       multi: false,
       needsFile: false,
-      applies: (s) => s.kind === 'local' && !s.removedView,
+      applies: (s) => !s.removedView && (s.kind === 'local' || !!s.raw?.bookmarkKey),
     },
     {
       // META-001. Asks an online catalogue what it knows about this exact file, and

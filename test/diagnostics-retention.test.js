@@ -2,8 +2,8 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const { makeTempDir } = require('./helpers/temp-dir');
 const {
   ensureRetentionRoot,
   pruneSessions,
@@ -18,7 +18,7 @@ const ok = (name, condition) => {
 };
 
 function tmpRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'znada-diagnostics-retention-'));
+  return makeTempDir('znada-diagnostics-retention-');
 }
 
 function makeSession(root, name, mtimeMs) {

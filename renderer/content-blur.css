@@ -1,0 +1,18 @@
+/* LIB-016: blur the image plane, leaving stars, menus and selection controls clear.
+   No transition: a reset/settings change must conceal the very next frame. */
+.content-blur-cover {
+  display: none;
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+}
+/* The original background must not show through the translucent card border.
+   The cover extends one pixel to include rounded and fractional inner edges. */
+.content-blur-concealed { background-clip: padding-box; }
+.content-blur-concealed > .content-blur-cover { display: block; }
+.content-blur-concealed > .motion-play { visibility: hidden; }
+.content-blur-preview > .thumb-remove { z-index: 7; }
+.lib-folder-collage > .content-blur-preview { position: relative; overflow: hidden; isolation: isolate; }

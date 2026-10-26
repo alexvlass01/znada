@@ -67,8 +67,8 @@ const cloudCard = (over = {}) => ({ id: 42, title: 'Sample', width: 1920, height
   // ONL-016 removed one third of this: the details sheet no longer needs a file, so an
   // online card is described like any other. Tags and favourites still do need a pool
   // record, and a card that has not been added does not have one.
-  ok('online cards get no tags and no favourites until they are in the library',
-    !fresh.includes('tags') && !fresh.includes('favorite'));
+  ok('online cards offer a bookmark without a downloaded file; tag editing needs a saved link',
+    !fresh.includes('tags') && fresh.includes('favorite'));
   ok('but they ARE describable — the sheet reads the card, not a file',
     fresh.includes('details'));
 
@@ -241,6 +241,16 @@ const cloudCard = (over = {}) => ({ id: 42, title: 'Sample', width: 1920, height
     && CardActions.placement({ monitorId: 'm', theme: 'dark', itemId: 'p1', index: 2.5 }).index === -1
     && CardActions.placement({ monitorId: 'm', theme: 'dark', itemId: 'p1', index: 3 }).index === 3);
   ok('an online card is never placed', CardActions.internetSubject(wallhaven()).slot === null);
+}
+
+// An unavailable link still has bookmark actions, but cannot produce a file.
+for (const subject of [CardActions.internetSubject(wallhaven({ unavailable: true, bookmarkKey: 'wallhaven:abc' })),
+  CardActions.cloudSubject(cloudCard({ unavailable: true, bookmarkKey: 'znada:example' }))]) {
+  const list = ids(subject);
+  ok('an unavailable ' + subject.kind + ' link offers no file actions',
+    ['add', 'assign', 'saveAs', 'copyFile'].every(id => !list.includes(id)));
+  ok('an unavailable ' + subject.kind + ' link keeps favorite, tags and details',
+    ['favorite', 'tags', 'details'].every(id => list.includes(id)));
 }
 
 // --- malformed input --------------------------------------------------------

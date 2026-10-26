@@ -6,16 +6,16 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const S = require('../src/library-store');
 const C = require('../src/config');
 const L = require('../src/library');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (n, c) => { assert.ok(c, n); console.log('  ✓ ' + n); passed++; };
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-store-'));
+const root = makeTempDir('lumina-store-');
 let dirSeq = 0;
 const freshDir = () => {
   const d = path.join(root, `p${dirSeq++}`);

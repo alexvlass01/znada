@@ -4,9 +4,9 @@ const assert = require('assert');
 const childProcess = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { cleanBuildDirectory } = require('../scripts/build-thumbnail-helper');
+const { makeTempDir } = require('./helpers/temp-dir');
 const {
   assertEmptyOrMissingDirectory,
   prepareInstallerVendor,
@@ -22,6 +22,7 @@ const {
   parseCli,
   verifyRuntimeClosureEntries,
   verifyExternalResources,
+  verifyNoReadmeMedia,
   verifyRootBoundary,
 } = require('../scripts/verify-thumbnail-package');
 
@@ -232,7 +233,7 @@ function writeInstallerFixture(outputDirectory, version = '1.6.0', nuspecVersion
 }
 
 ok('installer output must be absent or empty before a build', () => {
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-installer-empty-'));
+  const fixture = makeTempDir('znada-installer-empty-');
   try {
     assertEmptyOrMissingDirectory(path.join(fixture, 'missing'));
     assertEmptyOrMissingDirectory(fixture);
@@ -243,7 +244,7 @@ ok('installer output must be absent or empty before a build', () => {
 });
 
 ok('thumbnail-helper staging removes stale files before packaging', () => {
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-helper-stage-'));
+  const fixture = makeTempDir('znada-helper-stage-');
   try {
     fs.writeFileSync(path.join(fixture, 'Znada.ThumbnailHelper.exe'), 'fixture');
     fs.writeFileSync(path.join(fixture, 'source.sha256'), 'fixture');
@@ -256,7 +257,7 @@ ok('thumbnail-helper staging removes stale files before packaging', () => {
 });
 
 ok('RELEASES trimming keeps only the exact current full package entry', () => {
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-releases-trim-'));
+  const fixture = makeTempDir('znada-releases-trim-');
   try {
     fs.writeFileSync(path.join(fixture, 'RELEASES'), [
       `${'a'.repeat(40)} Znada-1.5.0-full.nupkg 10`,
@@ -271,7 +272,7 @@ ok('RELEASES trimming keeps only the exact current full package entry', () => {
 });
 
 ok('installer vendor replaces only NuGet after verifying its pinned digest', () => {
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-installer-vendor-'));
+  const fixture = makeTempDir('znada-installer-vendor-');
   try {
     const sourceVendor = path.join(fixture, 'source-vendor');
     const targetVendor = path.join(fixture, '.build', 'prepared-vendor');
@@ -295,7 +296,7 @@ ok('installer vendor replaces only NuGet after verifying its pinned digest', () 
 });
 
 ok('installer verifier checks exact files, RELEASES hash/size and nuspec identity', () => {
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-installer-verify-'));
+  const fixture = makeTempDir('znada-installer-verify-');
   try {
     writeInstallerFixture(fixture);
     const result = verifyInstallerArtifacts({ outputDirectory: fixture, version: '1.6.0' });
@@ -365,6 +366,21 @@ ok('package verifier declares runtime/private and credential boundaries', () => 
   assert.throws(() => parseCli(['--official'], {}), /requires both/);
 });
 
+// DIST-001, answering the PR #122 review: the package-time guard against README pictures ran
+// only inside a full `npm run package`, so breaking it left every test green.
+ok('package verifier refuses README pictures by name, and nothing else in assets', () => {
+  assert.doesNotThrow(() => verifyNoReadmeMedia([
+    '/assets/icon.png', '/assets/icon.ico', '/assets/tray-light.ico', '/assets/tray-dark.ico', '/README.md',
+  ]));
+  assert.throws(() => verifyNoReadmeMedia(['/assets/icon.png', '/assets/readme-banner.png']),
+    /README media leaked into app\.asar: \/assets\/readme-banner\.png$/);
+  // A different spelling is the same file on a Windows disk.
+  assert.throws(() => verifyNoReadmeMedia(['/assets/README-Showcase.PNG']), /README media leaked/);
+  // Every leak in one refusal, as the root boundary does.
+  assert.throws(() => verifyNoReadmeMedia(['/assets/readme-banner.png', '/assets/readme-showcase.png']),
+    /\/assets\/readme-banner\.png, \/assets\/readme-showcase\.png$/);
+});
+
 ok('package verifier follows the static first-party runtime dependency closure', () => {
   const files = new Map([
     ['/main.js', "require('./src/library');"],
@@ -395,7 +411,7 @@ ok('package verifier follows the static first-party runtime dependency closure',
 });
 
 ok('package verifier rejects every unapproved external resource', () => {
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-external-resources-'));
+  const fixture = makeTempDir('znada-external-resources-');
   try {
     const resources = path.join(fixture, 'resources');
     const helper = path.join(resources, 'thumbnail-helper');
@@ -436,7 +452,7 @@ okPrivate('Codex QA contract forbids ad hoc GUI control', 'scripts/codex-qa.ps1'
 });
 
 okPrivate('Codex QA runner enforces fail-closed verdict and artifact semantics', 'scripts/codex-qa.ps1', () => {
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-codex-qa-runner-'));
+  const fixture = makeTempDir('znada-codex-qa-runner-');
   const stub = createCodexQaStub(fixture);
   const prefix = `test-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const runRoots = [];
@@ -513,6 +529,62 @@ okPrivate('Codex QA runner enforces fail-closed verdict and artifact semantics',
     });
     assert.strictEqual(multiple.status, 3, multiple.stderr || multiple.stdout);
     assert.match(multiple.stdout, /^CODEX_QA_VERDICT=BLOCKED$/m);
+
+    // completeQaReport() is LF. The same text with CRLF is still one verdict.
+    const crlfPass = run('crlf-pass', {
+      report: completeQaReport('PASS').replace(/\n/g, '\r\n'),
+    });
+    assert.strictEqual(crlfPass.status, 0, crlfPass.stderr || crlfPass.stdout);
+    assert.match(crlfPass.stdout, /^CODEX_QA_VERDICT=PASS$/m);
+    assert.ok(
+      fs.readFileSync(path.join(crlfPass.runRoot, 'report.md')).includes(Buffer.from('\r\n')),
+      'CRLF report was rewritten before the runner parsed it',
+    );
+    assert.strictEqual(
+      JSON.parse(fs.readFileSync(path.join(crlfPass.runRoot, 'meta.json'), 'utf8')).verdict,
+      'PASS',
+    );
+
+    const crlfFail = run('crlf-fail', {
+      report: completeQaReport('FAIL').replace(/\n/g, '\r\n'),
+    });
+    assert.strictEqual(crlfFail.status, 2, crlfFail.stderr || crlfFail.stdout);
+    assert.match(crlfFail.stdout, /^CODEX_QA_VERDICT=FAIL$/m);
+
+    const crlfBlocked = run('crlf-blocked', {
+      report: completeQaReport('BLOCKED').replace(/\n/g, '\r\n'),
+    });
+    assert.strictEqual(crlfBlocked.status, 3, crlfBlocked.stderr || crlfBlocked.stdout);
+    assert.match(crlfBlocked.stdout, /^CODEX_QA_VERDICT=BLOCKED$/m);
+    assert.doesNotMatch(crlfBlocked.stdout, /found /);
+
+    const crlfMultiple = run('crlf-multiple', {
+      report: `${completeQaReport('PASS').replace(/\n/g, '\r\n')}VERDICT: FAIL\r\n`,
+    });
+    assert.strictEqual(crlfMultiple.status, 3, crlfMultiple.stderr || crlfMultiple.stdout);
+    assert.match(crlfMultiple.stdout, /^CODEX_QA_VERDICT=BLOCKED$/m);
+    assert.match(crlfMultiple.stdout, /found 2/);
+
+    const invalidVerdict = run('invalid-verdict', {
+      report: completeQaReport('APPROVED'),
+    });
+    assert.strictEqual(invalidVerdict.status, 3, invalidVerdict.stderr || invalidVerdict.stdout);
+    assert.match(invalidVerdict.stdout, /^CODEX_QA_VERDICT=BLOCKED$/m);
+    assert.match(invalidVerdict.stdout, /found 0/);
+
+    const trailingJunk = run('verdict-trailing-junk', {
+      report: completeQaReport('PASS').replace('VERDICT: PASS', 'VERDICT: PASS extra'),
+    });
+    assert.strictEqual(trailingJunk.status, 3, trailingJunk.stderr || trailingJunk.stdout);
+    assert.match(trailingJunk.stdout, /^CODEX_QA_VERDICT=BLOCKED$/m);
+    assert.match(trailingJunk.stdout, /found 0/);
+
+    const passedWord = run('verdict-passed-word', {
+      report: completeQaReport('PASSED'),
+    });
+    assert.strictEqual(passedWord.status, 3, passedWord.stderr || passedWord.stdout);
+    assert.match(passedWord.stdout, /^CODEX_QA_VERDICT=BLOCKED$/m);
+    assert.match(passedWord.stdout, /found 0/);
 
     const duplicateId = `${prefix}-duplicate`;
     const first = runCodexQaStub({

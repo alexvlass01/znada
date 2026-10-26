@@ -32,6 +32,7 @@ const {
   RUN_NAMES, commandTarget, compareVersions, folderSize, matchingDirs, referencesToLegacy,
 } = require(CHECK);
 const { LEGACY_LOGIN_ITEM_NAMES } = require('../src/windows-launch');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 function ok(name, fn) {
@@ -54,7 +55,7 @@ ok('версии сравниваются числами, а не строкам
 });
 
 ok('объём считается рекурсивно, а корзина отделяется от живого', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-size-'));
+  const root = makeTempDir('znada-size-');
   try {
     const wallpapers = path.join(root, 'wallpapers');
     const trash = path.join(wallpapers, '.trash');
@@ -95,7 +96,7 @@ ok('папки прежнего имени ищутся, а не берутся 
   // пути и отрапортовала «остатков нет», пока рядом лежали `Lumina-Dev` и `Lumina-Diagnostics`.
   // Нашёл их владелец глазами. Приложение заводит отдельный профиль на каждый режим, рядом бывают
   // и бэкапы, сделанные руками, поэтому список известных мест устаревает быстрее, чем его правят.
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-dirs-'));
+  const root = makeTempDir('znada-dirs-');
   try {
     for (const name of ['Lumina', 'Lumina-Dev', 'Lumina-Diagnostics', 'Znada', 'Znada-Dev',
       'Znada-Dev-backup-2026-09-02', 'Illuminati', 'Sublime']) {
@@ -155,7 +156,7 @@ ok('ссылка в старую папку находится, а нарочн�
   // Этот ответ решает, безопасно ли удалять старые папки. Ошибка в любую сторону дорогая:
   // пропустить настоящую ссылку — оставить запись без файла; поднять ложную тревогу на
   // строке, которая ДОЛЖНА быть старой, — отговорить от удаления без причины.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-legacy-'));
+  const dir = makeTempDir('znada-legacy-');
   try {
     fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({
       // Ключ настройки называется так намеренно, с прежних времён — это НЕ путь.

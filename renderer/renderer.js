@@ -1,4 +1,191 @@
 'use strict';
+// ONL-002. Favorites UI shares Library state and orchestration in this renderer.
+const FAVORITES = { entries: [], generation: 0, owner: 'anonymous' };
+
+function bookmarkDisplayEntry(entry) {
+  if (entry.kind === 'local') return { ...entry, path: entry.item.path };
+  const record = entry.record, meta = record.metadata || {};
+  const item = {
+    provider: record.source, id: record.source === 'znada' || record.source === 'wallhaven'
+      ? record.post_id : `${record.source}:${record.post_id}`,
+    bookmarkKey: entry.key, title: meta.title || `${record.source}:${record.post_id}`,
+    width: meta.width || 0, height: meta.height || 0,
+    tags: [...(meta.source_tags || []), ...(meta.user_tags || [])],
+    author: meta.author || '', rating: meta.source_rating || '',
+    purity: ({ general: 'sfw', suggestive: 'sketchy', explicit: 'nsfw' })[meta.source_rating] || '',
+    page: record.source === 'wallhaven' ? `https://wallhaven.cc/w/${record.post_id}`
+      : record.source === 'danbooru' ? `https://danbooru.donmai.us/posts/${record.post_id}`
+        : record.source === 'gelbooru' ? `https://gelbooru.com/index.php?page=post&s=view&id=${record.post_id}` : '',
+  };
+  return { ...entry, item, path: item.title };
+}
+
+async function refreshFavorites() {
+  const generation = ++FAVORITES.generation;
+  let result;
+  try { result = await window.api.favoritesList(); } catch { return false; }
+  if (generation !== FAVORITES.generation) return false;
+  FAVORITES.owner = result.owner;
+  FAVORITES.entries = (result?.entries || []).map(bookmarkDisplayEntry);
+  return true;
+}
+
+async function renderUnifiedFavorites(token) {
+  if (!await refreshFavorites() || token !== allViewToken || LIB.filter !== 'favorite') return;
+  renderLibRailTags();
+  const entries = libNarrow(FAVORITES.entries, (entry) => entry.item);
+  sortItems(entries, { path: (entry) => entry.path, added: (entry) => entry.favoritedAt,
+    id: (entry) => entry.key, size: (entry) => entry.item.size || 0 });
+  const descriptors = entries.map((entry) => entry.kind === 'local'
+    ? localGridDescriptor(entry.item)
+    : { ...entry, aspect: entry.item.width && entry.item.height ? entry.item.width / entry.item.height : 1.6,
+      galleryItem: null });
+  const empty = $('#libEmpty');
+  if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText(libEmptyKey('library.emptyFavorites', FAVORITES.entries.length)); }
+  setLibViewHeader(entries.length);
+  reconcileSelectionRecords(descriptors.filter((entry) => entry.kind !== 'bookmark')
+    .map((entry) => selectionRecordFromEntry(entry)).filter(Boolean));
+  mountUnifiedGrid($('#libGrid'), descriptors, FAVORITES_GRID_ADAPTER, { assigned: assignedIds(), preserveAnchor: true });
+}
+
+function openBookmarkTags(item, anchor, entry = FAVORITES.entries.find((candidate) => candidate.key === item.bookmarkKey), owner = FAVORITES.owner) {
+  if (!entry) return;
+  let tags = [...(entry.record.metadata.user_tags || [])];
+  const temporary = { id: entry.key, tags };
+  openAssignMenu(temporary, anchor, null, { assign: false, tags: true, remove: false, focusTags: true,
+    tagPort: { get: () => tags, set: async (next) => {
+      const result = await window.api.bookmarkTags({ item, owner }, next);
+      if (result?.error) { toast(CardTransfer.errorMessage(t, result.error)); return false; }
+      tags = next; return true;
+    } },
+  });
+}
+
+async function openCardTags(subject, current, record, card) {
+  if (subject.raw?.bookmarkKey) return openBookmarkTags(subject.raw, card);
+  if (subject.kind === 'local' && current) {
+    // The file keeps its local identity for assignment/viewing. Its personal tags
+    // belong to the account bookmark, regardless of which grid opened the menu.
+    try {
+      const favorite = await window.api.favoriteState({ kind: 'local', id: current.id });
+      if (favorite.ref) {
+        const result = await window.api.favoritesList();
+        if (favorite.owner !== result.owner) { toast(t('bookmarks.retry')); return; }
+        // Favorites has one representative per key, even when several files
+        // share that source. Resolve the clicked file, not the representative ID.
+        const key = `${favorite.ref.source}:${favorite.ref.post_id}`;
+        const saved = result.records[key];
+        if (saved && saved.state !== 'removed') {
+          return openBookmarkTags(current, card, { key, record: saved }, result.owner);
+        }
+      }
+    }
+    catch { toast(t('bookmarks.retry')); return; }
+  }
+  openAssignMenu(current, card, () => ensurePoolItemForRecord(record), {
+    assign: false, tags: true, remove: false, focusTags: true,
+  });
+}
+
+async function toggleOnlineFavorite(kind, item, button = null) {
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  const descriptor = { kind, item };
+  try {
+    const state = await window.api.favoriteState(descriptor);
+    const result = await window.api.favoriteSet({ ...descriptor, owner: state.owner }, !state.on);
+    if (result?.error) { toast(CardTransfer.errorMessage(t, result.error)); return; }
+    config = await window.api.getConfig();
+    if (button) setCardFavorite(button.parentElement, !!result.on);
+    if (LIB.filter === 'favorite') renderLibrary();
+  } catch { toast(t('bookmarks.writeFailed')); }
+  finally { if (button) button.disabled = false; }
+}
+
+function attachBookmarkStar(card, kind, item) {
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'lib-fav'; button.textContent = '☆';
+  button.title = t('library.favoriteAdd');
+  button.addEventListener('click', (event) => { event.stopPropagation(); toggleOnlineFavorite(kind, item, button); });
+  card.appendChild(button);
+  syncBookmarkStar(card, { kind, item });
+}
+
+function syncBookmarkStar(card, descriptor) {
+  const session = CLOUDAUTH.state;
+  window.api.favoriteState(descriptor).then((state) => {
+    if (session !== CLOUDAUTH.state) return;
+    setCardFavorite(card, state.on);
+  }).catch(() => {});
+}
+
+async function openBookmark(item, card) {
+  const result = await window.api.bookmarkResolve(item.bookmarkKey);
+  if (!result?.item) { toast(t(result?.unavailable ? 'bookmarks.unavailable' : 'bookmarks.retry')); return; }
+  // Keep the stable key across IPC so main rechecks the current session/link
+  // before use, just as it does for the card's Add button (the resolver memoizes).
+  const descriptor = { ...result.item, bookmarkKey: item.bookmarkKey };
+  const downloaded = result.item.provider === 'znada'
+    ? await window.api.cloudAdd(descriptor) : await window.api.internetAdd(descriptor, '');
+  if (downloaded?.error || !downloaded?.id) { toast(CardTransfer.errorMessage(t, downloaded?.error)); return; }
+  config = downloaded.config || config;
+  const local = config.library?.[downloaded.id];
+  if (local) openGalleryFromCard(card, galleryItemFromLibrary(local));
+}
+
+function buildBookmarkCard(entry) {
+  const item = entry.item;
+  const card = item.provider === 'znada' ? buildCloudCard(item) : buildInternetCard(item);
+  card.dataset.bookmark = entry.key;
+  // Existing card layout, hover, context menu and grid sizing remain in charge.
+  // Only these cards resolve a stable link lazily, once they are materialized.
+  card.addEventListener('click', (event) => {
+    if (event.target.closest('button')) return;
+    event.stopImmediatePropagation();
+    openBookmark(item, card).catch(() => toast(t('bookmarks.retry')));
+  }, true);
+  setCardFavorite(card, true);
+  function unavailable(on) {
+    item.unavailable = on;
+    card.classList.toggle('missing', on);
+    card.querySelector('.bookmark-unavailable-label')?.remove();
+    if (on) {
+      card.style.backgroundImage = '';
+      const label = document.createElement('span'); label.className = 'lib-card-name bookmark-unavailable-label';
+      label.textContent = t('bookmarks.unavailable'); card.appendChild(label);
+    }
+    card.querySelectorAll('.wh-add').forEach((button) => { button.disabled = on; });
+  }
+  unavailable(entry.record.state === 'unavailable');
+  window.api.bookmarkResolve(entry.key).then((result) => {
+    if (!card.isConnected || !result || result.error === 'session_changed') return;
+    if (result.item) {
+      Object.assign(item, result.item, { bookmarkKey: entry.key,
+        tags: [...new Set([...(result.item.tags || []), ...(entry.record.metadata.user_tags || [])])] });
+      if (item.width && item.height) setLibCardAspect(card, item.width / item.height);
+      LIB.queryScope = null;
+      renderLibRailTags();
+    }
+    if (result.item && !result.thumb) {
+      if (item.provider === 'znada') card.style.backgroundImage = `url("${cloudThumbUrl(item)}")`;
+      else setInternetCardThumbnail(card, item);
+    }
+    if (result.thumb) { card.style.backgroundImage = `url("${result.thumb}")`; item.thumb = result.thumb; }
+    contentBlur.bind(card, { item });
+    unavailable(!!result.unavailable || (!result.item && entry.record.state === 'unavailable'));
+  }).catch(() => {});
+  return card;
+}
+
+const FAVORITES_GRID_ADAPTER = {
+  kind: 'favorites',
+  getVersion: (entry) => entry.kind === 'bookmark' ? JSON.stringify(entry.record) : localGridVersion(entry),
+  buildCard: (entry, index, grid) => entry.kind === 'bookmark' ? buildBookmarkCard(entry) : buildLocalGridCard(entry, grid),
+  bindCard: (card, entry, index, grid) => {
+    if (entry.kind !== 'bookmark') bindLocalGridCard(card, entry, grid);
+  },
+};
+// End ONL-002 favorites UI.
 
 // Optional dev-diagnostics span bridge. window.znadaDiag is injected by preload ONLY
 // under the diagnostics gate; in every normal run it is undefined and diagSpan returns
@@ -43,6 +230,11 @@ if (!window.api) {
     },
     setHotkeyRecording: async () => ({ ok: true }),
     getVersion: async () => '1.0.0',
+    getReleaseInfo: async () => ({
+      version: '1.0.0',
+      date: '2026-10-10',
+      notes: { en: [{ title: 'Preview', text: 'A sample What\'s new item for the browser preview.' }] },
+    }),
     getI18n: async () => {
       const load = async (code) => { try { return await (await fetch('../locales/' + code + '.json')).json(); } catch { return {}; } };
       const sys = 'ru';
@@ -192,6 +384,9 @@ if (!window.api) {
     cloudSignin: async () => { mockCloud.signedIn = true; mockCloud.user = { id: 'u1', display_name: 'Test User', email: 'test@example.com', role: 'user', explicit_opt_in: false, created_at: Math.floor(Date.now() / 1000) }; return { ok: true, state: { available: true, signedIn: true, user: mockCloud.user, entitlements: ['online_catalog'] } }; },
     cloudSignout: async () => { mockCloud.signedIn = false; mockCloud.user = null; mockCloud.favs = {}; return { ok: true, state: { available: true, signedIn: false, user: null, entitlements: [] } }; },
     onCloudSession: () => {},
+    bookmarkSyncStatus: async () => (mockCloud.signedIn ? (mockCloud.sync || { state: 'ok', held: 0 }) : { state: 'off', held: 0 }),
+    bookmarkSyncRetry: async () => (mockCloud.signedIn ? { state: 'ok', held: 0 } : { state: 'off', held: 0 }),
+    onBookmarkSyncStatus: () => {},
     cloudFavorites: async () => { const favs = mockCloud.favs || {}; const items = Object.keys(favs).map((id) => favs[id]); return { items, error: null }; },
     cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
     internetStatus: async () => ({ nsfwAvailable: true, providers: [{ id: 'wallhaven', name: 'Wallhaven', browse: true }, { id: 'gelbooru', name: 'Gelbooru', browse: true }, { id: 'danbooru', name: 'Danbooru', browse: true }] }),
@@ -278,12 +473,19 @@ if (!window.api) {
 const $ = (sel) => document.querySelector(sel);
 
 let config = null;
+const contentBlur = window.ContentBlur.create({
+  document, policy: window.ContentRating, pathKey: window.ZnadaPathKey.pathKey,
+  getConfig: () => config,
+  openLocal: (p) => openGalleryViewer([galleryItemFromPath(p)]),
+  onSettings: async (patch) => { config = await window.api.setConfig({ contentBlur: patch }); },
+});
 let currentTheme = 'light';
 let currentWallpaperTheme = 'light';
 
 // ---------------------------------------------------------------------------
 // i18n — dictionaries come from the main process (single source of truth).
-// t(key, params) looks up the active locale, falls back to English, then key.
+// t(key, params) looks up the active locale, then English, then the key.
+// A count uses the CLDR sibling in renderer/plural.js; the viewer calls it too.
 // ---------------------------------------------------------------------------
 const I18N = { dict: {}, fallback: {} };
 
@@ -291,11 +493,7 @@ function tPath(obj, key) {
   return key.split('.').reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj);
 }
 function t(key, params) {
-  let v = tPath(I18N.dict, key);
-  if (v == null) v = tPath(I18N.fallback, key);
-  if (v == null) v = key;
-  if (params) for (const k in params) v = v.split('{' + k + '}').join(params[k]);
-  return v;
+  return ZnadaPlural.format(key, params, I18N.dict, I18N.fallback, document.documentElement.lang);
 }
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
@@ -329,6 +527,38 @@ async function loadI18n() {
   if (sel) sel.value = info.setting || 'system';
   if (info.locale) document.documentElement.lang = info.locale;
 }
+// DESIGN-012. «О программе»: номер версии и отдельная строка «Что нового» (есть, только
+// если у этой версии написан текст). Дата выхода — подпись этой строки, а не соседка номера:
+// так решил владелец 2026-10-23, посмотрев первый вариант. Её знает только официальная
+// сборка. Дата и пункты зависят от языка, поэтому рисуются заново при его смене.
+let RELEASE_INFO = null;
+function whatsNewItems() {
+  if (!RELEASE_INFO || !RELEASE_INFO.notes) return null;
+  return WhatsNew.pick({ [RELEASE_INFO.version]: RELEASE_INFO.notes }, RELEASE_INFO.version,
+    document.documentElement.lang);
+}
+function renderAboutVersion() {
+  if (!RELEASE_INFO) return;
+  const date = WhatsNew.formatDate(RELEASE_INFO.date, document.documentElement.lang);
+  $('#appVersion').textContent = 'v' + RELEASE_INFO.version;
+  const released = $('#whatsNewReleased');
+  released.textContent = date ? t('whatsNew.released', { date }) : '';
+  released.hidden = !date;
+  $('#btnWhatsNew').hidden = !whatsNewItems();
+}
+function openWhatsNew() {
+  const picked = whatsNewItems();
+  if (!picked) return;
+  WhatsNewDialog.open({
+    title: t('whatsNew.title', { version: RELEASE_INFO.version }),
+    items: picked.items,
+    lang: picked.lang,
+    closeLabel: t('details.close'),
+    allReleasesLabel: t('whatsNew.allReleases'),
+    onAllReleases: () => window.api.openReleases(),
+  });
+}
+
 // Re-apply every string after a language change.
 function refreshTexts() {
   const sl = $('#stripLight'); if (sl) sl.removeAttribute('data-items');
@@ -349,7 +579,11 @@ function refreshTexts() {
   updateShortcutButtons();      // re-translate shortcut buttons + keep "done" state
   renderUpdate();               // re-translate update status + button
   renderSmartPanel();           // re-translate smart panel texts
-  closeLibPopup();              // a visible card menu must not keep stale language
+  renderAboutVersion();         // release date in the new language
+  renderEventLog();             // BUG-055: journal rows, including the empty-journal line
+  renderMediaFolderRow();       // BUG-055: "in the profile" label of the media folder
+  WhatsNewDialog.close();       // an open What's new must not keep stale language
+  closeLibPopup();             // a visible card menu must not keep stale language
   syncSelectionUI();            // checkbox labels + floating selection toolbar
 }
 
@@ -691,7 +925,7 @@ async function setPreview(which, filePath, monitorId = selectedMonitorId) {
   }
 
   // Apply instantly and flicker-free (browser has the image cached now)
-  if (oldBg && oldBg !== 'none' && oldBg !== newBg) {
+  if (!contentBlur.enabled() && oldBg && oldBg !== 'none' && oldBg !== newBg) {
     el.style.backgroundImage = `${newBg}, ${oldBg}`;
     setTimeout(() => {
       if (parseInt(el.dataset.loadId, 10) === loadId) {
@@ -702,6 +936,7 @@ async function setPreview(which, filePath, monitorId = selectedMonitorId) {
     el.style.backgroundImage = newBg;
   }
   el.innerHTML = newHtml;
+  contentBlur.bind(el, { path: filePath }, el, true);
   window.MotionBadge.sync(el, motion, t);
   applyPreviewStyle();
 }
@@ -766,7 +1001,8 @@ function renderStrip(theme) {
       el.innerHTML = '<span class="thumb-ic">' + FOLDER_ICON_SVG + '</span>';
       el.title = it.path;
     } else {
-      el.title = baseName(it.path);
+      contentBlur.bind(el, { path: it.path }, el, true);
+      el.title = (window.CardCaption && window.CardCaption.text(it)) || baseName(it.path);
       // small thumbnail (data-URL is instant, no flicker; avoids decoding full-size files)
       thumbWithMotion(it.path, 200, 130).then((info) => {
         if (!info.url) return;
@@ -1236,6 +1472,9 @@ let onlineAutoLoadWatch = null;
 let onlineAutoLoadRetry = 0;
 // Cloud C4: account/session state (renderer-safe; the token never leaves main).
 const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
+// ONL-002 stage 4. Favorites sync as main reports it: off, syncing, ok, offline, error,
+// paused; `held` = links that did not fit in the account and live only on this computer.
+const BOOKMARK_SYNC = { state: 'off', held: 0 };
 // Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
 const CLOUDFAV = { ids: new Set(), fetched: false };
 
@@ -1554,7 +1793,7 @@ function libEmptyKey(emptyKey, unfiltered) {
 // The current section before a tag or a search narrows it.
 function libSectionItems() {
   const items = Object.values(config.library || {});
-  if (LIB.filter === 'favorite') return items.filter((it) => it.favorite);
+  if (LIB.filter === 'favorite') return FAVORITES.entries.map((entry) => entry.item);
   if (LIB.filter === 'folder') return items.filter((it) => it.type === 'folder');
   return items;
 }
@@ -1836,6 +2075,7 @@ function renderLibraryCore() {
   if (LIB.folderPath) { renderFolderView(tok); return; }
   if (LIB.filter === 'all') { renderAllView(tok); return; }
   if (inRemovedView()) { renderRemovedView(tok); return; }
+  if (LIB.filter === 'favorite') { renderUnifiedFavorites(tok); return; }
 
   // "Папки" / favorite → plain pool-items grid (folders are entities here)
   const sentinel = $('#libSentinel'); if (sentinel) sentinel.hidden = true;
@@ -1866,9 +2106,9 @@ function buildLibCard(it, isAssigned) {
   if (it.type === 'folder') {
     fillFolderCollage(card, it.path);
   } else {
-    card.title = baseName(it.path);
     lazyThumb(card, it.path, 320, 200);
     card.__galleryItem = galleryItemFromLibrary(it);
+    contentBlur.bind(card, { path: it.path });
   }
 
   // The star is always BUILT and hidden by CSS in the trash, never omitted. Omitting
@@ -1885,6 +2125,7 @@ function buildLibCard(it, isAssigned) {
   });
   card.appendChild(fav);
   setCardFavorite(card, !!it.favorite);
+  syncBookmarkStar(card, { kind: 'local', id: it.id });
 
   if (isAssigned) {
     const mark = document.createElement('span');
@@ -1896,7 +2137,8 @@ function buildLibCard(it, isAssigned) {
   appendSelectionToggle(card, selectionRecord);
   bindLocalCardContextMenu(card, selectionRecord);
 
-  card.addEventListener('mouseenter', () => setLibStatus(baseName(it.path)));
+  card.addEventListener('mouseenter', () => setLibStatus(it.type === 'folder' ? it.path
+    : ((window.CardCaption && window.CardCaption.text(it)) || baseName(it.path))));
   card.addEventListener('mouseleave', () => setLibStatus(''));
   card.addEventListener('click', (e) => {
     if (handleSelectionModifierClick(e, selectionRecord)) return;
@@ -1921,7 +2163,6 @@ function fillFolderCollage(card, dirPath) {
   cnt.className = 'lib-count';
   cnt.textContent = '0';
   card.appendChild(cnt);
-  card.title = dirPath;
   const infoKey = normPathKey(dirPath);
   let infoPromise = folderInfoCache.get(infoKey);
   if (!infoPromise) {
@@ -1938,6 +2179,7 @@ function fillFolderCollage(card, dirPath) {
     previews.slice(0, 4).forEach((p) => {
       const tile = document.createElement('div');
       tile.className = 'ff';
+      contentBlur.bind(tile, { path: p }, tile, true);
       collage.appendChild(tile);
       window.api.thumb(p, 160, 160).then((u) => { if (u) tile.style.backgroundImage = `url("${u}")`; });
     });
@@ -2423,13 +2665,13 @@ function buildSubfolderCard(f) {
 function buildEphemeralImageCard(p, aspect = 0) {
   const card = document.createElement('div');
   card.className = 'lib-card';
-  card.title = baseName(p);
   card.dataset.path = p; // lets onConfig upgrade this exact card in place once it's materialized
   const selectionRecord = localSelectionRecord(p, 'image');
   makeLibCardFocusable(card);
   primeLibCardAspect(card, null, p, aspect);
   lazyThumb(card, p, 320, 200);
   card.__galleryItem = galleryItemFromPath(p);
+  contentBlur.bind(card, { path: p });
 
   // Always built, hidden by CSS in the trash — see buildLibCard.
   const fav = document.createElement('button');
@@ -2658,6 +2900,7 @@ function bindUnifiedGalleryCard(card, entry) {
   if (!card) return;
   if (entry && entry.galleryItem) {
     bindCardGalleryItem(card, entry.galleryItem, entry.galleryIndex);
+    contentBlur.bind(card, entry.kind === 'cloud' || entry.kind === 'internet' ? { item: entry.item } : { path: entry.path });
   } else {
     delete card.__galleryItem;
     delete card.dataset.galleryIndex;
@@ -2694,6 +2937,7 @@ function bindLocalGridCard(card, entry, grid) {
   const assigned = grid.__gridContext && grid.__gridContext.assigned;
   setCardAssigned(card, !!(assigned && assigned.has(fresh.id)));
   setCardFavorite(card, !!fresh.favorite);
+  syncBookmarkStar(card, { kind: 'local', id: fresh.id });
 }
 
 function mountUnifiedGrid(grid, entries, adapter, opts = {}) {
@@ -2837,7 +3081,7 @@ function galleryItemFromLibrary(it) {
   return {
     kind: 'library',
     key: `library:${it.id}`,
-    title: baseName(it.path),
+    title: (window.CardCaption && window.CardCaption.text(it)) || baseName(it.path),
     subtitle: t('viewer.local'),
     path: it.path,
     raw: it,
@@ -2887,7 +3131,7 @@ function galleryItemFromInternet(item) {
   return {
     kind: 'internet',
     key: `internet:${item.provider || 'source'}:${item.id || item.page || item.full || item.thumb}`,
-    title: item.resolution || item.id || t('online.source'),
+    title: (window.CardCaption && window.CardCaption.text(item)) || item.id || t('online.source'),
     subtitle: gallerySubtitle([t('online.source'), item.category, item.purity]),
     previewUrl: item.thumb || '',
     raw: item,
@@ -3219,10 +3463,11 @@ function replaceLocalCardWithPoolItem(card, item) {
 // stays as the last line of defence for the keyboard/context paths.
 async function toggleFavoriteForRecord(record, preferredCard = null) {
   if (inRemovedView()) { toast(t('library.restoreFirst')); return null; }
+  const owner = (await window.api.favoriteState({ kind: 'local', id: record?.id || '' })).owner;
   const item = await ensurePoolItemForRecord(record);
   if (!item) return null;
-  try { config = await window.api.libraryToggleFavorite(item.id); }
-  catch { return null; }
+  try { config = await window.api.libraryToggleFavorite(item.id, owner); }
+  catch { toast(t('bookmarks.writeFailed')); return null; }
   const fresh = config.library && config.library[item.id];
   if (!fresh) return null;
   if (LIB.filter === 'favorite' && !fresh.favorite) {
@@ -3262,9 +3507,21 @@ function refreshFavoriteHighlights() {
   const lib = config.library || {};
   document.querySelectorAll('#libGrid .lib-card[data-id]').forEach((card) => {
     const it = lib[card.dataset.id];
-    if (it) setCardFavorite(card, !!it.favorite);
+    if (it) {
+      setCardFavorite(card, !!it.favorite);
+      syncBookmarkStar(card, { kind: 'local', id: it.id });
+    }
   });
   lastLibRenderKey = libRenderKey();
+}
+
+function handleFavoritesChanged() {
+  if (LIB.filter === 'favorite') { renderLibrary(); return; }
+  refreshFavoriteHighlights();
+  document.querySelectorAll('#whGrid .lib-card').forEach((card) => {
+    const entry = card.__galleryItem;
+    if (entry && ['internet', 'cloud'].includes(entry.kind)) syncBookmarkStar(card, { kind: entry.kind, item: entry.raw });
+  });
 }
 
 function sameTags(a, b) {
@@ -3609,7 +3866,7 @@ function armLibPopupDismiss(anchor = null) {
   }, 0);
 }
 
-function appendTagEditor(pop, state, ensureItem) {
+function appendTagEditor(pop, state, ensureItem, tagPort = null) {
   const tagBox = document.createElement('div');
   tagBox.className = 'lib-popup-tags';
   const tagHdr = document.createElement('div');
@@ -3632,6 +3889,7 @@ function appendTagEditor(pop, state, ensureItem) {
   pop.appendChild(tagBox);
 
   const curTags = () => {
+    if (tagPort) return tagPort.get();
     const item = state.item && config.library && config.library[state.item.id];
     return (item && item.tags) || [];
   };
@@ -3648,7 +3906,8 @@ function appendTagEditor(pop, state, ensureItem) {
       remove.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (!state.item) return;
-        config = await window.api.libraryRemoveTag(state.item.id, tag);
+        if (tagPort) { if (!await tagPort.set(curTags().filter((value) => value !== tag))) return; }
+        else config = await window.api.libraryRemoveTag(state.item.id, tag);
         renderChips();
         renderSuggest();
         renderLibrary();
@@ -3664,8 +3923,11 @@ function appendTagEditor(pop, state, ensureItem) {
     if (!value) return;
     const item = await ensureItem();
     if (!item) return;
-    config = await window.api.libraryAddTag(item.id, value);
-    state.item = config.library && config.library[item.id] ? config.library[item.id] : item;
+    if (tagPort) { if (!await tagPort.set([...new Set([...curTags(), value])])) return; }
+    else {
+      config = await window.api.libraryAddTag(item.id, value);
+      state.item = config.library && config.library[item.id] ? config.library[item.id] : item;
+    }
     tagInput.value = '';
     renderChips();
     renderSuggest();
@@ -3806,7 +4068,7 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
   let tagInput = null;
   if (options.tags !== false) {
     addSeparator();
-    tagInput = appendTagEditor(pop, state, ensureItem);
+    tagInput = appendTagEditor(pop, state, ensureItem, options.tagPort || null);
     sections++;
   }
 
@@ -4354,10 +4616,9 @@ function openCardMenu(subject, card, point = null) {
         return id && config.library ? config.library[id] : null;
       }, { assign: true, tags: false, remove: false, pending: 'card.downloading' });
     },
-    favorite: () => toggleFavoriteForRecord(record, card),
-    tags: () => openAssignMenu(current, card, () => ensurePoolItemForRecord(record), {
-      assign: false, tags: true, remove: false, focusTags: true,
-    }),
+    favorite: () => subject.kind === 'local' ? toggleFavoriteForRecord(record, card)
+      : toggleOnlineFavorite(subject.kind, subject.raw),
+    tags: () => openCardTags(subject, current, record, card),
     details: () => openCardDetails(subject, record),
     // The record is made only now, when the user has actually asked — the same moment
     // "change tags" makes one.
@@ -4394,7 +4655,7 @@ function openCardMenu(subject, card, point = null) {
     ariaLabel: t('library.cardActions'),
     // The star reads "add" or "remove" depending on the photo, so the label is asked
     // for at draw time rather than baked into the registry.
-    labelFor: (action) => (action.id === 'favorite' && current && current.favorite
+    labelFor: (action) => (action.id === 'favorite' && (subject.favorite || (current && current.favorite))
       ? t('library.favoriteRemove') : t(action.labelKey)),
     onPick: (action) => {
       const run = handlers[action.id];
@@ -4418,11 +4679,13 @@ function bindLocalCardContextMenu(card, record) {
 // no source page and only a short-lived signed link, so it must never be offered the
 // two link actions: there is no page, and the link it does have expires.
 function bindOnlineCardContextMenu(card, kind, item) {
-  CardMenu.bind(card, (point) => {
+  CardMenu.bind(card, async (point) => {
     const pooled = OnlineAdd.pooledItem((config && config.library) || {}, kind, item);
     const subject = kind === 'cloud'
       ? CardActions.cloudSubject(item, pooled)
       : CardActions.internetSubject(item, pooled);
+    try { subject.favorite = (await window.api.favoriteState({ kind, item })).on; } catch { return; }
+    if (!card.isConnected) return;
     openCardMenu(subject, card, point);
   });
 }
@@ -5528,13 +5791,71 @@ function renderLibraryAccountTrigger() {
   const status = $('#libAccountStatus');
   if (name) name.textContent = user
     ? (user.display_name || user.email || t('online.account')) : t('online.account');
-  // Being signed in is shown by the avatar; a second line appears only while something runs.
+  // Being signed in is shown by the avatar; a second line appears only while something runs
+  // or the favorites cannot reach the account. "All synced" has nothing to say here.
+  const syncCaption = user && !signingIn ? bookmarkSyncCaption() : '';
   if (status) {
-    status.textContent = signingIn ? t('online.signingIn') : '';
-    status.hidden = !signingIn;
+    status.textContent = signingIn ? t('online.signingIn') : syncCaption;
+    status.hidden = !signingIn && !syncCaption;
   }
+  // The same red dot as an expired session: the one other account state worth noticing.
+  $('#libAccountToggle')?.classList.toggle('sync-error', !!user && BOOKMARK_SYNC.state === 'error');
   paintAccountAvatar($('#libAccountAvatar'), user ? accountInitials(user.display_name || user.email) : '');
   $('#libAccountToggle')?.classList.toggle('needs-attention', !user && !!state.expired);
+}
+
+function bookmarkSyncCaption() {
+  return { syncing: t('online.syncingCaption'), offline: t('online.syncOfflineCaption'),
+    error: t('online.syncErrorCaption') }[BOOKMARK_SYNC.state] || '';
+}
+
+// One row in the account popover; nothing at all while sync is off.
+function bookmarkSyncRows() {
+  const rows = [];
+  const text = { ok: 'online.syncOk', syncing: 'online.syncing', offline: 'online.syncOffline',
+    error: 'online.syncError', paused: 'online.syncPaused' }[BOOKMARK_SYNC.state];
+  const icons = {
+    ok: '<path d="M4.5 12.5h7a3 3 0 0 0 .4-5.97A4 4 0 0 0 4.2 7.6 2.5 2.5 0 0 0 4.5 12.5z"/><path d="m6.4 9.6 1.3 1.3 2.6-2.7"/>',
+    syncing: '<path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/>',
+    offline: '<path d="M4.5 12.5h7a3 3 0 0 0 .4-5.97A4 4 0 0 0 4.2 7.6 2.5 2.5 0 0 0 4.5 12.5z"/><path d="m2.5 2.5 11 11"/>',
+    error: '<circle cx="8" cy="8" r="6"/><path d="M8 4.8v3.6M8 10.9v.1"/>',
+    paused: '<circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/>',
+    held: '<rect x="2" y="3" width="12" height="8" rx="1.2"/><path d="M6 13.5h4M8 11v2.5"/>',
+  };
+  const row = (kind, message) => {
+    const el = document.createElement('div');
+    el.className = 'lib-sync-row' + (kind === 'ok' || kind === 'error' ? ' ' + kind : '');
+    el.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + icons[kind] + '</svg>';
+    const span = document.createElement('span');
+    span.textContent = message;
+    el.append(span);
+    return el;
+  };
+  if (text) rows.push(row(BOOKMARK_SYNC.state, t(text)));
+  if (BOOKMARK_SYNC.state === 'error') {
+    const retry = document.createElement('button');
+    retry.className = 'menu-item';
+    retry.textContent = t('online.syncRetry');
+    retry.addEventListener('click', async () => {
+      if (retry.disabled) return;
+      retry.disabled = true;
+      try { applyBookmarkSync(await window.api.bookmarkSyncRetry()); } catch { retry.disabled = false; }
+    });
+    rows.push(retry);
+  }
+  if (BOOKMARK_SYNC.state !== 'off' && BOOKMARK_SYNC.held > 0) {
+    rows.push(row('held', t('online.syncHeld', { n: BOOKMARK_SYNC.held })));
+  }
+  return rows;
+}
+
+function applyBookmarkSync(status) {
+  if (!status || typeof status.state !== 'string') return;
+  BOOKMARK_SYNC.state = status.state;
+  BOOKMARK_SYNC.held = Number.isInteger(status.held) && status.held > 0 ? status.held : 0;
+  renderCloudAccount();
+  // Said once, right after the silent move; the popover keeps the line afterwards.
+  if (status.notice > 0) toast(t('online.syncHeldToast', { n: status.notice }));
 }
 
 async function refreshLibraryAccount() {
@@ -5554,6 +5875,11 @@ function handleCloudSessionChange(state) {
   }
   renderCloudAccount();
   applyFavToggleUI();
+  FAVORITES.generation++;
+  FAVORITES.entries = [];
+  closeLibPopup();
+  refreshFavoriteHighlights();
+  if (LIB.filter === 'favorite') { destroyUnifiedGrid($('#libGrid')); renderLibrary(); }
   // Incrementing the loader generation also prevents an old account's response
   // from painting after expiry/sign-out or after switching to another account.
   if (LIB.filter === 'online' && ONLINE.view === 'favorites') loadFavoritesFeed();
@@ -5627,7 +5953,14 @@ function renderCloudAccount() {
     out.className = 'menu-item';
     out.textContent = t('online.signOut');
     out.addEventListener('click', doCloudSignout);
-    host.append(info, sep, out);
+    const sync = bookmarkSyncRows();
+    host.append(info, sep);
+    if (sync.length) {
+      const after = document.createElement('div');
+      after.className = 'menu-sep';
+      host.append(...sync, after);
+    }
+    host.append(out);
     return;
   }
 
@@ -5710,12 +6043,11 @@ function cloudAvailable() {
 // ONL-014c. Translating the shared content filter into the catalogue’s own three ratings
 // moved into that site’s own file, along with everything else peculiar to it.
 
-// The two collections keep their original storage and loaders; this is navigation only.
+// ONL-002: one collection; the old local/catalogue switch is no longer needed.
 function applyFavToggleUI() {
   const isCloud = LIB.filter === 'online' && ONLINE.view === 'favorites';
-  const visible = LIB.filter === 'favorite' || isCloud;
   const views = $('#libFavoriteViews');
-  if (views) views.hidden = !visible;
+  if (views) views.hidden = true;
   $('#viewLibrary')?.classList.toggle('cloud-favorites-view', isCloud);
   for (const [id, selected] of [['#libFavoriteLocal', !isCloud], ['#libFavoriteCloud', isCloud]]) {
     const button = $(id);
@@ -5726,26 +6058,16 @@ function applyFavToggleUI() {
   if (signin) signin.hidden = !(isCloud && cloudAvailable() && !cloudSignedIn());
 }
 
-function selectLibrarySection(filter, favorites = 'local') {
-  const view = filter === 'favorite' && favorites === 'cloud' ? 'favorites' : 'search';
-  if (ONLINE.view !== view) {
-    // Invalidate either loader before changing its destination. Do not change query,
-    // source selection or local favorites when crossing the collection boundary.
-    ONLINE.generation += 1;
-    ONLINE.renderEpoch += 1;
-    ONLINE.loading = false;
-    ONLINE.loaded = false;
-    ONLINE.entries = [];
+function selectLibrarySection(filter) {
+  if (LIB.filter !== filter || LIB.folderPath) contentBlur.reset();
+  if (ONLINE.view !== 'search') {
+    ONLINE.generation++; ONLINE.renderEpoch++; ONLINE.loading = false;
+    ONLINE.loaded = false; ONLINE.entries = [];
   }
-  ONLINE.view = view;
-  const nextFilter = view === 'favorites' ? 'online' : filter;
-  if (LIB.filter !== nextFilter) { LIB.tags = []; LIB.tagMenu = ''; LIB.availableTags = null; }
-  LIB.filter = nextFilter;
-  closeLibPopup();
-  clearSelection();
-  syncSelectionUI();
-  exitFolderState();
-  renderLibrary();
+  ONLINE.view = 'search';
+  if (LIB.filter !== filter) { LIB.tags = []; LIB.tagMenu = ''; LIB.availableTags = null; }
+  LIB.filter = filter;
+  closeLibPopup(); clearSelection(); syncSelectionUI(); exitFolderState(); renderLibrary();
 }
 
 // --- Cloud favorites (C5): account-synced, distinct from the local Library "Избранное" ---
@@ -5828,14 +6150,6 @@ function appendOnlineEntries(entries) {
   if (extra.length) ONLINE.entries = ONLINE.entries.concat(extra);
   renderOnlineEntries();
   return extra.length;
-}
-
-function removeOnlineEntry(key) {
-  const next = ONLINE.entries.filter((entry) => entry.key !== key);
-  if (next.length === ONLINE.entries.length) return false;
-  ONLINE.entries = next;
-  renderOnlineEntries();
-  return true;
 }
 
 // The account's Znada Cloud favorites, shown in the same shared grid (a distinct mode).
@@ -6011,48 +6325,15 @@ function buildCloudCard(item) {
   makeLibCardFocusable(card);
   setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
   card.__galleryItem = galleryItemFromCloud(item);
+  contentBlur.bind(card, { item });
   const thumb = cloudThumbUrl(item);
   if (thumb) card.style.backgroundImage = `url("${thumb}")`;
   const label = [item.width && item.height ? `${item.width}×${item.height}` : '', item.title].filter(Boolean).join(' · ');
-  card.title = item.title || '';
+  card.setAttribute('aria-label', label || t('online.sourceLumina'));
   attachOnlineAddButton(card, 'cloud', item, () => window.api.cloudAdd(item));
   bindOnlineCardContextMenu(card, 'cloud', item);
 
-  // Cloud favorite heart (account-synced; signed-in only). Distinct from the local
-  // Library "Избранное" (a star on local cards).
-  if (cloudSignedIn()) {
-    const fav = document.createElement('button');
-    const setFavUi = () => {
-      const on = CLOUDFAV.ids.has(item.id);
-      fav.className = 'lib-menu-btn cloud-fav' + (on ? ' on' : '');
-      fav.title = t(on ? 'online.favRemove' : 'online.favAdd');
-    };
-    fav.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.2-3.3-6.7-6.2C.2 5.3 1.5 3 3.8 3c1.4 0 2.3.8 2.9 1.6.3.4.6.4.9 0C8.2 3.8 9.1 3 10.5 3c2.3 0 3.6 2.3 2.5 4.8C12 10.7 8 14 8 14z"/></svg>';
-    setFavUi();
-    fav.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (fav.disabled) return;
-      const on = !CLOUDFAV.ids.has(item.id);
-      fav.disabled = true;
-      let res;
-      try { res = await window.api.cloudFavorite(item.id, on); } catch { res = { ok: false, error: 'network' }; }
-      fav.disabled = false;
-      if (res && res.ok) {
-        if (on) CLOUDFAV.ids.add(item.id); else CLOUDFAV.ids.delete(item.id);
-        if (!on && LIB.filter === 'online' && ONLINE.view === 'favorites') {
-          removeOnlineEntry(`cloud:${item.id}`);
-          const left = ONLINE.entries.length;
-          const note = $('#whNote');
-          if (!left && note) note.textContent = t('online.favEmpty');
-          setLibViewHeader(left);
-          return;
-        }
-        setFavUi();
-      } else { toast(CardTransfer.errorMessage(t, res && res.error)); }
-    });
-    card.appendChild(fav);
-  }
-
+  attachBookmarkStar(card, 'cloud', item);
   card.addEventListener('mouseenter', () => setLibStatus(label || t('online.sourceLumina')));
   card.addEventListener('click', () => openGalleryFromCard(card, card.__galleryItem));
   return card;
@@ -6111,10 +6392,6 @@ async function refreshOnlineAccount(sources, isCurrent = () => true) {
   if (!isCurrent()) return;
   renderCloudAccount();
   applyFavToggleUI();
-  if (sources.lumina && cloudSignedIn() && ONLINE.view !== 'favorites') {
-    await ensureCloudFavorites();
-    if (!isCurrent()) return;
-  }
 }
 
 // Toggle a content source on/off (keeps at least one on), persist, re-search.
@@ -6399,13 +6676,15 @@ function buildInternetCard(item) {
   makeLibCardFocusable(card);
   setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
   card.__galleryItem = galleryItemFromInternet(item);
+  contentBlur.bind(card, { item });
   setInternetCardThumbnail(card, item);
   // BUG-035. The same chip as a local card, from what the site says about the file.
   window.MotionBadge.sync(card, window.MotionBadge.fromSite(item), t);
-  const label = [item.resolution, item.category].filter(Boolean).join(' · ');
-  card.title = label;
+  const label = [(window.CardCaption && window.CardCaption.text(item)), item.category].filter(Boolean).join(' · ');
+  card.setAttribute('aria-label', label || t('online.source'));
   attachOnlineAddButton(card, 'internet', item, () => window.api.internetAdd(item, INTERNET.q));
   bindOnlineCardContextMenu(card, 'internet', item);
+  attachBookmarkStar(card, 'internet', item);
   card.addEventListener('mouseenter', () => setLibStatus(label || t('online.source')));
   card.addEventListener('click', () => openGalleryFromCard(card, card.__galleryItem));
   return card;
@@ -6415,12 +6694,17 @@ function buildInternetCard(item) {
 // Page navigation (Home / Settings)
 // ---------------------------------------------------------------------------
 function showPage(name) {
+  if (name !== activePage) contentBlur.reset();
   const views = { home: 'viewHome', library: 'viewLibrary', design: 'viewDesign', prefs: 'viewPrefs' };
   const target = views[name] || 'viewHome';
   const page = document.querySelector('.page');
   // All tabs share one .page scroll container, so remember the outgoing tab's
   // position and restore the incoming one — otherwise switching tabs clamps/loses it.
-  if (page && Object.prototype.hasOwnProperty.call(pageScroll, activePage)) pageScroll[activePage] = page.scrollTop;
+  // BUG-053: while the welcome screen is open the container holds ITS scroll, not the
+  // tab's; enterFirstRun already kept the tab's own position, so leave it alone.
+  const welcome = $('#viewWelcome');
+  const leavingWelcome = !!welcome && !welcome.hidden;
+  if (page && !leavingWelcome && Object.prototype.hasOwnProperty.call(pageScroll, activePage)) pageScroll[activePage] = page.scrollTop;
   if (page) {
     page.classList.toggle('library-page', name === 'library');
     page.classList.toggle('home-page', name === 'home');
@@ -6524,9 +6808,14 @@ async function renderEventLog() {
 }
 
 // First-run welcome screen (one-time).
+// BUG-053: the welcome screen scrolls in the same .page container as the tabs. It opens at
+// the top, the tab it covered keeps its own position, and Home after it starts at the top.
 function enterFirstRun() {
+  const page = document.querySelector('.page');
+  if (page && Object.prototype.hasOwnProperty.call(pageScroll, activePage)) pageScroll[activePage] = page.scrollTop;
   document.body.classList.add('first-run');
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== 'viewWelcome'; });
+  if (page) page.scrollTop = 0;
   $('#welcomeLang').value = config.language || 'system';
   setSwitch($('#welcomeAuto'), !!(config.wallpaperSchedule && config.wallpaperSchedule.mode !== 'off'));
   setSwitch($('#welcomeStartup'), config.autostart);
@@ -6536,6 +6825,7 @@ function enterFirstRun() {
 
 function exitFirstRun() {
   document.body.classList.remove('first-run');
+  pageScroll.home = 0;
   showPage('home');
 }
 
@@ -6763,7 +7053,7 @@ async function homeWallpaperView(monitor) {
   let view = { url: '', motion: null };
   if (path) {
     const frame = await stillFrameView(path);
-    view = { url: (frame && frame.url) || await window.api.fileUrl(path), motion: frame ? frame.motion : null };
+    view = { url: (frame && frame.url) || await window.api.fileUrl(path), motion: frame ? frame.motion : null, path };
   }
   homeWallpaperCache.set(cacheKey, view);
   return view;
@@ -6771,6 +7061,7 @@ async function homeWallpaperView(monitor) {
 
 function applyHomeDisplayWallpaper(wallpaper, view) {
   const url = view && view.url;
+  contentBlur.bind(wallpaper.closest('.home-display') || wallpaper, { path: (view && view.path) || '' }, wallpaper, true);
   const empty = wallpaper.parentElement.querySelector('.home-display-empty');
   const labels = wallpaper.parentElement.querySelector('.home-display-labels');
   if (labels) window.MotionBadge.sync(labels, url ? view.motion : null, t, { inline: true });
@@ -7001,6 +7292,7 @@ function renderHomeRecentItems(items, version) {
     // carry none) and downloaded file names are random hashes, so any caption looked
     // inconsistent — a clean thumbnail grid reads better.
     card.appendChild(preview);
+    contentBlur.bind(card, { path: item.path }, preview, true);
     card.addEventListener('click', () => {
       // Open the assign menu on the existing card; an ephemeral folder image is
       // materialized into the pool only when the user commits an action in the menu
@@ -7152,6 +7444,8 @@ async function init() {
     window.api.onLibraryRemovalQuestionClosed(removalDialog.dismiss);
   }
   config = await window.api.getConfig();
+  contentBlur.install();
+  if (window.api.onContentBlurReset) window.api.onContentBlurReset(contentBlur.reset);
   hydrateOnlineFromConfig();
   currentTheme = await window.api.getTheme();
   currentWallpaperTheme = await window.api.getWallpaperTheme();
@@ -7169,8 +7463,15 @@ async function init() {
 
   refreshNextChange();
 
-  window.api.getVersion().then((v) => {
-    $('#appVersion').textContent = 'v' + v;
+  window.api.getReleaseInfo().then((info) => {
+    RELEASE_INFO = info || null;
+    renderAboutVersion();
+  });
+  $('#btnWhatsNew').addEventListener('click', openWhatsNew);
+  $('#btnWhatsNew').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openWhatsNew();
   });
 
   window.api.getUpdateState().then(renderUpdate);
@@ -7597,6 +7898,7 @@ async function init() {
     const prevLibrary = config.library || {};
     const prevPoolIds = new Set(Object.keys(config.library || {}));
     config = cfg;
+    contentBlur.syncSettings();
     renderConfig();
     renderHome();
     // The Online grid's added/remove badges are derived from the pool, so a change made
@@ -7663,6 +7965,9 @@ async function init() {
 
   // The account is available from every Library section, not only one search source.
   window.api.onCloudSession(handleCloudSessionChange);
+  window.api.onFavoritesChanged?.(handleFavoritesChanged);
+  window.api.onBookmarkSyncStatus?.(applyBookmarkSync);
+  window.api.bookmarkSyncStatus?.().then(applyBookmarkSync).catch(() => {});
 
   // keep thumbnails fitted when the window (and thus cards) resize
   let resizeT = null;

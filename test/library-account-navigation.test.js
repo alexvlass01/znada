@@ -29,9 +29,13 @@ function node() {
 function context() {
   const nodes = {};
   const ctx = {
+    FAVORITES: { entries: [], generation: 0 }, destroyUnifiedGrid() {},
+    contentBlur: { reset() {} },
     $: (sel) => nodes[sel] ||= node(), nodes,
     document: { createElement: node },
     CLOUDAUTH: { state: { signedIn: false }, fetched: true },
+    // ONL-002 stage 4: sync stays off here; bookmark-sync-ui.test.js covers its states.
+    BOOKMARK_SYNC: { state: 'off', held: 0 },
     CLOUDFAV: { ids: new Set(), fetched: false },
     CLOUD: { fetched: true, cap: { available: true, environment: 'staging' } },
     LIB: { filter: 'online' },
@@ -39,6 +43,7 @@ function context() {
     t: (key) => key, cloudAvailable: () => true,
     cloudSignedIn: () => !!ctx.CLOUDAUTH.state?.signedIn,
     renderLibraryAccountTrigger() {}, applyFavToggleUI() {},
+    refreshFavoriteHighlights() {},
     doCloudSignin() {}, doCloudSignout() {},
     window: { api: { cloudFavorites: async () => ({ items: [{ id: 'one' }] }) } },
     replaceOnlineEntries: (entries) => { ctx.ONLINE.entries = entries; },
@@ -110,7 +115,7 @@ function bind(ctx, ...names) { for (const name of names) vm.runInContext(code(na
   positionCtx.placeAnchoredPopover(pop, trigger);
   assert.strictEqual(pop.style.top, '94px', 'a compact top rail opens the menu below the button');
   const ctx = context();
-  bind(ctx, 'accountInitials', 'paintAccountAvatar', 'renderCloudAccount');
+  bind(ctx, 'accountInitials', 'paintAccountAvatar', 'bookmarkSyncRows', 'renderCloudAccount');
   // GNOME-style initials: first and last word, letters/digits only, any script.
   assert.strictEqual(ctx.accountInitials('Alexander Vlasenko'), 'AV');
   assert.strictEqual(ctx.accountInitials('олександр петрович власенко'), 'ОВ');
@@ -162,26 +167,27 @@ function bind(ctx, ...names) { for (const name of names) vm.runInContext(code(na
   ctx.ONLINE.view = 'search';
   ctx.selectLibrarySection('favorite', 'cloud');
   ctx.applyFavToggleUI();
-  assert.strictEqual(ctx.LIB.filter, 'online', 'reuse the existing Cloud grid, not local records');
-  assert.strictEqual(ctx.ONLINE.view, 'favorites');
-  assert.strictEqual(ctx.nodes['#libFavoriteViews'].hidden, false);
-  assert.strictEqual(ctx.nodes['#libFavoriteCloud'].attrs['aria-pressed'], 'true');
+  assert.strictEqual(ctx.LIB.filter, 'favorite', 'all favorites use the existing local toolbar and shared grid');
+  assert.strictEqual(ctx.ONLINE.view, 'search');
+  assert.strictEqual(ctx.nodes['#libFavoriteViews'].hidden, true, 'there is no second catalogue-only collection switch');
   assert.strictEqual(ctx.LIB.q, 'local query');
   const generation = ctx.ONLINE.generation;
   ctx.selectLibrarySection('online');
   ctx.applyFavToggleUI();
   assert.strictEqual(ctx.ONLINE.view, 'search', 'Online must never secretly display favorites');
-  assert.strictEqual(ctx.ONLINE.loaded, false);
-  assert.ok(ctx.ONLINE.generation > generation);
+  assert.strictEqual(ctx.ONLINE.loaded, true, 'visiting favorites does not discard a reusable search feed');
+  assert.strictEqual(ctx.ONLINE.generation, generation);
   assert.strictEqual(ctx.nodes['#libFavoriteViews'].hidden, true);
   ctx.selectLibrarySection('favorite');
   ctx.applyFavToggleUI();
   assert.strictEqual(ctx.LIB.filter, 'favorite');
   assert.strictEqual(ctx.nodes['#libFavoriteLocal'].attrs['aria-pressed'], 'true');
 
-  // A guest stays in Favorites with an honest sign-in state, not a random search feed.
+  // Unified local favorites remain usable signed out. The old loader is retained
+  // for compatibility until the server rollout; exercise its stale-response guard explicitly.
   ctx.selectLibrarySection('favorite', 'cloud');
   ctx.CLOUDAUTH.state = { signedIn: false };
+  ctx.LIB.filter = 'online'; ctx.ONLINE.view = 'favorites';
   let requests = 0;
   ctx.window.api.cloudFavorites = async () => { requests++; return { items: [] }; };
   ctx.applyFavToggleUI();
@@ -220,7 +226,7 @@ function bind(ctx, ...names) { for (const name of names) vm.runInContext(code(na
   ctx.LIB.filter = 'all';
   ctx.ensureCloudCapability = async () => {};
   ctx.ensureCloudSession = async () => { sessions++; };
-  bind(ctx, 'refreshLibraryAccount', 'renderLibraryAccountTrigger');
+  bind(ctx, 'refreshLibraryAccount', 'bookmarkSyncCaption', 'renderLibraryAccountTrigger');
   await ctx.refreshLibraryAccount();
   assert.strictEqual(sessions, 1, 'the account must initialize even from a local section');
   assert.strictEqual(ctx.nodes['#libAccountName'].textContent, 'online.account');

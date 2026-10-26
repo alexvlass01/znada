@@ -12,7 +12,6 @@ function readSource(...parts) {
   return fs.readFileSync(path.join(...parts), 'utf8').split('\r\n').join('\n');
 }
 const preload = readSource(ROOT, 'preload.js');
-const main = readSource(ROOT, 'main.js');
 const rendererDir = path.join(ROOT, 'renderer');
 const renderer = fs.readdirSync(rendererDir)
   .filter((name) => name.endsWith('.js'))
@@ -27,8 +26,26 @@ function duplicates(values) {
   return [...new Set(values.filter((value, index) => values.indexOf(value) !== index))];
 }
 
+// What main actually registers, taken from main itself running under the harness. This used
+// to be a search of main.js for `ipcMain.handle('...` (CODE-001): it held only while every
+// handler lived in that one file, and a handler moved into a module would have shown up here
+// as a channel nobody handles. A second registration of the same channel throws inside the
+// harness exactly as it does in Electron, so loading main is also the duplicate check.
+function registeredChannels() {
+  const H = require('./helpers/main-harness');
+  const quiet = { log: console.log, warn: console.warn, error: console.error };
+  console.log = () => {}; console.warn = () => {}; console.error = () => {};
+  try {
+    const loaded = H.loadMain(H.makeTempProfile('ipc-contract'));
+    return [...loaded.handlers.keys()];
+  } finally {
+    Object.assign(console, quiet);
+    H.unloadMain();
+  }
+}
+
 const invokedChannels = captures(preload, /ipcRenderer\.invoke\(['"]([^'"]+)/g);
-const handledChannels = captures(main, /ipcMain\.handle\(['"]([^'"]+)/g);
+const handledChannels = registeredChannels();
 const exposedMethods = captures(preload, /^\s{2}([A-Za-z_$][\w$]*):/gm);
 const usedMethods = captures(renderer, /window\.api\.([A-Za-z_$][\w$]*)/g);
 

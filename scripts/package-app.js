@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { STAMP_FILE, makeStamp } = require('../src/whats-new');
 
 const ROOT = path.resolve(__dirname, '..');
 const OFFICIAL_ENV = 'ZNADA_OFFICIAL_BUILD';
@@ -63,6 +64,10 @@ const ALWAYS_IGNORED = Object.freeze([
   '^/ROADMAP\\.md$',
   '^/CLAUDE\\.md$',
   '^/AGENTS\\.md$',
+  // DIST-001. The public README's banner and showcase sit in assets/ beside the app icons so
+  // GitHub can show them, but they are pictures of the app, not part of it: about 5 MB the
+  // installer must not carry.
+  '^/assets/readme-[^/]*$',
   // BUG-045. Root batch files are local launchers (DEV, DIAG, Review, Check), and none of them
   // ships. One pattern for the whole class: Znada-Check.bat arrived without a line of its own
   // here and every package failed its verification until the pattern covered it.
@@ -224,6 +229,16 @@ function resolveMode(argv = process.argv.slice(2), env = process.env, root = ROO
   return { official: flag };
 }
 
+// Метка {version, date} официальной сборки ложится рядом с app.asar; день — местный день
+// сборки, то есть день выпуска. Пишется заново каждой официальной сборкой.
+function writeReleaseStamp(root = ROOT, now = new Date()) {
+  const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const file = path.join(root, '.build', STAMP_FILE);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(makeStamp(version, now)) + '\n');
+  return file;
+}
+
 function buildPackagerArgs({ root = ROOT, official = false } = {}) {
   const packager = path.join(root, 'node_modules', '@electron', 'packager', 'bin', 'electron-packager.mjs');
   const args = [
@@ -238,6 +253,8 @@ function buildPackagerArgs({ root = ROOT, official = false } = {}) {
     '--app-copyright=Copyright (c) 2026 alexv. All rights reserved.',
     '--extra-resource=.build/thumbnail-helper',
   ];
+  // DESIGN-012. Дата выхода — только у официальной сборки: обычная не знает, выпуск ли это.
+  if (official) args.push(`--extra-resource=.build/${STAMP_FILE}`);
   for (const pattern of [...ALWAYS_IGNORED, ...(official ? [] : KEYLESS_IGNORED)]) {
     args.push(`--ignore=${pattern}`);
   }
@@ -246,6 +263,7 @@ function buildPackagerArgs({ root = ROOT, official = false } = {}) {
 
 function run(argv = process.argv.slice(2), env = process.env, root = ROOT) {
   const { official } = resolveMode(argv, env, root);
+  if (official) writeReleaseStamp(root);
   const args = buildPackagerArgs({ root, official });
   const result = spawnSync(process.execPath, args, {
     cwd: root,
@@ -279,5 +297,6 @@ module.exports = {
   findSensitiveSourceEntries,
   isSensitiveRuntimePath,
   resolveMode,
+  writeReleaseStamp,
   validateProviderCredential,
 };

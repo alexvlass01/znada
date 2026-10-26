@@ -182,6 +182,7 @@ function mainWindow() {
   };
   const openedAssign = [];
   const context = {
+    contentBlur: { bind() {}, enabled: () => false },
     window: { api, MotionBadge, MotionHover, JustifiedLayout: { normalizeAspect: (a) => a } },
     document: doc,
     t,
@@ -316,10 +317,10 @@ check('a still picture, or a question that fails, draws the file exactly as befo
   const w = mainWindow();
   w.answers.set('C:\\w\\current.gif', GIF_STILL);
   const still = await w.fns.homeWallpaperView({ id: 'mon1' });
-  assert.deepStrictEqual(plain(still), { url: 'file:///C:\\w\\current.gif', motion: null });
+  assert.deepStrictEqual(plain(still), { url: 'file:///C:\\w\\current.gif', motion: null, path: 'C:\\w\\current.gif' });
   w.answers.set('C:\\w\\current.gif', new Error('locked'));
   const failed = await w.fns.homeWallpaperView({ id: 'mon1' });
-  assert.deepStrictEqual(plain(failed), { url: 'file:///C:\\w\\current.gif', motion: null });
+  assert.deepStrictEqual(plain(failed), { url: 'file:///C:\\w\\current.gif', motion: null, path: 'C:\\w\\current.gif' });
   assert.deepStrictEqual(w.asked.thumbInfo, [], 'no still frame was asked for');
   assert.deepStrictEqual(plain(await w.fns.homeWallpaperView({ id: 'mon2' })), { url: '', motion: null }, 'an empty monitor');
 });

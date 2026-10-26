@@ -9,9 +9,9 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const store = require('../src/metadata-store');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 function ok(name, condition) {
@@ -20,7 +20,7 @@ function ok(name, condition) {
   console.log('  OK ' + name);
 }
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'znada-meta-'));
+const dir = makeTempDir('znada-meta-');
 const configPath = path.join(dir, 'config.json');
 const T0 = 1_700_000_000_000;
 

@@ -49,6 +49,13 @@ ok('когда размеров нет, разрешение читается и
   // Ровно тот шаблон «ШИРИНАxВЫСОТА», который уже показывает сам просмотрщик.
   assert.strictEqual(knownAspect({ title: '2560x1280', raw: {} }), 2);
   assert.strictEqual(knownAspect({ subtitle: 'Онлайн - 800x400 - anime', raw: {} }), 2);
+  // META-002. The caption writes a multiplication sign and spaces. The old
+  // "2560x1280" form still has to work, and this form must not come back as 0
+  // or the viewer would guess the shape and then append the size a second time.
+  assert.strictEqual(knownAspect({ title: '1920 × 1080', raw: {} }), 1920 / 1080);
+  assert.strictEqual(knownAspect({ subtitle: 'Онлайн - 800 × 400 - anime', raw: {} }), 2);
+  assert.ok(viewerSrc.includes('/\\d+\\s*[x×]\\s*\\d+/'),
+    'updateResolutionInSubtitle must treat the caption glyph as a resolution');
 });
 
 ok('неизвестные пропорции честно возвращают ноль, а не догадку', () => {

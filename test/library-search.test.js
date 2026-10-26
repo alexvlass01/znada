@@ -156,6 +156,7 @@ const names = (entries) => Array.from(entries, (entry) => (entry.item ? entry.it
   const empty = {};
   const reply = { expand: [], folder: { folders: [], images: [] }, removed: [] };
   const ctx = {
+    FAVORITES: { entries: [] },
     LIB: { filter: 'all', tags: [], q: '', sort: 'name', folderPath: null, crumbs: [], shuffleRank: {} },
     config: { library: {} },
     allViewToken: 1,
@@ -196,6 +197,7 @@ const names = (entries) => Array.from(entries, (entry) => (entry.item ? entry.it
   const all = async (q, tag = '') => {
     Object.assign(ctx.LIB, { filter: 'all', q, tags: tag ? [tag] : [], folderPath: null });
     ctx.config.library = library();
+    ctx.FAVORITES.entries = Object.values(ctx.config.library).filter(item => item.favorite).map(item => ({ item }));
     ctx.emptyKey = undefined;
     ctx.shown = null;
     reply.expand = [{ id: 'x1', path: 'C:/watched/skyline.jpg' }, { id: 'x2', path: 'C:/watched/beach.jpg' }];
@@ -290,6 +292,8 @@ const names = (entries) => Array.from(entries, (entry) => (entry.item ? entry.it
   // --- the real config-broadcast handler decides between a rebuild and the in-place upgrade ---
   const calls = { render: 0, upgrade: 0 };
   const hctx = {
+    contentBlur: { bind() {}, syncSettings() {}, enabled: () => false },
+    FAVORITES: { entries: [] },
     LIB: { filter: 'all', q: 'sky', tags: [] },
     config: { library: library(), monitors: {} },
     LibrarySearch,

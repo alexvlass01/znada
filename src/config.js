@@ -17,6 +17,7 @@ const library = require('./library');
 const libraryStore = require('./library-store');
 const sizeFilter = require('./size-filter');
 const quickFilters = require('./online-quick-filters');
+const usagePingMod = require('./usage-ping');
 
 const DEFAULT_CONFIG = {
   lightWallpaper: '',     // legacy global fallback (unless a slot was explicitly emptied)
@@ -40,7 +41,7 @@ const DEFAULT_CONFIG = {
   startMinimized: true,   // при автозапуске стартовать сразу в трее (флаг --hidden)
   language: 'system',     // 'system' | 'en' | 'ru' | 'uk'
   firstRunDone: false,
-  telemetry: false,       // задел: анонимная статистика (пока ничего не отправляется)
+  telemetry: false,       // задел: необязательная подробная статистика (не сделана); TELEM-001 её не читает
   librarySort: 'added',   // сортировка в «Библиотеке»: 'added' | 'name' | 'size' | 'shuffle'
   // DATA-006. The folder the user picked for the files Znada copies for itself. Empty =
   // the profile's own `wallpapers` folder, which is where everyone starts. Znada creates
@@ -84,6 +85,7 @@ const DEFAULT_CONFIG = {
   // TWO ratings, `sensitive` and `questionable`. The default has to be the setting that
   // never embarrasses anyone; widening it is one click.
   onlinePurity: { sfw: true, sketchy: false, nsfw: false },
+  contentBlur: { nsfw: false, sketchy: false }, // LIB-016: display only, independent of search admission
   // One-shot marker for that change. Deliberately `false` here: an existing config file
   // has no such field, so it inherits this default and the migration below runs once.
   // A profile that has already been migrated carries `true` and is never touched again,
@@ -111,6 +113,9 @@ const DEFAULT_CONFIG = {
   // Generated once in main when empty; never contains personal data. Sent as the
   // X-Lumina-Anon-Id header on cloud requests; the server only stores a hash.
   anonId: '',
+  // TELEM-001. Which six-hour UTC window the minimal usage signal last used, and whether
+  // its one attempt and one retry are spent. Main-only; see src/usage-ping.js.
+  usagePing: usagePingMod.defaultState(),
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
@@ -229,6 +234,7 @@ function normalize(cfg) {
   cfg.librarySidebarCollapsed = cfg.librarySidebarCollapsed === true;
 
   if (!['date_added', 'toplist', 'random', 'views'].includes(cfg.onlineSort)) cfg.onlineSort = 'date_added';
+  cfg.contentBlur = { nsfw: cfg.contentBlur?.nsfw === true, sketchy: cfg.contentBlur?.sketchy === true };
   cfg.onlinePurity = {
     sfw: true, sketchy: false, nsfw: false,
     ...(cfg.onlinePurity && typeof cfg.onlinePurity === 'object' ? cfg.onlinePurity : {}),
@@ -267,6 +273,8 @@ function normalize(cfg) {
   // Anonymous install id: keep only a well-formed value; anything else resets to ''
   // so main re-generates a fresh one.
   if (typeof cfg.anonId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(cfg.anonId)) cfg.anonId = '';
+
+  cfg.usagePing = usagePingMod.normalizeState(cfg.usagePing);
 
   return cfg;
 }
@@ -356,6 +364,7 @@ function load(configPath) {
   // persisted rather than living only in memory. Non-enumerable so it never reaches
   // config.json or the renderer through a plain copy.
   const beforeNormalize = Object.keys(cfg.library).length + cfg.libraryTrash.length;
+  const favoriteDatesMissing = library.needsFavoriteDates(cfg.library);
   const normalized = normalize(cfg);
   // normalize() calls migrateConfig(), which can CREATE pool entries out of legacy
   // slots or the old global fallback. Measured after it runs, or the entity would live
@@ -373,7 +382,7 @@ function load(configPath) {
       // and counting rejected candidates made a damaged config.json trigger a rewrite
       // of a perfectly healthy store.
       mergedInline: !!mergedPool.inlineContributed,
-      normalizeAdded: afterNormalize !== beforeNormalize,
+      normalizeAdded: afterNormalize !== beforeNormalize || favoriteDatesMissing,
     },
     enumerable: false, writable: true, configurable: true,
   });

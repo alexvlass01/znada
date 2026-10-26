@@ -19,6 +19,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
 const H = require('./helpers/main-harness');
+const { mainProcessSources, walk, propertyName, writtenName, stringValue } = require('./helpers/main-process-sources');
 
 const SYSTEM_ROOT = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
 const POWERSHELL = path.win32.join(SYSTEM_ROOT, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
@@ -301,21 +302,166 @@ function shortDeadlines(m, ms) {
     }
   });
 
+  // WIN-002's names for starting a program: child_process's, and process.execve.
+  const LAUNCHES = new Set(['execFile', 'execFileSync', 'spawn', 'spawnSync', 'fork', 'exec', 'execSync', 'execve']);
+  const calleeName = (callee) => (callee.type === 'Identifier' ? callee.name
+    : callee.type === 'MemberExpression' ? propertyName(callee) : null);
+
   await test('main.js starts no system program except through the runner', async () => {
     // The class, not the four places fixed today: a fifth execFile with a bare name and
     // no deadline would bring the whole defect back.
-    const source = fs.readFileSync(path.join(H.ROOT, 'main.js'), 'utf8').replace(/\r\n/g, '\n');
-    const direct = source.match(/\bexecFile\s*\(/g) || [];
-    assert.strictEqual(direct.length, 0, `main.js calls execFile directly ${direct.length} time(s)`);
-    assert.ok(!/\bspawn\s*\(/.test(source), 'main.js spawns a process directly');
-    assert.ok(!/\bexecFileSync\s*\(\s*['"]/.test(source), 'main.js runs a program by bare name');
-    // The resolver is the one place allowed to name a program; everywhere else a bare
-    // name would be looked up on PATH.
-    const named = source.replace(/\bsystemExecutable\(\s*'[a-z]+'\s*\)/g, '');
-    assert.ok(!/['"]powershell(\.exe)?['"]/i.test(named), 'main.js names PowerShell without its path');
-    assert.ok(!/['"]reg(\.exe)?['"]/i.test(named), 'main.js names reg without its path');
-    assert.strictEqual((source.match(/\bsystemExecutable\(/g) || []).length, 2,
-      'a new system program should be named here on purpose');
+    // CODE-001: asked of the syntax tree, like every check below, so a comment between a
+    // name and its parenthesis or its quotes does not hide it.
+    const { ast } = mainProcessSources().find((s) => s.file === 'main.js');
+    const direct = [];
+    const bareNames = [];
+    let resolver = 0;
+    walk(ast, (node, parent) => {
+      if (node.type === 'CallExpression') {
+        const name = calleeName(node.callee);
+        if (name === 'systemExecutable') resolver += 1;
+        const regexp = name === 'exec' && node.callee.type === 'MemberExpression';
+        // main deletes its own login item with execFileSync, always given a resolved path.
+        const resolved = name === 'execFileSync' && node.arguments.length && stringValue(node.arguments[0]) === null;
+        if (LAUNCHES.has(name) && !regexp && !resolved) direct.push(`main.js:${node.loc.start.line} ${name}()`);
+      }
+      // The resolver is the one place allowed to name a program; everywhere else a bare
+      // name would be looked up on PATH.
+      const text = stringValue(node);
+      if (text !== null && /^(powershell|reg)(.exe)?$/i.test(text)
+        && !(parent && parent.type === 'CallExpression' && calleeName(parent.callee) === 'systemExecutable')) {
+        bareNames.push(`main.js:${node.loc.start.line} '${text}'`);
+      }
+    });
+    assert.deepStrictEqual(direct, [], 'main.js starts a program itself, or runs one by bare name');
+    assert.deepStrictEqual(bareNames, [], 'main.js names a system program without its path');
+    assert.strictEqual(resolver, 2, 'a new system program should be named here on purpose');
+  });
+
+  // CODE-001. The rule above is about the main PROCESS; main.js was only where its code
+  // happened to live. Code moved into a module would leave that check passing over a file
+  // that no longer contains it, so the rest of main's code is held to the same rule here.
+  // The modules below ARE the doors, each named on purpose.
+  const DOORS = new Map([
+    ['main.js', 'checked call by call above'],
+    ['src/child-runner.js', 'the runner itself: System32 path, deadline, tree kill'],
+    ['src/wallpaper-host.js', 'its one persistent PowerShell host (WIN-002)'],
+    ['src/thumbnail-host.js', 'its one persistent thumbnail helper'],
+    ['diagnostics/main/dev-launch.js', 'dev only: git status for the check launch; never packaged'],
+  ]);
+  // Asked of each file's syntax tree and of what it requires, never of its text: the
+  // first re-review hid a require from a pattern with a comment inside the parentheses.
+  // Outside the doors, a launch is one of the names above written anywhere, not only called
+  // (the third re-review renamed it while destructuring and called it through .call): as a
+  // name of its own, read off whatever holds it (deps.execFile, deps.execFile.call,
+  // Reflect.apply(deps['execFile'], …)), taken out by destructuring ({ execFile: run } = deps),
+  // or as a string. exec counts only as a name of its own: read off something it is mostly
+  // RegExp#exec, so deps.exec(…) would not be seen. Nothing in main hands exec on, and a file
+  // that holds child_process is named by its require anyway.
+  function launchesOutsideTheDoors(sources) {
+    const offenders = [];
+    for (const { file, ast, requires } of sources) {
+      if (DOORS.has(file)) continue;
+      for (const { spec, line } of requires) {
+        if (/^(node:)?child_process$/.test(spec)) offenders.push(`${file}:${line} requires child_process`);
+      }
+      const reported = new Set(); // `{ execFile } = deps` is a read and a name on one line
+      walk(ast, (node, parent) => {
+        const written = writtenName(node, parent);
+        if (!written || !LAUNCHES.has(written.name) || (written.name === 'exec' && written.how !== 'name')) return;
+        const line = node.loc.start.line;
+        if (reported.has(`${line} ${written.name}`)) return;
+        reported.add(`${line} ${written.name}`);
+        const as = written.how === 'read' ? `.${written.name}` : written.how === 'string' ? `'${written.name}'` : written.name;
+        offenders.push(`${file}:${line} uses ${as}`);
+      });
+    }
+    return offenders;
+  }
+
+  // A throwaway project for the gate: { 'relative/path': 'text' }.
+  function project(dir, files) {
+    const root = path.join(dir, 'project');
+    for (const [rel, text] of Object.entries({ 'main.js': '', 'diagnostics/main/.keep': '', ...files })) {
+      fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+      fs.writeFileSync(path.join(root, rel), text);
+    }
+    return root;
+  }
+
+  await test('and neither does any other main-process module', async () => {
+    const offenders = launchesOutsideTheDoors(mainProcessSources());
+    assert.deepStrictEqual(offenders, [], 'a system program started outside the runner:\n  ' + offenders.join('\n  '));
+  });
+
+  await test('including a .cjs module that main reaches only through another module', async (dir) => {
+    // How the independent review got past the first version of the set, which read only
+    // .js files: a .cjs under src/cloud/, loaded by src/online.js, starting PowerShell by
+    // bare name. The whole suite stayed green over it.
+    const root = project(dir, {
+      'main.js': "require('./src/online');\n",
+      'src/online.js': "require('./cloud/review-process.cjs');\n",
+      'src/cloud/review-process.cjs': "const cp = require('node:child_process');\n"
+        + "module.exports = () => cp.execFile('powershell.exe', ['-NoProfile']);\n",
+    });
+    assert.deepStrictEqual(launchesOutsideTheDoors(mainProcessSources(root)),
+      ['src/cloud/review-process.cjs:1 requires child_process', 'src/cloud/review-process.cjs:2 uses .execFile']);
+  });
+
+  await test('and a module main reaches through a package.json "imports" alias, loaded only when called', async (dir) => {
+    // How the second re-review got past the second version: require('#review-main') did not
+    // start with a dot, so it was taken for a package and never read. The full npm test was
+    // green over it.
+    const root = project(dir, {
+      'package.json': JSON.stringify({ imports: { '#review-main': './diagnostics/core/review-alias.cjs' } }),
+      'main.js': "require('./src/online');\n",
+      'src/online.js': "module.exports.probe = () => require('#review-main');\n",
+      'diagnostics/core/review-alias.cjs': "const cp = require('node:child_process');\n"
+        + "module.exports = () => cp.execFile('powershell.exe', ['-NoProfile']);\n",
+    });
+    assert.deepStrictEqual(launchesOutsideTheDoors(mainProcessSources(root)),
+      ['diagnostics/core/review-alias.cjs:1 requires child_process', 'diagnostics/core/review-alias.cjs:2 uses .execFile']);
+  });
+
+  await test('and however the require or the call is written', async (dir) => {
+    // The first re-review: a comment inside require() hid it from the old pattern, and
+    // process.getBuiltinModule reached child_process with no require() at all.
+    const root = project(dir, {
+      'main.js': "require('./src/a');\nrequire('./src/b');\n",
+      'src/a.js': "const cp = require(/* runner */ 'node:child_process');\n",
+      // main hands a module execFile; the module never sees child_process.
+      'src/b.js': "module.exports = (deps) => { deps.execFile('powershell.exe', []); process.execve('x.exe'); };\n",
+    });
+    assert.deepStrictEqual(launchesOutsideTheDoors(mainProcessSources(root)),
+      ['src/a.js:1 requires child_process', 'src/b.js:1 uses .execFile', 'src/b.js:1 uses .execve']);
+    const hidden = project(path.join(dir, 'hidden'), {
+      'src/a.js': "const cp = process.getBuiltinModule('node:child_process');\n"
+        + "module.exports.probe = () => cp.execFile('powershell.exe', ['-NoProfile']);\n",
+    });
+    assert.throws(() => launchesOutsideTheDoors(mainProcessSources(hidden)), /\.getBuiltinModule reaches into the module loader/);
+  });
+
+  await test('and a launch handed in by main counts wherever its name is written, not only where called', async (dir) => {
+    // The third re-review: execFile renamed while destructuring, and called through .call,
+    // left the gate with nothing to report.
+    const root = project(dir, {
+      'src/a.js': [
+        'module.exports = (deps) => {',
+        '  const { execFile: run } = deps;',
+        "  run('powershell.exe', ['-NoProfile']);",
+        "  deps.execFile.call(null, 'powershell.exe', []);",
+        "  Reflect.apply(deps['spawnSync'], null, ['x.exe']);",
+        "  const name = 'fork';",
+        '  const { execFileSync } = deps;',
+        '  return deps[name];',
+        '};',
+      ].join('\n'),
+      // exec counts as a name of its own; read off a value it is RegExp#exec.
+      'src/b.js': "module.exports = (exec, s) => { exec('x'); return /x/.exec(s); };\n",
+    });
+    assert.deepStrictEqual(launchesOutsideTheDoors(mainProcessSources(root)), [
+      'src/a.js:2 uses .execFile', 'src/a.js:4 uses .execFile', "src/a.js:5 uses .spawnSync", "src/a.js:6 uses 'fork'",
+      'src/a.js:7 uses .execFileSync', 'src/b.js:1 uses exec']);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

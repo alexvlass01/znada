@@ -156,4 +156,15 @@ async function search(params, ctx) {
   return parseCatalog(res.data);
 }
 
-module.exports = { PROVIDER, search, searchTerms, mapItem, parseCatalog, ratingFor };
+async function lookup(id, ctx) {
+  const session = ctx.credentials;
+  if (!session?.client) return { error: 'unavailable' };
+  const res = await session.client.getContent(id, { token: session.token || undefined });
+  if (session.isCurrent && !session.isCurrent()) return { error: 'session_changed' };
+  if (!res.ok) { session.onAuthError?.(res); return { error: String(res.status || res.error?.code || 'network') }; }
+  const item = mapItem({ ...res.data, thumb_url: res.data.preview_url });
+  if (item) { item.tags = Array.isArray(res.data.tags) ? res.data.tags : []; item.format = res.data.format || ''; }
+  return item && item.id === id ? { item } : { error: '404' };
+}
+
+module.exports = { PROVIDER, search, lookup, searchTerms, mapItem, parseCatalog, ratingFor };

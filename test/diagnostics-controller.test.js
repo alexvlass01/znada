@@ -2,10 +2,10 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { createDiagnosticsController } = require('../diagnostics/main/controller');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 let passed = 0;
 const ok = (name, condition) => {
@@ -15,7 +15,7 @@ const ok = (name, condition) => {
 };
 
 function tmpRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'znada-diagnostics-controller-'));
+  return makeTempDir('znada-diagnostics-controller-');
 }
 
 function fakeIpcMain() {

@@ -8,6 +8,7 @@ const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const { build } = require('../scripts/build-thumbnail-helper');
 const { ThumbnailHost } = require('../src/thumbnail-host');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 function makeBmp(width, height) {
   const rowSize = Math.ceil((width * 3) / 4) * 4;
@@ -162,7 +163,7 @@ function averageGreenRow(image, row) {
   });
   assert.strictEqual(selfTest.status, 0);
   assert.match(selfTest.stdout, /self-test ok protocol=1/);
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-thumbnail-helper-test-'));
+  const tempRoot = makeTempDir('lumina-thumbnail-helper-test-');
   const alphaPath = path.join(tempRoot, 'прозрачная картинка.png');
   const opaquePngPath = path.join(tempRoot, 'opaque image.png');
   const bmpPath = path.join(tempRoot, 'opaque image.bmp');
