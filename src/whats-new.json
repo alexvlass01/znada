@@ -1,4 +1,30 @@
 {
+  "1.9.0": {
+    "en": [
+      { "title": "Watch videos in Znada", "text": "Open videos from your Library or find them in Online on Gelbooru and Danbooru. You can watch online videos before downloading or save them to the Library." },
+      { "title": "Show photos, GIFs or videos", "text": "Use the media filters in Library and Online to show the kinds you want. Videos play in the viewer and can't be set as wallpapers." },
+      { "title": "Browse photos more smoothly", "text": "The viewer prepares nearby photos in advance as you browse Library and Online." },
+      { "title": "Use photos you already have", "text": "When Znada finds that an online photo is already in your library, it marks the photo as available. You can set it as wallpaper using your existing copy." },
+      { "title": "Find duplicate files", "text": "Turn on duplicate checking in Settings to find exact copies and review them before deciding what to keep." },
+      { "title": "Recover unreadable data", "text": "When a readable backup is available, Znada can restore damaged settings, library or folder data and let you know." }
+    ],
+    "ru": [
+      { "title": "Смотрите видео в Znada", "text": "Открывайте видео из Библиотеки или ищите их в «Онлайн» на Gelbooru и Danbooru. Ролики можно смотреть до скачивания или сохранять в Библиотеку." },
+      { "title": "Фото, GIF или видео", "text": "В Библиотеке и «Онлайн» можно выбрать, какие типы файлов показывать. Видео открываются в просмотрщике и не назначаются обоями." },
+      { "title": "Листайте фото плавнее", "text": "Просмотрщик заранее готовит соседние фото в Библиотеке и «Онлайн»." },
+      { "title": "Используйте фото, которые уже есть", "text": "Если фото из «Онлайн» уже есть в Библиотеке, Znada отметит его галочкой. Его можно назначить обоями из своей копии." },
+      { "title": "Находите одинаковые файлы", "text": "Включите поиск одинаковых файлов в настройках, чтобы найти точные копии, просмотреть их и решить, что оставить." },
+      { "title": "Восстановление повреждённых данных", "text": "Если сохранилась читаемая копия, Znada может восстановить повреждённые настройки, данные Библиотеки или состояние папок и сообщить об этом." }
+    ],
+    "uk": [
+      { "title": "Дивіться відео в Znada", "text": "Відкривайте відео з Бібліотеки або шукайте їх в «Онлайн» на Gelbooru й Danbooru. Ролики можна дивитися до завантаження або зберігати в Бібліотеку." },
+      { "title": "Фото, GIF або відео", "text": "У Бібліотеці й «Онлайн» можна вибрати, які типи файлів показувати. Відео відкриваються в переглядачі й не встановлюються як шпалери." },
+      { "title": "Гортайте фото плавніше", "text": "Переглядач завчасно готує сусідні фото в Бібліотеці й «Онлайн»." },
+      { "title": "Використовуйте фото, які вже маєте", "text": "Якщо фото з «Онлайн» уже є в Бібліотеці, Znada позначить його галочкою. Його можна встановити як шпалери зі своєї копії." },
+      { "title": "Знаходьте однакові файли", "text": "Увімкніть пошук однакових файлів у налаштуваннях, щоб знайти точні копії, переглянути їх і вирішити, що залишити." },
+      { "title": "Відновлення пошкоджених даних", "text": "Якщо збереглася придатна копія, Znada може відновити пошкоджені налаштування, дані Бібліотеки або стан тек і повідомити про це." }
+    ]
+  },
   "1.8.0": {
     "en": [
       {

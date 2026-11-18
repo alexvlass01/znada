@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const H = require('./helpers/main-harness');
 const library = require('../src/library');
+const libraryStore = require('../src/library-store');
 const { pathKey } = require('../src/path-key');
 
 let passed = 0;
@@ -186,8 +187,8 @@ function assertNotActiveAndRemoved(m) {
   });
 
   await test('the new mark is on disk at once, and survives a restart', async (dir) => {
-    const { m, root, beach, beachId } = await setup(dir);
-    await m.invoke('library-remove-many', [{ id: beachId, path: beach }]);
+    const { m, root, beach, beachId, cityId } = await setup(dir);
+    const removal = await m.invoke('library-remove-many', [{ id: beachId, path: beach }]);
     const renamed = path.join(root, 'beach-2026.png');
     fs.renameSync(beach, renamed);
     await m.invoke('library-refresh');
@@ -205,6 +206,17 @@ function assertNotActiveAndRemoved(m) {
     assert.ok(!(await shownInAll(again)).has(pathKey(renamed)), 'it came back after a restart');
     const kept = again.__test.getConfig().libraryTrash.find((e) => e.item.id === library.idFor(renamed));
     assert.ok(kept && kept.item.favorite === true, 'the kept record, read back from disk, names the new file');
+    assert.strictEqual(again.__test.lastRemovalPending(), false, 'restart must not resurrect the transient Undo');
+    assert.strictEqual((await again.invoke('library-undo-remove', removal.undo.token)).error, 'nothing_to_undo');
+    const restored = await again.invoke('library-restore', [renamed]);
+    assert.strictEqual(restored.restored, 1);
+    const newId = library.idFor(renamed);
+    assert.strictEqual(cfg(again).library[newId].author, 'ann');
+    assert.deepStrictEqual(cfg(again).library[newId].tags, ['sky', 'sea']);
+    assert.deepStrictEqual(cfg(again).monitors.M1.light.itemIds, [newId, cityId]);
+    assert.deepStrictEqual(cfg(again).monitors.M1.dark.itemIds, [newId]);
+    assert.ok(!cfg(again).library[beachId]);
+    assertNotActiveAndRemoved(again);
   });
 
   await test('an active record already at the new name wins: shown, not removed at once', async (dir) => {
@@ -245,6 +257,8 @@ function assertNotActiveAndRemoved(m) {
     await m.invoke('library-remove-many', [{ id: library.idFor(plain), path: plain }]);
     const older = cfg(m).libraryTrash.find((e) => pathKey(e.item.path) === pathKey(plain));
     assert.ok(older, 'setup: the older photo is kept');
+    older.rev = 100;
+    const stale = JSON.parse(JSON.stringify(older));
     fs.rmSync(plain);
     await m.invoke('library-refresh');
     await m.invoke('library-remove-many', [{ id: beachId, path: beach }]);
@@ -254,9 +268,37 @@ function assertNotActiveAndRemoved(m) {
     assert.strictEqual(kept.length, 1, `${kept.length} kept records under one name`);
     assert.strictEqual(kept[0].item.favorite, true, 'the record that stayed is not the one that moved');
     assert.ok(library.revOf(kept[0]) > library.revOf(older), 'the moved record is not newer than the one it replaced');
-    const res = await m.invoke('library-restore', [plain]);
+    for (const [left, right] of [[kept[0], stale], [stale, kept[0]]]) {
+      const merged = libraryStore.mergePool({ library: {}, trash: [left] }, { trash: [right] });
+      assert.strictEqual(merged.trash.length, 1);
+      assert.deepStrictEqual(merged.trash[0].item.tags, ['sky', 'sea']);
+    }
+    m.__test.flushLibraryWriter();
+    H.unloadMain();
+    const again = H.loadMain(dir);
+    again.__test.loadConfig();
+    again.__test.loadLiveFolderState();
+    await again.invoke('library-refresh');
+    const res = await again.invoke('library-restore', [plain]);
     assert.strictEqual(res.restored, 1);
-    assert.deepStrictEqual(cfg(m).library[library.idFor(plain)].tags, ['sky', 'sea']);
+    assert.deepStrictEqual(cfg(again).library[library.idFor(plain)].tags, ['sky', 'sea']);
+    assertNotActiveAndRemoved(again);
+  });
+
+  await test('a photo hidden only by its subfolder gets no personal mark when moved out', async (dir) => {
+    const { m, root, plain } = await setup(dir);
+    const sub = path.join(root, 'removed-sub');
+    const inside = path.join(sub, 'plain.png');
+    fs.mkdirSync(sub);
+    fs.renameSync(plain, inside);
+    await m.invoke('library-refresh');
+    await m.invoke('library-remove-many', [{ path: sub, type: 'folder' }]);
+    assert.ok(!(await shownInAll(m)).has(pathKey(inside)), 'setup: hidden by subfolder');
+    fs.renameSync(inside, plain);
+    await m.invoke('library-refresh');
+    assert.ok((await shownInAll(m)).has(pathKey(plain)), 'moving out must make it visible');
+    assert.ok(!m.__test.hiddenPathSet().has(pathKey(plain)), 'no personal removed mark');
+    assertNotActiveAndRemoved(m);
   });
 
   // --- what is left exactly as it was ---------------------------------------------

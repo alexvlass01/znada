@@ -232,7 +232,7 @@
     "addFolder": "Klasör Ekle…",
     "empty": "Kütüphaneniz boş — resimleri buraya sürükleyin veya «Resim Ekle…» düğmesine tıklayın.",
     "emptyFolder": "Bu klasörde görsel yok.",
-    "noMatches": "Aramayla veya etiketle eşleşen bir şey yok. Hepsini görmek için temizleyin.",
+    "noMatches": "Burada sonuç yok. Tümünü görmek için aramayı, etiketleri veya filtreleri temizleyin.",
     "emptyFavorites": "Henüz favori yok: bir fotoğrafı yıldızla işaretleyin, burada görünür.",
     "emptyFolders": "Henüz klasör yok: “Klasör Ekle…” ile bir tane ekleyin.",
     "back": "‹ Tüm klasörler",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} fotoğraf",
     "photosCount_few": "{n} fotoğraf",
     "photosCount_many": "{n} fotoğraf",
-    "photosCount_other": "{n} fotoğraf"
+    "photosCount_other": "{n} fotoğraf",
+    "kindPhoto": "Fotoğraflar",
+    "kindVideo": "Videolar",
+    "dialogFilterMedia": "Görseller ve videolar"
   },
   "details": {
     "type": "Tür",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Genel",
     "ratingSensitive": "Hassas",
     "ratingQuestionable": "Şüpheli",
-    "ratingExplicit": "Müstehcen"
+    "ratingExplicit": "Müstehcen",
+    "copyTag": "{tag} etiketini kopyala",
+    "tagCopied": "Etiket kopyalandı",
+    "tagCopyFailed": "Etiket kopyalanamadı",
+    "typeVideo": "Video",
+    "duration": "Süre"
   },
   "motion": {
     "format": "Animasyon · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "{n} favori hesaba sığmadı — bu bilgisayarda kaldı",
     "syncHeldToast_few": "{n} favori hesaba sığmadı — bu bilgisayarda kaldı",
     "syncHeldToast_many": "{n} favori hesaba sığmadı — bu bilgisayarda kaldı",
-    "syncHeldToast_other": "{n} favori hesaba sığmadı — bu bilgisayarda kaldı"
+    "syncHeldToast_other": "{n} favori hesaba sığmadı — bu bilgisayarda kaldı",
+    "sourceFailed": "Bu site yanıt vermedi"
   },
   "theme": {
     "group": "Windows Teması",
@@ -486,7 +495,10 @@
     "libraryStore": "Kütüphane dosyası",
     "configStore": "Ayar dosyası",
     "wallpaperSource": "Ayarlanan duvar kağıdı kaynağı",
-    "poolConsistency": "Kesintiye uğrayan kaydetmeden sonra duvar kağıdı ataması onarıldı"
+    "poolConsistency": "Kesintiye uğrayan kaydetmeden sonra duvar kağıdı ataması onarıldı",
+    "configRestored": "Ayar dosyası bozulduğu için {date} tarihli kopyadan geri yüklendi",
+    "libraryRestored": "Kitaplık dosyası bozulduğu için {date} tarihli kopyadan geri yüklendi",
+    "folderStateRestored": "Klasör bilgileri dosyası bozulduğu için {date} tarihli kopyadan geri yüklendi"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada duvar kağıdını değiştiremedi",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada duvar kağıdınızı bulamadı",
     "wallpaperSourceMissingBody": "Seçilen görsel artık mevcut konumunda değil. Sürücü veya klasör taşındıysa geri getirin; bir sonraki değişimde duvar kağıdı uygulanacaktır.",
     "poolConsistencyTitle": "Znada bir duvar kağıdı ayarını onardı",
-    "poolConsistencyBody": "Kaydetme işlemi kesintiye uğradı (muhtemelen güç kesintisi veya zorla kapatma nedeniyle) ve bir monitör kaydedilmesi tamamlanmamış bir görsele bağlı kaldı. Ayar temizlendi. Fotoğraflarınıza dokunulmadı."
+    "poolConsistencyBody": "Kaydetme işlemi kesintiye uğradı (muhtemelen güç kesintisi veya zorla kapatma nedeniyle) ve bir monitör kaydedilmesi tamamlanmamış bir görsele bağlı kaldı. Ayar temizlendi. Fotoğraflarınıza dokunulmadı.",
+    "configRestoredTitle": "Ayar dosyası bozuldu, Znada dosyayı geri yükledi",
+    "libraryRestoredTitle": "Kitaplık dosyası bozuldu, Znada dosyayı geri yükledi",
+    "folderStateRestoredTitle": "Klasör bilgileri dosyası bozuldu, Znada dosyayı geri yükledi",
+    "configRestoredBody": "Znada ayar dosyasını okuyamadı. Dosya elektrik kesintisi veya çökme nedeniyle bozulmuş olabilir. Ayarlar yedek kopyadan ({date}) geri yüklendi. Daha sonraki değişiklikler kaybolmuş olabilir.",
+    "libraryRestoredBody": "Znada kitaplık dosyasını okuyamadı. Dosya elektrik kesintisi veya çökme nedeniyle bozulmuş olabilir. Kitaplık yedek kopyadan ({date}) geri yüklendi. Daha sonraki favoriler, etiketler ve atamalar eksik olabilir. Görselleriniz değiştirilmedi.",
+    "folderStateRestoredBody": "Znada bağlı klasörlerin bilgilerini içeren dosyayı okuyamadı. Dosya elektrik kesintisi veya çökme nedeniyle bozulmuş olabilir. Dosya yedek kopyadan ({date}) geri yüklendi. Daha sonra bu klasörlerden kaldırdığınız fotoğraflar yeniden görünebilir."
   },
   "toast": {
     "applied": "Duvar kağıdı uygulandı",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Arama önizlemesi hazırlanamadı.",
     "lookupChanged": "Görsel değişti veya artık kullanılamıyor. Yeni bir arama başlatın.",
     "lookupResponseFailed": "Sitenin yanıtındaki bilgiler doğrulanamadı. Veriler değiştirilmedi.",
-    "lookupHttpError": "Site {n} hatasını döndürdü. Daha sonra tekrar deneyin."
+    "lookupHttpError": "Site {n} hatasını döndürdü. Daha sonra tekrar deneyin.",
+    "lookupDismissed": "Karşılaştırma kapatıldı. Hiçbir veri değiştirilmedi."
   },
   "whatsNew": {
     "button": "Yenilikler",
@@ -656,5 +675,38 @@
     "unavailable": "Kullanılamıyor",
     "retry": "Görsel yüklenemedi. Tekrar deneyin.",
     "writeFailed": "Favoriler kaydedilemedi. Önceki işaretler korundu."
+  },
+  "libraryChecks": {
+    "title": "Kitaplık denetimi",
+    "duplicatesSwitch": "Aynı dosyaları bul",
+    "duplicatesTitle": "Aynı dosyalar",
+    "show": "Göster",
+    "checking": "Denetleniyor…",
+    "copiesCount": "Fazladan kopyalar: {n}",
+    "noneFound": "Dosya bulunamadı",
+    "foundToast": "Bulunan aynı dosyalar: {n}",
+    "duplicatesEmpty": "Aynı dosya yok."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Video oynatıcıda aç",
+    "openFailed": "Bu video açılamadı",
+    "notWallpaper": "Videolar henüz duvar kâğıdı olarak ayarlanamıyor",
+    "skippedOnAssign": "Fotoğraflar atandı. Videolar henüz duvar kâğıdı olarak ayarlanamıyor",
+    "play": "Oynat",
+    "pause": "Duraklat",
+    "seek": "Oynatma konumu",
+    "volume": "Ses düzeyi",
+    "mute": "Sesi kapat",
+    "unmute": "Sesi aç",
+    "playback": "Video oynatma",
+    "controls": "Video denetimleri",
+    "playbackFailed": "Bu video oynatılamadı.",
+    "openExternal": "Başka bir oynatıcıda aç",
+    "loading": "Video açılıyor…",
+    "downloading": "Video indiriliyor…",
+    "local": "Kitaplıktaki video",
+    "localFolder": "Klasördeki video"
   }
 }

@@ -179,6 +179,17 @@
     "removeItem": "Remove",
     "dropPrompt": "Drop images or folder here"
   },
+  "libraryChecks": {
+    "title": "Library check",
+    "duplicatesSwitch": "Find identical files",
+    "duplicatesTitle": "Identical files",
+    "show": "Show",
+    "checking": "Checking…",
+    "copiesCount": "Extra copies: {n}",
+    "noneFound": "None found",
+    "foundToast": "Identical files found: {n}",
+    "duplicatesEmpty": "No identical files."
+  },
   "library": {
     "all": "All",
     "favorites": "Favorites",
@@ -232,7 +243,9 @@
     "addFolder": "Add folder…",
     "empty": "Your library is empty — drop images here or click “Add”.",
     "emptyFolder": "This folder has no images.",
-    "noMatches": "Nothing here matches your search or tag. Clear them to see everything.",
+    "noMatches": "Nothing found here. Clear the search, tags or filters to see everything.",
+    "kindPhoto": "Photos",
+    "kindVideo": "Videos",
     "emptyFavorites": "Nothing in favorites yet — mark a photo with the star and it will appear here.",
     "emptyFolders": "No folders yet — add one with “Add folder…”.",
     "back": "‹ All folders",
@@ -285,7 +298,8 @@
     "photosCount_one": "{n} photo",
     "photosCount_few": "{n} photos",
     "photosCount_many": "{n} photos",
-    "photosCount_other": "{n} photos"
+    "photosCount_other": "{n} photos",
+    "dialogFilterMedia": "Pictures and videos"
   },
   "whatsNew": {
     "button": "What's new",
@@ -312,6 +326,9 @@
     "copyPath": "Copy path",
     "openSource": "Open source page",
     "copied": "Path copied",
+    "copyTag": "Copy tag {tag}",
+    "tagCopied": "Tag copied",
+    "tagCopyFailed": "Couldn’t copy the tag",
     "missing": "Item not found",
     "revealFailed": "Couldn’t show the item in its folder",
     "copyFailed": "Couldn’t copy the path",
@@ -327,7 +344,9 @@
     "ratingGeneral": "General",
     "ratingSensitive": "Sensitive",
     "ratingQuestionable": "Questionable",
-    "ratingExplicit": "Explicit"
+    "ratingExplicit": "Explicit",
+    "typeVideo": "Video",
+    "duration": "Length"
   },
   "motion": {
     "format": "Animation · {format}",
@@ -377,6 +396,7 @@
     "sourcesFailed": "Could not load results from: {sources}. Search again to retry, or choose another source.",
     "sourcePaused": "This site can't search for this many tags",
     "sourcePausedSort": "With this sort order, this site can't search for this many tags",
+    "sourceFailed": "This site didn't respond",
     "allSourcesPaused": "The selected sites can't search for this many tags. Remove a tag or turn on another site.",
     "error": "Error: {e}",
     "add": "Add to library",
@@ -492,7 +512,10 @@
     "libraryStore": "Library file",
     "configStore": "Settings file",
     "wallpaperSource": "Configured wallpaper source",
-    "poolConsistency": "Wallpaper assignment repaired after an interrupted save"
+    "poolConsistency": "Wallpaper assignment repaired after an interrupted save",
+    "configRestored": "The settings file was damaged and was restored from the copy of {date}",
+    "libraryRestored": "The library file was damaged and was restored from the copy of {date}",
+    "folderStateRestored": "The folder details file was damaged and was restored from the copy of {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada couldn't change the wallpaper",
@@ -512,7 +535,13 @@
     "wallpaperSourceMissingTitle": "Znada could not find your wallpaper",
     "wallpaperSourceMissingBody": "The picture it was set to is not there any more. If it is on a drive or folder that moved, put it back and the wallpaper returns on the next change.",
     "poolConsistencyTitle": "Znada repaired a wallpaper setting",
-    "poolConsistencyBody": "A save was cut short — probably a power loss or a forced shutdown — and left a monitor pointing at a picture that never finished saving. The setting has been cleared. Your pictures were not touched."
+    "poolConsistencyBody": "A save was cut short — probably a power loss or a forced shutdown — and left a monitor pointing at a picture that never finished saving. The setting has been cleared. Your pictures were not touched.",
+    "configRestoredTitle": "Settings file was damaged — Znada restored it",
+    "libraryRestoredTitle": "Library file was damaged — Znada restored it",
+    "folderStateRestoredTitle": "Folder details file was damaged — Znada restored it",
+    "configRestoredBody": "Znada couldn't read its settings file — it got corrupted, for example by a power cut or a crash. Znada kept a spare copy and put your settings back from it ({date}). Changes made after that may be missing.",
+    "libraryRestoredBody": "Znada couldn't read its library file — it got corrupted, for example by a power cut or a crash. Znada kept a spare copy and put your library back from it ({date}). Favorites, tags and assignments made after that may be missing. Your pictures were not touched.",
+    "folderStateRestoredBody": "Znada couldn't read the file with your connected folder details — it got corrupted, for example by a power cut or a crash. Znada kept a spare copy and put it back ({date}). Photos you removed from those folders after that may show up again."
   },
   "toast": {
     "applied": "Wallpaper applied",
@@ -657,5 +686,27 @@
     "unavailable": "Unavailable",
     "retry": "Could not load the image. Try again.",
     "writeFailed": "Could not save favorites. Your previous favorites are unchanged."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Open in the video player",
+    "openFailed": "Couldn't open this video",
+    "notWallpaper": "Videos can't be set as wallpaper yet",
+    "skippedOnAssign": "Photos assigned. Videos can't be set as wallpaper yet",
+    "play": "Play",
+    "pause": "Pause",
+    "seek": "Seek",
+    "volume": "Volume",
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "playback": "Video playback",
+    "controls": "Video controls",
+    "playbackFailed": "Could not play this video.",
+    "openExternal": "Open in another player",
+    "loading": "Opening video…",
+    "downloading": "Downloading video…",
+    "local": "Video from Library",
+    "localFolder": "Video from folder"
   }
 }

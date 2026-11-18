@@ -175,16 +175,24 @@ assert.ok(
 // main window. Its old Undo belongs to the old payload and must disappear before the
 // replacement is rendered.
 const setPayloadMatch = viewerJs.match(/function setPayload\([^)]*\) \{[\s\S]*?\n\}/);
+const resetPayloadWorkMatch = viewerJs.match(/function resetPayloadWork\(\) \{[\s\S]*?\n\}/);
 assert.ok(setPayloadMatch, 'viewer payload replacement boundary is present');
+assert.ok(resetPayloadWorkMatch, 'viewer payload cleanup is present');
 const payloadSequence = [];
-const payloadState = { items: [], index: 0 };
-const setPayload = vm.runInNewContext(`(${setPayloadMatch[0]})`, {
+const payloadState = { items: [], index: 0, token: 0, payloadEpoch: 0 };
+const setPayload = vm.runInNewContext(`${resetPayloadWorkMatch[0]}\n(${setPayloadMatch[0]})`, {
   VIEWER: payloadState,
+  imageCacheBytes: 0,
   IMG_CACHE: { clear: () => payloadSequence.push('cache') },
-  PREFETCHING: { clear: () => payloadSequence.push('prefetch') },
+  PREFETCHING: new Map(),
+  WARM: new Map(),
+  PREFETCH: {},
+  PREFETCH_DONE: new Set(),
   normalizePayload: () => ({ items: [{ key: 'new' }], index: 0 }),
   applyBackgroundMode: () => payloadSequence.push('background'),
   dismissViewerNotice: () => payloadSequence.push('dismiss'),
+  closeViewerPopup() {},
+  clearLoadingTimer() {},
   render: () => payloadSequence.push('render'),
 });
 setPayload({ background: 'ambient' });
@@ -199,11 +207,16 @@ const blocksCloseMatch = viewerJs.match(/function blocksViewerClose\([^)]*\) \{[
 assert.ok(blocksCloseMatch, 'viewer close-target boundary is present');
 const blocksViewerClose = vm.runInNewContext(`(${blocksCloseMatch[0]})`);
 const fakeTarget = (matches) => ({ closest: (selector) => {
-  assert.strictEqual(selector, 'button, .media-notice');
+  assert.strictEqual(selector, 'button, input, .media-video-controls, .video-guard, .media-notice');
   return matches;
 } });
 assert.strictEqual(blocksViewerClose(fakeTarget({ className: 'media-notice' })), true);
 assert.strictEqual(blocksViewerClose(fakeTarget({ tagName: 'BUTTON' })), true);
+assert.strictEqual(blocksViewerClose(fakeTarget({ tagName: 'INPUT' })), true);
+assert.strictEqual(blocksViewerClose(fakeTarget({ className: 'media-video-controls' })), true);
+// MEDIA-008: the strip under the player panel. A press that misses a control by a few
+// pixels must not close the viewer.
+assert.strictEqual(blocksViewerClose(fakeTarget({ className: 'video-guard' })), true);
 assert.strictEqual(blocksViewerClose(fakeTarget(null)), false);
 assert.strictEqual((viewerJs.match(/blocksViewerClose\(e\.target\)/g) || []).length, 2,
   'both pointer boundaries must protect notice clicks from closing the viewer');

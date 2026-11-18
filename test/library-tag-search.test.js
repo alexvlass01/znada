@@ -49,6 +49,7 @@ for (const [filter, folderPath, photoVisible, folderVisible] of [
   vm.runInNewContext(renderer.slice(actionsStart, actionsEnd), {
     FAVORITES: { entries: [] },
     LIB: { filter, folderPath }, $: (selector) => selector === '#libAddPhotos' ? photo : folder,
+    renderLibFilterButton() {}, // MEDIA-004: its own visibility is checked in library-search.test.js
   });
   ok(`import visibility is preserved in ${filter}${folderPath ? '/nested' : ''}`,
     photo.hidden === !photoVisible && folder.hidden === !folderVisible);
@@ -80,6 +81,8 @@ const localFilterContext = {
     c: { id: 'c', path: 'c.png', favorite: false, tags: ['sameko_saba'] },
   } },
   baseName: (value) => value, sortItems() {},
+  // MEDIA-004: the kind of file is tested in library-search.test.js; nothing is narrowed here.
+  kindFilterActive: () => false, renderLibFilterButton() {},
   LibrarySearch: require('../src/library-search'),
 };
 vm.createContext(localFilterContext);
@@ -272,6 +275,10 @@ ok('context records the unified placeholder and empty-state roles', contexts.ent
     renderLibrary() { ctx.renders++; ctx.allViewToken++; },
     exitFolderState() { ctx.LIB.folderPath = null; ctx.LIB.crumbs = []; },
     inRemovedView: () => ctx.LIB.filter === 'removed',
+    inDuplicatesView: () => ctx.LIB.filter === 'duplicates',
+    // MEDIA-004: the kind of file is tested in library-search.test.js; nothing is narrowed here.
+    kindFilterActive: () => false, renderLibFilterButton() {},
+    KIND: { on: ['photo', 'gif', 'video'], version: 0 },
     librarySignature: () => 'unchanged',
     window: { api: {
       expandFolders: async () => ({ images: [{ id: 'ephemeral', path: 'C:/photos/nested/e.png' }] }),

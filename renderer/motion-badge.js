@@ -5,8 +5,8 @@
 // Owner's choice 2026-09-26, variant A1 of the mock-up: whatever the file (GIF, animated
 // WebP, APNG), a moving picture carries the same short GIF chip, since for most people
 // that word already means any moving picture. The real format is not lost: it is in the chip's
-// tooltip and in "Details". Video, when Znada gets it, will have its own ▶ chip; that is
-// not built here. The chip is always visible, bottom-left, on the same dark glass as the
+// tooltip and in "Details". Video (MEDIA-002) has its own chip from the same mock-up:
+// ▶ and the length, on the same glass in the same corner. The chip is always visible, bottom-left, on the same dark glass as the
 // card's star and menu (top-left is the star, top-right the menu and selection).
 //
 // A local picture is judged by main from the file's bytes (src/image-motion.js); a site
@@ -49,9 +49,37 @@
     return MOVING_FORMATS.has(format) ? { format, frames: 0 } : null;
   }
 
+  // MEDIA-002. Main's `video` answer for a local file. Its presence alone makes a video
+  // chip; the length is drawn only when Windows reported one.
+  function fromVideo(video) {
+    if (!video || typeof video !== 'object') return null;
+    const ms = Number(video.durationMs);
+    return { video: true, durationMs: Number.isFinite(ms) && ms > 0 ? ms : 0 };
+  }
+
+  // 0:44 · 1:14 · 1:02:05 — how players write a length, the same in every language.
+  function formatDuration(ms) {
+    const total = Math.round(Number(ms) / 1000);
+    if (!Number.isFinite(total) || total <= 0) return '';
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = String(total % 60).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+  }
+
+  function chipText(info) {
+    if (!info.video) return CHIP_TEXT;
+    const length = formatDuration(info.durationMs);
+    return length ? `▶ ${length}` : '▶';
+  }
+
   // "Animation · WEBP", plus the frame count when it is known exactly.
   function describe(t, info) {
     if (!info) return '';
+    if (info.video) {
+      const length = formatDuration(info.durationMs);
+      return length ? t('video.badgeLength', { length }) : t('video.badge');
+    }
     const format = formatName(info.format);
     return info.frames > 1
       ? t('motion.formatFrames', { format, frames: info.frames })
@@ -64,25 +92,39 @@
   }
 
   // Put the chip on `host` or take it off; calling it twice changes nothing. A card also
-  // gets `data-motion`, which is what the assign window reads for its first-frame line.
+  // gets `data-motion`, which is what the assign window reads for its first-frame line —
+  // or, for video, `data-video` instead: a video has no first frame on the desktop and
+  // must never be hover-played as a picture (MEDIA-002). The grid reuses cards, so both
+  // marks and the chip's text are set every time, never only added.
   function sync(host, info, t, options = {}) {
     if (!host) return null;
     let chip = findChip(host);
     if (!info) {
       if (chip) chip.remove();
-      if (host.dataset) delete host.dataset.motion;
+      if (host.dataset) {
+        delete host.dataset.motion;
+        delete host.dataset.video;
+      }
       return null;
     }
     if (!chip) {
       chip = host.ownerDocument.createElement('span');
-      chip.className = options.inline ? 'lib-motion inline' : 'lib-motion';
-      chip.textContent = CHIP_TEXT;
       host.appendChild(chip);
     }
+    chip.className = (options.inline ? 'lib-motion inline' : 'lib-motion') + (info.video ? ' video' : '');
+    chip.textContent = chipText(info);
     const text = describe(t, info);
     chip.title = text;
     chip.setAttribute('aria-label', text);
-    if (host.dataset && !options.inline) host.dataset.motion = formatName(info.format);
+    if (host.dataset && !options.inline) {
+      if (info.video) {
+        delete host.dataset.motion;
+        host.dataset.video = '1';
+      } else {
+        delete host.dataset.video;
+        host.dataset.motion = formatName(info.format);
+      }
+    }
     return chip;
   }
 
@@ -114,5 +156,8 @@
     return note;
   }
 
-  return { CHIP_TEXT, formatName, fromLocal, fromSite, describe, sync, marksMotion, appendFirstFrameNote };
+  return {
+    CHIP_TEXT, formatName, fromLocal, fromSite, fromVideo, formatDuration, describe, sync, marksMotion,
+    appendFirstFrameNote,
+  };
 }));

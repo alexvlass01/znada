@@ -82,6 +82,23 @@ for (let i = 0; i < store.LOOKUP_LIMIT + 10; i++) undated.lookups['k' + i] = { p
 ok('entries with no timestamp are still bounded rather than kept forever',
   Object.keys(store.normalizeStore(undated, T0).lookups).length === store.LOOKUP_LIMIT);
 
+const live = store.emptyStore();
+for (let i = 0; i < store.FILE_LIMIT + 1000; i++) live.files['f' + i] = { at: i + 1 };
+for (let i = 0; i < store.LOOKUP_LIMIT + 50; i++) live.lookups['k' + i] = { at: i + 1 };
+const smallFiles = store.emptyStore();
+smallFiles.files.a = { at: 1 };
+const sameFiles = smallFiles.files;
+store.evict(live, T0);
+store.evict(smallFiles, T0);
+ok('evict cuts the live object with the same age policy as the serializer',
+  Object.keys(live.files).length === store.FILE_LIMIT
+  && Object.keys(live.lookups).length === store.LOOKUP_LIMIT
+  && !live.files.f0
+  && !!live.files['f' + (store.FILE_LIMIT + 999)]
+  && !live.lookups.k0
+  && !!live.lookups['k' + (store.LOOKUP_LIMIT + 49)]
+  && smallFiles.files === sameFiles);
+
 // --- the debounced writer -------------------------------------------------
 const writes = [];
 let timerFn = null;

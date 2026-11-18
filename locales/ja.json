@@ -55,7 +55,7 @@
   "nav": {
     "home": "ホーム",
     "library": "ライブラリ",
-    "design": "デザイン"
+    "design": "外観"
   },
   "prefs": {
     "tooltip": "設定",
@@ -163,7 +163,7 @@
     "lightTheme": "昼の壁紙",
     "darkTheme": "夜の壁紙",
     "notSelected": "未選択",
-    "behaviorGroup": "配置スタイル",
+    "behaviorGroup": "動作",
     "wallpaperScheduleTitle": "昼夜の壁紙トリガー",
     "wallpaperScheduleSub": "昼と夜のどちらの壁紙を使うかを決める条件を選びます",
     "wallpaperModeSystem": "Windows に従う",
@@ -176,8 +176,19 @@
     "singleSub": "すべてのモニターに同じ画像を使用します",
     "separateTitle": "ライトテーマとダークテーマで壁紙を分ける",
     "separateSub": "モニターごとに昼夜のペアを保持し、下のトリガーで選びます。オフにすると壁紙リストは 1 つになります",
-    "removeItem": "削除",
+    "removeItem": "外す",
     "dropPrompt": "ここに画像またはフォルダーをドロップ"
+  },
+  "libraryChecks": {
+    "title": "ライブラリの確認",
+    "duplicatesSwitch": "同一ファイルを探す",
+    "duplicatesTitle": "同一ファイル",
+    "show": "表示",
+    "checking": "確認中…",
+    "copiesCount": "余分なコピー：{n} 件",
+    "noneFound": "見つかりませんでした",
+    "foundToast": "同じ内容のファイルが見つかりました：{n} 件",
+    "duplicatesEmpty": "同一ファイルはありません。"
   },
   "library": {
     "all": "すべて",
@@ -232,7 +243,9 @@
     "addFolder": "フォルダーを追加…",
     "empty": "ライブラリは空です — 画像をドロップするか「画像を追加…」をクリックしてください。",
     "emptyFolder": "このフォルダーに画像はありません。",
-    "noMatches": "検索やタグに一致するものはありません。解除するとすべて表示されます。",
+    "noMatches": "該当する項目がありません。検索条件、タグ、またはフィルターを解除すると、すべて表示されます。",
+    "kindPhoto": "写真",
+    "kindVideo": "動画",
     "emptyFavorites": "お気に入りはまだありません。写真に星を付けるとここに表示されます。",
     "emptyFolders": "フォルダーはまだありません。「フォルダーを追加…」で追加できます。",
     "back": "‹ すべてのフォルダー",
@@ -274,9 +287,9 @@
     "undoFailed": "元に戻せませんでした",
     "trashEvictedN": "ライブラリのごみ箱がいっぱいです — 最も古いものはもう元に戻せません: {n}",
     "selected": "{n} 件選択中",
-    "massAssign": "一括割当…",
+    "massAssign": "まとめて割り当て…",
     "massDelete": "ライブラリから外す",
-    "massDeleteFailed": "一部の項目を削除できませんでした",
+    "massDeleteFailed": "選択した項目をライブラリから外せませんでした",
     "selectionActions": "選択した壁紙の操作",
     "clearSelection": "選択を解除",
     "itemsCount": "項目数: {n}",
@@ -285,7 +298,8 @@
     "photosCount_one": "{n} 枚",
     "photosCount_few": "{n} 枚",
     "photosCount_many": "{n} 枚",
-    "photosCount_other": "{n} 枚"
+    "photosCount_other": "{n} 枚",
+    "dialogFilterMedia": "画像と動画"
   },
   "details": {
     "type": "ファイル形式",
@@ -293,7 +307,7 @@
     "typeFolder": "ライブフォルダー",
     "resolution": "解像度",
     "size": "ファイルサイズ",
-    "added": "追加済み",
+    "added": "追加日",
     "modified": "更新日時",
     "author": "作者",
     "source": "ソース",
@@ -306,6 +320,9 @@
     "copyPath": "パスをコピー",
     "openSource": "ソースページを開く",
     "copied": "パスをコピーしました",
+    "copyTag": "タグ「{tag}」をコピー",
+    "tagCopied": "タグをコピーしました",
+    "tagCopyFailed": "タグをコピーできませんでした",
     "missing": "見つかりません",
     "revealFailed": "フォルダーで表示できませんでした",
     "copyFailed": "クリップボードにコピーできませんでした",
@@ -321,7 +338,9 @@
     "ratingGeneral": "全年齢",
     "ratingSensitive": "センシティブ",
     "ratingQuestionable": "グレーゾーン",
-    "ratingExplicit": "成人向け"
+    "ratingExplicit": "成人向け",
+    "typeVideo": "動画",
+    "duration": "再生時間"
   },
   "motion": {
     "format": "アニメーション · {format}",
@@ -341,7 +360,7 @@
     "previous": "前へ",
     "next": "次へ",
     "fullscreen": "全画面表示",
-    "windowed": "ウィンドウ表示"
+    "windowed": "全画面表示を終了"
   },
   "online": {
     "rail": "オンライン",
@@ -371,12 +390,13 @@
     "sourcesFailed": "次のソースから結果を読み込めませんでした: {sources}。もう一度検索するか、別のソースを選んでください。",
     "sourcePaused": "このサイトはこれほど多くのタグで検索できません",
     "sourcePausedSort": "この並べ替えでは、このサイトはこれほど多くのタグで検索できません",
+    "sourceFailed": "サイトから応答がありませんでした",
     "allSourcesPaused": "選択したサイトはこれほど多くのタグで検索できません。タグを減らすか、別のサイトをオンにしてください。",
     "error": "エラー: {e}",
     "add": "ライブラリに追加",
     "adding": "追加中…",
     "added": "ライブラリに追加しました",
-    "remove": "ライブラリから削除",
+    "remove": "ライブラリから外す",
     "nsfwNeedsKey": "成人向けコンテンツの検索には設定で API キーの入力が必要です",
     "sourceLumina": "Znada",
     "sourcesLabel": "ソース",
@@ -486,7 +506,10 @@
     "libraryStore": "ライブラリファイル",
     "configStore": "設定ファイル",
     "wallpaperSource": "設定された壁紙ソース",
-    "poolConsistency": "保存の中断後に壁紙の割り当てを修復しました"
+    "poolConsistency": "保存の中断後に壁紙の割り当てを修復しました",
+    "configRestored": "設定ファイルが破損していたため、{date} のバックアップから復元しました",
+    "libraryRestored": "ライブラリファイルが破損していたため、{date} のバックアップから復元しました",
+    "folderStateRestored": "フォルダー情報ファイルが破損していたため、{date} のバックアップから復元しました"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada が壁紙を変更できませんでした",
@@ -506,7 +529,13 @@
     "wallpaperSourceMissingTitle": "Znada は壁紙を見つけられませんでした",
     "wallpaperSourceMissingBody": "設定されていた画像が元の場所に見つかりません。ドライブまたはフォルダーが移動した場合は元の場所に戻してください。次回の切り替え時に壁紙が再適用されます。",
     "poolConsistencyTitle": "Znada が壁紙の設定を修復しました",
-    "poolConsistencyBody": "停電や強制終了などにより保存処理が途中で中断され、モニターが未完了の画像を参照していました。この設定をリセットしました。画像ファイルへの影響はありません。"
+    "poolConsistencyBody": "停電や強制終了などにより保存処理が途中で中断され、モニターが未完了の画像を参照していました。この設定をリセットしました。画像ファイルへの影響はありません。",
+    "configRestoredTitle": "設定ファイルが破損したため、Znada が復元しました",
+    "libraryRestoredTitle": "ライブラリファイルが破損したため、Znada が復元しました",
+    "folderStateRestoredTitle": "フォルダー情報ファイルが破損したため、Znada が復元しました",
+    "configRestoredBody": "停電や異常終了などで設定ファイルが破損し、読み込めませんでした。設定をバックアップ（{date}）から復元しました。それ以降の変更は失われている場合があります。",
+    "libraryRestoredBody": "停電や異常終了などでライブラリファイルが破損し、読み込めませんでした。ライブラリをバックアップ（{date}）から復元しました。それ以降に追加したお気に入りやタグ、壁紙の割り当ては失われている場合があります。画像ファイルに変更はありません。",
+    "folderStateRestoredBody": "停電や異常終了などで登録済みフォルダーの情報ファイルが破損し、読み込めませんでした。フォルダー情報をバックアップ（{date}）から復元しました。それ以降にライブラリから外した写真が、再び表示される場合があります。"
   },
   "toast": {
     "applied": "壁紙を適用しました",
@@ -630,6 +659,7 @@
     "lookupDismiss": "検索結果を閉じる",
     "lookupApplying": "検索を完了中…",
     "lookupCancelled": "一致を却下しました。データは変更されていません。",
+    "lookupDismissed": "比較を閉じました。データに変更はありません。",
     "lookupTimeout": "サイトからの応答が間に合いませんでした。再検索してください。",
     "lookupNetwork": "サイトに接続できませんでした。後で再試行してください。",
     "lookupRecentError": "直前のエラーにより検索を一時停止しています。後で再試行してください。",
@@ -656,5 +686,27 @@
     "unavailable": "利用不可",
     "retry": "画像を読み込めませんでした。再試行してください。",
     "writeFailed": "お気に入りを保存できませんでした。以前の登録は維持されています。"
+  },
+  "video": {
+    "badge": "動画",
+    "badgeLength": "動画 · {length}",
+    "openHint": "動画プレーヤーで開く",
+    "openFailed": "この動画を開けませんでした",
+    "notWallpaper": "動画はまだ壁紙に設定できません",
+    "skippedOnAssign": "写真を割り当てました。動画はまだ壁紙に設定できません。",
+    "play": "再生",
+    "pause": "一時停止",
+    "seek": "再生位置",
+    "volume": "音量",
+    "mute": "ミュート",
+    "unmute": "ミュート解除",
+    "playback": "動画の再生",
+    "controls": "再生コントロール",
+    "playbackFailed": "動画を再生できません。",
+    "openExternal": "別のアプリで開く",
+    "loading": "動画を開いています…",
+    "downloading": "動画をダウンロードしています…",
+    "local": "ライブラリの動画",
+    "localFolder": "フォルダー内の動画"
   }
 }

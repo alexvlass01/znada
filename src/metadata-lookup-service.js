@@ -22,7 +22,8 @@ const metadataStore = require('./metadata-store'); // отпечатки и жу
 const requestBudget = require('./request-budget'); // сколько запросов наружу вообще разрешено
 const libraryFreeze = require('./library-freeze');
 const { pathKey } = require('./path-key');
-const { createTaskQueue } = require('./task-queue');
+const { hashFileMd5, HASH_TIMEOUT, ABORT_ERR } = require('./metadata-hash');
+const { createMetadataWorkQueue, raceSignal, abortError } = require('./metadata-work-queue');
 const iqdb = require('./iqdb');
 const contentRating = require('./content-rating');
 const mediaProxy = require('./media-proxy');
@@ -45,7 +46,8 @@ const mediaProxy = require('./media-proxy');
 //     can set himself — see metadataLookup.planFor.
 //   * a ban. Every request passes the budget; every question is remembered against the
 //     fingerprint, so the same bytes are asked about once ever, no matter how many
-//     copies or how many clicks; and the work runs one at a time.
+//     copies or how many clicks; and the work runs one at a time, with a pending cap
+//     and a deadline so one stalled read cannot hold the worker.
 //
 // Deliberately manual for now: one photo, one explicit action. The queue and the budget
 // exist anyway, because "look up everything as it is added" is meant to arrive later as
@@ -61,14 +63,17 @@ const MAX_FINGERPRINT_BYTES = 256 * 1024 * 1024;
 // A long/custom host policy must surface as busy rather than monopolise the queue.
 const METADATA_INLINE_GAP_WAIT_MAX_MS = 1000;
 
-function hashFileMd5(filePath) {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('md5');
-    const stream = fs.createReadStream(filePath);
-    stream.on('error', reject);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest('hex')));
-  });
+// PERF-007. Pending jobs only — the one running job is extra. Eight is enough for a
+// person clicking ahead and for a future low-priority sweep to wait behind them.
+// 180s covers a 256MB wallpaper at about 1.4MB/s. A stalled or trickling share cannot
+// hold the worker longer than that; the next library pass retries a timeout.
+const METADATA_QUEUE_LIMIT = 8;
+const METADATA_JOB_TIMEOUT_MS = 180000;
+
+function isAbortErr(err) {
+  if (!err) return false;
+  const coded = /** @type {{ code?: string, name?: string }} */ (err);
+  return coded.code === ABORT_ERR || coded.code === HASH_TIMEOUT || coded.name === 'AbortError';
 }
 
 // A post is only believed when it carries the very hash we asked about. Gelbooru's
@@ -128,6 +133,13 @@ function metadataLookupReply(outcome, applied) {
  *   isMoveRunning: () => boolean,
  *   savePoolOnly: () => any,
  *   thumbnail?: (path: string) => Promise<any>,
+ *   now?: () => number,
+ *   setTimer?: (fn: () => void, ms: number) => any,
+ *   clearTimer?: (timer: any) => void,
+ *   jobTimeoutMs?: number,
+ *   hashTimeoutMs?: number,
+ *   queueLimit?: number,
+ *   createReadStream?: (filePath: string) => any,
  * }} deps
  */
 function create(deps) {
@@ -135,6 +147,14 @@ function create(deps) {
     configPath, getConfig, library, lookup: metadataLookup, registry: providerRegistry,
     providers: providerAccess, userAgent, isAuthorizedItemPath, isMoveRunning, savePoolOnly,
   } = deps;
+  // Look up Date.now on each call. Tests replace it after the service exists
+  // (visual token expiry). An injected clock is still called every time.
+  const clock = typeof deps.now === 'function' ? () => deps.now() : () => Date.now();
+  const setTimer = typeof deps.setTimer === 'function' ? deps.setTimer : setTimeout;
+  const clearTimer = typeof deps.clearTimer === 'function' ? deps.clearTimer : clearTimeout;
+  const jobTimeoutMs = Number(deps.jobTimeoutMs) > 0 ? Number(deps.jobTimeoutMs) : METADATA_JOB_TIMEOUT_MS;
+  const hashTimeoutMs = Number(deps.hashTimeoutMs) > 0 ? Number(deps.hashTimeoutMs) : METADATA_JOB_TIMEOUT_MS;
+  const queueLimit = Number(deps.queueLimit) > 0 ? Number(deps.queueLimit) : METADATA_QUEUE_LIMIT;
 
   // META-001. Derived knowledge about local files: their fingerprints, and the journal of
   // what each catalogue has already answered about them. Kept apart from the pool on
@@ -149,12 +169,28 @@ function create(deps) {
   }
 
   function markMetadataDirty() {
-    if (metadataCache) metadataWriter.markDirty(metadataCache);
+    if (!metadataCache) return;
+    metadataStore.evict(metadataCache, clock());
+    metadataWriter.markDirty(metadataCache);
   }
 
-  // The thumbnail queue's primitive, at concurrency one. A manual click is high priority
-  // so that a future background sweep can never make the user wait behind it.
-  const metadataQueue = createTaskQueue(1);
+  // Separate from the thumbnail queue. One running job, a capped pending list, and the
+  // same photo shares one promise. A manual click is high priority so a future
+  // background sweep can be dropped when the list is full instead of burying the click.
+  const metadataQueue = createMetadataWorkQueue({
+    maxPending: queueLimit,
+    timeoutMs: jobTimeoutMs,
+    setTimer,
+    clearTimer,
+  });
+
+  function schedule(key, fn, priority) {
+    return metadataQueue.enqueue(key, fn, {
+      priority,
+      onTimeout: () => metadataLookupReply({ status: 'error', reason: 'timeout' }, null),
+      busy: () => metadataLookupReply({ status: 'busy', reason: 'queue', retryAfterMs: 1000 }, null),
+    });
+  }
 
   // Per-provider traffic state. Kept in memory only: after a restart the journal still
   // prevents repeat questions, and starting with a full bucket costs at most a few
@@ -184,8 +220,10 @@ function create(deps) {
   // One request through the budget. Returns a tagged outcome instead of throwing, so the
   // caller never has to guess whether a failure was the host refusing, the network, or
   // simply our own limiter saying "not yet".
-  async function metadataFetchJson(providerId, url, timeoutMs = 10000) {
-    let gate = metadataBudgetTake(providerId, Date.now());
+  async function metadataFetchJson(providerId, url, timeoutMs = 10000, signal) {
+    // Our own deadline is not a host failure: do not spend a backoff on it.
+    if (signal && signal.aborted) return { failed: true, reason: 'timeout' };
+    let gate = metadataBudgetTake(providerId, clock());
     // The minimum host gap separates REQUESTS, not user operations. Gelbooru legitimately
     // needs a second request for tag kinds after it found the post. Returning `busy` here
     // silently made that enrichment partial forever because the found result is journalled
@@ -195,24 +233,47 @@ function create(deps) {
     if (!gate.allowed && gate.reason === 'gap'
         && Number.isFinite(gapMs) && gapMs > 0 && gapMs <= METADATA_INLINE_GAP_WAIT_MAX_MS) {
       const waitMs = Math.max(1, Math.ceil(gapMs) + 1);
-      await new Promise((resolve) => { setTimeout(resolve, waitMs); });
-      gate = metadataBudgetTake(providerId, Date.now());
+      try {
+        await new Promise((resolve, reject) => {
+          const timer = setTimer(() => {
+            if (signal) signal.removeEventListener('abort', onAbort);
+            resolve();
+          }, waitMs);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+          function onAbort() {
+            clearTimer(timer);
+            reject(abortError());
+          }
+          if (signal) {
+            if (signal.aborted) { onAbort(); return; }
+            signal.addEventListener('abort', onAbort, { once: true });
+          }
+        });
+      } catch (err) {
+        if (isAbortErr(err)) return { failed: true, reason: 'timeout' };
+        throw err;
+      }
+      if (signal && signal.aborted) return { failed: true, reason: 'timeout' };
+      gate = metadataBudgetTake(providerId, clock());
     }
     if (!gate.allowed) return { blocked: true, reason: gate.reason, retryAfterMs: Math.ceil(gate.retryAfterMs) };
     try {
+      const signals = [AbortSignal.timeout(timeoutMs)];
+      if (signal) signals.push(signal);
       const res = await fetch(url, {
         headers: { 'User-Agent': userAgent },
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.any(signals),
       });
       if (!res.ok) {
-        metadataBudgetNote(providerId, false, Date.now(), requestBudget.failureKind(res.status, null));
+        metadataBudgetNote(providerId, false, clock(), requestBudget.failureKind(res.status, null));
         return { failed: true, reason: String(res.status) };
       }
       const json = await res.json();
-      metadataBudgetNote(providerId, true, Date.now());
+      metadataBudgetNote(providerId, true, clock());
       return { json };
     } catch (err) {
-      metadataBudgetNote(providerId, false, Date.now(), requestBudget.failureKind(0, err));
+      if (signal && signal.aborted) return { failed: true, reason: 'timeout' };
+      metadataBudgetNote(providerId, false, clock(), requestBudget.failureKind(0, err));
       return { failed: true, reason: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
     }
   }
@@ -220,50 +281,105 @@ function create(deps) {
   // The file's fingerprint, from cache when the file has not changed since it was hashed.
   // Streamed rather than read whole: a fingerprint is needed for files far larger than a
   // thumbnail, and holding one in memory for the sake of one hash is pure waste.
-  async function fingerprintForFile(filePath, kind = 'md5') {
+  async function fingerprintForFile(filePath, kind = 'md5', parentSignal) {
     const store = metadataCacheStore();
+    metadataStore.evict(store, clock());
     const key = fingerprint.fileKey(filePath);
-    // BUG-026. Hashing is streamed, so the file can be replaced WHILE it is being read —
-    // a live folder rescan, a re-download, any outside tool. The hash would then be of the
-    // new bytes while the size and mtime recorded beside it belong to the old ones, and
-    // that pairing is what gets cached: every later lookup of this photo would ask a
-    // catalogue about a file that never existed. So the stamp is taken again afterwards
-    // and must still match. One retry, because a single swap is ordinary; a file being
-    // rewritten continuously is not something to keep chasing.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      let stat;
-      try {
-        stat = await fs.promises.stat(filePath);
-      } catch { return { error: 'missing' }; }
-      if (!stat.isFile()) return { error: 'missing' };
-      if (stat.size <= 0 || stat.size > MAX_FINGERPRINT_BYTES) return { error: 'unsupported' };
-
-      const stamp = fingerprint.stampOf(stat);
-      const cached = fingerprint.valueOf(store.files[key], stamp, kind);
-      if (cached) return { value: cached, cached: true, stamp };
-
-      let value;
-      try {
-        value = await hashFileMd5(filePath);
-      } catch (err) {
-        console.error('metadata fingerprint:', err);
-        return { error: 'unreadable' };
-      }
-
-      let after;
-      try {
-        after = await fs.promises.stat(filePath);
-      } catch { return { error: 'missing' }; }
-      if (!fingerprint.sameStamp(fingerprint.stampOf(after), stamp)) continue;
-
-      const entry = fingerprint.withValues(store.files[key], stamp, { [kind]: value });
-      // `at` belongs to the store, not to the pure fingerprint shape: it is only there so
-      // eviction can drop the least recently touched file rather than an arbitrary one.
-      store.files[key] = Object.assign({}, entry, { at: Date.now() });
-      markMetadataDirty();
-      return { value, cached: false, stamp };
+    // The library pass calls fingerprint() directly, outside the queue. This deadline
+    // covers that path too: a hung stat or a stalled stream settles as `timeout` and
+    // is not cached. A queued job links its own signal so the queue deadline wins as well.
+    const ac = new AbortController();
+    const onParent = () => ac.abort(abortError());
+    if (parentSignal) {
+      if (parentSignal.aborted) ac.abort(abortError());
+      else parentSignal.addEventListener('abort', onParent, { once: true });
     }
-    return { error: 'changed' };
+    let timer = null;
+    const armDeadline = () => {
+      if (timer || ac.signal.aborted || !(hashTimeoutMs > 0)) return;
+      timer = setTimer(() => {
+        const err = /** @type {Error & { code: string }} */ (new Error('hash timed out'));
+        err.code = HASH_TIMEOUT;
+        ac.abort(err);
+      }, hashTimeoutMs);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    };
+    try {
+      // BUG-026. Hashing is streamed, so the file can be replaced WHILE it is being read —
+      // a live folder rescan, a re-download, any outside tool. The hash would then be of the
+      // new bytes while the size and mtime recorded beside it belong to the old ones, and
+      // that pairing is what gets cached: every later lookup of this photo would ask a
+      // catalogue about a file that never existed. So the stamp is taken again afterwards
+      // and must still match. One retry, because a single swap is ordinary; a file being
+      // rewritten continuously is not something to keep chasing.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (ac.signal.aborted) return { error: 'timeout' };
+        armDeadline();
+        let stat;
+        try {
+          stat = await raceSignal(fs.promises.stat(filePath), ac.signal);
+        } catch (err) {
+          if (isAbortErr(err)) return { error: 'timeout' };
+          return { error: 'missing' };
+        }
+        if (!stat.isFile()) return { error: 'missing' };
+        if (stat.size <= 0 || stat.size > MAX_FINGERPRINT_BYTES) return { error: 'unsupported' };
+
+        const stamp = fingerprint.stampOf(stat);
+        const cached = fingerprint.valueOf(store.files[key], stamp, kind);
+        if (cached) return { value: cached, cached: true, stamp };
+
+        let value;
+        try {
+          value = await hashFileMd5(filePath, {
+            createReadStream: deps.createReadStream,
+            signal: ac.signal,
+            timeoutMs: 0,
+            setTimer,
+            clearTimer,
+          });
+        } catch (err) {
+          if (isAbortErr(err)) return { error: 'timeout' };
+          console.error('metadata fingerprint:', err);
+          return { error: 'unreadable' };
+        }
+        if (ac.signal.aborted) return { error: 'timeout' };
+
+        let after;
+        try {
+          after = await raceSignal(fs.promises.stat(filePath), ac.signal);
+        } catch (err) {
+          if (isAbortErr(err)) return { error: 'timeout' };
+          return { error: 'missing' };
+        }
+        if (!fingerprint.sameStamp(fingerprint.stampOf(after), stamp)) continue;
+        if (ac.signal.aborted) return { error: 'timeout' };
+
+        const entry = fingerprint.withValues(store.files[key], stamp, { [kind]: value });
+        // `at` belongs to the store, not to the pure fingerprint shape: it is only there so
+        // eviction can drop the least recently touched file rather than an arbitrary one.
+        store.files[key] = Object.assign({}, entry, { at: clock() });
+        markMetadataDirty();
+        return { value, cached: false, stamp };
+      }
+      return { error: 'changed' };
+    } finally {
+      if (timer) clearTimer(timer);
+      if (parentSignal) parentSignal.removeEventListener('abort', onParent);
+    }
+  }
+
+  // LIB-031. The fingerprint this file already has, and nothing else: a stat, never a read
+  // of the file. '' when it was never hashed or changed since. Right after launch the
+  // Online cards need to know what the library holds long before the pass gets going.
+  async function cachedFingerprintForFile(filePath, kind = 'md5') {
+    let stat;
+    try {
+      stat = await fs.promises.stat(filePath);
+    } catch { return ''; }
+    if (!stat.isFile()) return '';
+    const entry = metadataCacheStore().files[fingerprint.fileKey(filePath)];
+    return fingerprint.valueOf(entry, fingerprint.stampOf(stat), kind) || '';
   }
 
   // ONL-013. One way to ask a site "which post IS this exact file", for every site.
@@ -279,14 +395,14 @@ function create(deps) {
   // it never has to learn the word — while this remembers that the refusal was OURS, so
   // the answer becomes "busy, try later" and nothing is written to the journal. Nothing
   // was asked, so nothing is known.
-  function metadataContext(descriptor) {
+  function metadataContext(descriptor, signal) {
     const state = { blocked: null };
     return {
       credentials: providerAccess.credentials(descriptor),
       state,
       fetchJson: async (url, opts) => {
         const timeoutMs = Number(opts && opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 10000;
-        const res = await metadataFetchJson(descriptor.id, url, timeoutMs);
+        const res = await metadataFetchJson(descriptor.id, url, timeoutMs, signal);
         if (res.blocked) {
           if (!state.blocked) state.blocked = { reason: res.reason, retryAfterMs: res.retryAfterMs };
           return { error: res.reason || 'busy' };
@@ -297,14 +413,14 @@ function create(deps) {
     };
   }
 
-  async function askProviderForFingerprint(descriptor, kind, hash) {
+  async function askProviderForFingerprint(descriptor, kind, hash, signal) {
     if (!descriptor || typeof descriptor.findByFingerprint !== 'function') {
       return { status: 'error', reason: 'unsupported' };
     }
     if (descriptor.credentials && descriptor.credentials.required && !providerAccess.credentials(descriptor)) {
       return { status: 'error', reason: 'unavailable' };
     }
-    const ctx = metadataContext(descriptor);
+    const ctx = metadataContext(descriptor, signal);
     let res;
     try {
       res = await descriptor.findByFingerprint(kind, hash, ctx);
@@ -353,15 +469,16 @@ function create(deps) {
   // Ask whoever still has something to say about this fingerprint, in order, stopping at
   // the first real answer. A provider that is merely rate-limited right now does NOT get
   // journalled: nothing was asked, so nothing is known, and the next click may try again.
-  async function lookupByFingerprint(kind, hash) {
+  async function lookupByFingerprint(kind, hash, signal) {
     const store = metadataCacheStore();
+    metadataStore.evict(store, clock());
     const key = metadataLookup.journalKey(kind, hash);
     if (!key) return { status: 'error', reason: 'badFingerprint' };
 
     const known = metadataLookup.normalizeEntry(store.lookups[key]);
     if (known.result) return { status: 'found', result: known.result, cached: true };
 
-    const now = Date.now();
+    const now = clock();
     const pending = metadataLookup.pendingProviders(store.lookups[key], kind, now, {
       credentials: metadataCredentials(),
     });
@@ -387,13 +504,17 @@ function create(deps) {
 
     let lastError = null;
     for (const providerId of pending) {
+      if (signal && signal.aborted) return { status: 'error', reason: 'timeout' };
       // Never throws: a site that breaks drops out of this round the same way it drops out
       // of a search round.
-      const outcome = await askProviderForFingerprint(providerRegistry.byId(providerId), kind, hash);
+      const outcome = await askProviderForFingerprint(providerRegistry.byId(providerId), kind, hash, signal);
+      // A deadline that landed while the request was out is not an answer. Journaling it
+      // would remember "absent" or "failed" for a question we stopped ourselves.
+      if (signal && signal.aborted) return { status: 'error', reason: 'timeout' };
       if (outcome.status === 'busy') { lastError = outcome; continue; }
       store.lookups[key] = Object.assign(
-        metadataLookup.recordOutcome(store.lookups[key], providerId, outcome, Date.now()),
-        { at: Date.now() },
+        metadataLookup.recordOutcome(store.lookups[key], providerId, outcome, clock()),
+        { at: clock() },
       );
       markMetadataDirty();
       if (outcome.status === 'found') {
@@ -439,7 +560,7 @@ function create(deps) {
   // `addedAt` is in here on purpose. A record removed and added again keeps its id (the id
   // is derived from the path), so `getItem` still finds one; but it is a decision the user
   // made AFTER this request, and tags fetched for the old one do not belong to it.
-  async function itemIdentityUnchanged(id, snapshot) {
+  async function itemIdentityUnchanged(id, snapshot, signal) {
     const item = library.getItem(getConfig().library, id);
     if (!item || item.type !== 'image') return false;
     // Redundant while ids are derived from paths (`library.idFor`) and nothing patches a
@@ -451,7 +572,7 @@ function create(deps) {
     if ((Number(item.addedAt) || 0) !== snapshot.addedAt) return false;
     let stat;
     try {
-      stat = await fs.promises.stat(item.path);
+      stat = await raceSignal(fs.promises.stat(item.path), signal);
     } catch { return false; }
     return fingerprint.sameStamp(fingerprint.stampOf(stat), snapshot.stamp);
   }
@@ -462,23 +583,28 @@ function create(deps) {
     const filePath = item.path;
     if (!isAuthorizedItemPath(filePath)) return { status: 'error', reason: 'denied' };
 
-    return metadataQueue(async () => {
+    return schedule(`item:${id}`, async (signal) => {
       // Re-read rather than close over the record above: this runs behind a queue, so the
       // wait before it starts is as real as the wait inside it.
       const current = library.getItem(getConfig().library, id);
       if (!current || current.type !== 'image' || pathKey(current.path) !== pathKey(filePath)) {
         return metadataLookupReply({ status: 'error', reason: 'changed' }, null);
       }
-      const print = await fingerprintForFile(filePath, 'md5');
+      if (signal.aborted) return metadataLookupReply({ status: 'error', reason: 'timeout' }, null);
+      const print = await fingerprintForFile(filePath, 'md5', signal);
+      if (signal.aborted) return metadataLookupReply({ status: 'error', reason: 'timeout' }, null);
       if (print.error) return metadataLookupReply({ status: 'error', reason: print.error }, null);
       const snapshot = {
         path: pathKey(current.path),
         addedAt: Number(current.addedAt) || 0,
         stamp: print.stamp,
       };
-      const outcome = await lookupByFingerprint('md5', print.value);
+      const outcome = await lookupByFingerprint('md5', print.value, signal);
+      if (signal.aborted) return metadataLookupReply({ status: 'error', reason: 'timeout' }, null);
       if (outcome.status !== 'found') return metadataLookupReply(outcome, null);
-      if (!(await itemIdentityUnchanged(id, snapshot))) {
+      const same = await itemIdentityUnchanged(id, snapshot, signal);
+      if (signal.aborted) return metadataLookupReply({ status: 'error', reason: 'timeout' }, null);
+      if (!same) {
         // The journal still keeps what the catalogue said — the answer is about a
         // fingerprint, not about this record — so pressing the button again is cheap and
         // will write it to whatever is actually there now.
@@ -489,8 +615,9 @@ function create(deps) {
       // last await, so the check and the write cannot be split. The journal keeps the answer:
       // asking again after the move costs no request.
       if (isMoveRunning()) return metadataLookupReply({ status: 'error', reason: libraryFreeze.MOVE_RUNNING }, null);
+      if (signal.aborted) return metadataLookupReply({ status: 'error', reason: 'timeout' }, null);
       return metadataLookupReply(outcome, applyLookupToItem(id, outcome.result));
-    }, { priority: METADATA_MANUAL_PRIORITY });
+    }, METADATA_MANUAL_PRIORITY);
   }
 
   // META-004. Explicit user action, never a background upload. The owner decided
@@ -499,11 +626,13 @@ function create(deps) {
   async function visualItem(id, owner) {
     if (visualPending.has(id) || visualPending.size >= 16) return { status: 'busy', retryAfterMs: 30000 };
     visualPending.add(id);
-    try { return await metadataQueue(async () => {
+    try { return await schedule(`visual:${id}`, async (signal) => {
+      if (signal.aborted) return { status: 'error', reason: 'timeout' };
       if (isMoveRunning()) return { status: 'error', reason: libraryFreeze.MOVE_RUNNING };
       const item = library.getItem(getConfig().library, id);
       if (!item || item.type !== 'image' || !isAuthorizedItemPath(item.path)) return { status: 'error', reason: 'denied' };
-      const print = await fingerprintForFile(item.path);
+      const print = await fingerprintForFile(item.path, 'md5', signal);
+      if (signal.aborted) return { status: 'error', reason: 'timeout' };
       if (print.error) return { status: 'error', reason: print.error };
       const snapshot = { path: pathKey(item.path), addedAt: Number(item.addedAt) || 0, stamp: print.stamp };
       const key = 'iqdb:md5:' + print.value;
@@ -511,7 +640,7 @@ function create(deps) {
       let outcome = store.lookups[key];
       const ttl = outcome?.status === 'error' ? metadataLookup.RETRY.errorMs : metadataLookup.RETRY.absentMs;
       if (!outcome || !['candidate', 'absent', 'ambiguous', 'error'].includes(outcome.status)
-        || !Number.isFinite(outcome.at) || outcome.at > Date.now() || Date.now() - outcome.at >= ttl) outcome = null;
+        || !Number.isFinite(outcome.at) || outcome.at > clock() || clock() - outcome.at >= ttl) outcome = null;
       // Rejection belongs to this answer, shared by identical bytes in every window.
       // Keep its original timestamp: rejecting neither reuploads nor extends the TTL.
       if (outcome?.status === 'candidate' && outcome.rejected === true) return { status: 'absent', reason: 'rejected' };
@@ -525,12 +654,15 @@ function create(deps) {
         || !(thumbnail.width > 0 && thumbnail.height > 0 && thumbnail.width <= 512 && thumbnail.height <= 512)) {
         return { status: 'error', reason: 'thumbnail' };
       }
-      if (!(await itemIdentityUnchanged(id, snapshot)) || !isAuthorizedItemPath(item.path)) return { status: 'error', reason: 'changed' };
+      const samePreview = await itemIdentityUnchanged(id, snapshot, signal);
+      if (signal.aborted) return { status: 'error', reason: 'timeout' };
+      if (!samePreview || !isAuthorizedItemPath(item.path)) return { status: 'error', reason: 'changed' };
       if (isMoveRunning()) return { status: 'error', reason: libraryFreeze.MOVE_RUNNING };
       if (!outcome) {
         outcome = await visualClient.search({ bytes, mime });
+        if (signal.aborted) return { status: 'error', reason: 'timeout' };
         if (outcome.status !== 'busy') {
-          outcome = store.lookups[key] = { ...outcome, at: Date.now() };
+          outcome = store.lookups[key] = { ...outcome, at: clock() };
           const keys = Object.keys(store.lookups).filter((entry) => entry.startsWith('iqdb:md5:'));
           if (keys.length > 200) {
             keys.sort((a, b) => Number(store.lookups[a].at) - Number(store.lookups[b].at));
@@ -549,7 +681,7 @@ function create(deps) {
       const descriptor = providerRegistry.byId(ref.provider);
       if (!descriptor || descriptor.status === 'retired' || typeof descriptor.lookup !== 'function'
         || typeof descriptor.findByFingerprint !== 'function') return { status: 'error', reason: 'unavailable' };
-      const ctx = metadataContext(descriptor);
+      const ctx = metadataContext(descriptor, signal);
       const response = await descriptor.lookup(ref.postId, ctx);
       const remote = response?.item;
       if (!remote || remote.id !== `${ref.provider}:${ref.postId}` || !/^[a-f0-9]{32}$/i.test(remote.md5 || '')) {
@@ -564,8 +696,11 @@ function create(deps) {
       if (!result && ctx.state.blocked) return { status: 'busy', retryAfterMs: ctx.state.blocked.retryAfterMs };
       if (!result && typeof details?.error === 'string' && details.error.trim()) return { status: 'error', reason: details.error };
       if (!result || result.postId !== ref.postId || !postMatchesHash(result, remote.md5)) return { status: 'error', reason: 'mismatch' };
-      if (!(await itemIdentityUnchanged(id, snapshot)) || !isAuthorizedItemPath(item.path)) return { status: 'error', reason: 'changed' };
+      const sameResult = await itemIdentityUnchanged(id, snapshot, signal);
+      if (signal.aborted) return { status: 'error', reason: 'timeout' };
+      if (!sameResult || !isAuthorizedItemPath(item.path)) return { status: 'error', reason: 'changed' };
       if (isMoveRunning()) return { status: 'error', reason: libraryFreeze.MOVE_RUNNING };
+      if (signal.aborted) return { status: 'error', reason: 'timeout' };
       const rating = contentRating.of(result);
       // This is enrichment of an existing local photo, not discovery in Online.
       // Preserve display blur, but Online's search admission must not hide a match.
@@ -585,10 +720,10 @@ function create(deps) {
           }
         } catch { /* A missing or invalid large preview falls back to the thumbnail. */ }
       }
-      for (const [token, value] of visualTokens) if (value.expires <= Date.now()) visualTokens.delete(token);
+      for (const [token, value] of visualTokens) if (value.expires <= clock()) visualTokens.delete(token);
       while (visualTokens.size >= 16) visualTokens.delete(visualTokens.keys().next().value);
       const token = crypto.randomUUID();
-      visualTokens.set(token, { id, owner, snapshot, result, key, outcome, expires: Date.now() + 5 * 60000 });
+      visualTokens.set(token, { id, owner, snapshot, result, key, outcome, expires: clock() + 5 * 60000 });
       return {
         status: 'candidate', token, page: ref.page, similarity: candidate.similarity, provider: ref.provider,
         sourceName: descriptor.name || ref.provider,
@@ -596,7 +731,7 @@ function create(deps) {
         thumb: preview, fallbackThumb,
         blur: contentRating.hidden(rating, getConfig().contentBlur),
       };
-    }, { priority: METADATA_MANUAL_PRIORITY }); } finally { visualPending.delete(id); }
+    }, METADATA_MANUAL_PRIORITY); } finally { visualPending.delete(id); }
   }
 
   async function applyVisual(id, token, owner, accept) {
@@ -605,7 +740,7 @@ function create(deps) {
     visualTokens.delete(token);
     // null/unspecified is dismissal (Escape); only explicit false rejects a match.
     if (accept !== true && accept !== false) return { status: 'cancelled', reason: 'dismissed' };
-    if (pending.expires <= Date.now() || !(await itemIdentityUnchanged(id, pending.snapshot))) return { status: 'error', reason: 'changed' };
+    if (pending.expires <= clock() || !(await itemIdentityUnchanged(id, pending.snapshot))) return { status: 'error', reason: 'changed' };
     const current = library.getItem(getConfig().library, id);
     if (!current || !isAuthorizedItemPath(current.path)) return { status: 'error', reason: 'denied' };
     if (isMoveRunning()) return { status: 'error', reason: libraryFreeze.MOVE_RUNNING };
@@ -624,6 +759,11 @@ function create(deps) {
     lookupItem: runItemMetadataLookup,
     visualItem,
     applyVisual,
+    // LIB-030. The background library pass reads fingerprints through the same cache, so
+    // a file is hashed once for every check that needs it — never into a second cache
+    // with a second writer to the same file.
+    fingerprint: (filePath) => fingerprintForFile(filePath, 'md5'),
+    cachedFingerprint: (filePath) => cachedFingerprintForFile(filePath, 'md5'),
     // On quit: losing the journal costs no user data, but it does cost the memory of
     // which catalogues were already asked.
     flush: () => metadataWriter.flush(),

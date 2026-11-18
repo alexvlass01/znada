@@ -67,6 +67,29 @@ function setup({ sites, config, monitors = [] }) {
 const WIDE = { ratio: 16 / 9, minWidth: 1920, minHeight: 1080 };
 
 (async () => {
+  await ok('media kinds bind provider requests and bookmarks to the same selection', async () => {
+    const pictures = site('pictures');
+    const mixed = site('mixed', { capabilities: { onlineVideo: true } });
+    mixed.descriptor.search = async params => {
+      mixed.calls.push(params);
+      return { items: [
+        { provider: 'mixed', id: 1, format: 'mp4' },
+        { provider: 'mixed', id: 2, format: 'gif', animated: true },
+        { provider: 'mixed', id: 3, format: 'jpg' },
+      ], meta: { hasMore: true } };
+    };
+    const { search } = setup({ sites: [pictures, mixed] });
+    const videos = await search.search({ q: 'sky', kinds: ['video'] });
+    assert.deepStrictEqual(videos.items.map(item => item.id), [1]);
+    assert.deepStrictEqual(mixed.calls[0].formats, ['mp4', 'webm']);
+    assert.equal(pictures.calls.length, 0);
+    const stills = await search.search({ q: 'sky', kinds: ['photo'], resume: videos.resume });
+    assert.equal(mixed.calls[1].page, 1);
+    assert.ok(stills.items.some(item => item.id === 3));
+    assert.ok(stills.items.every(item => item.format === 'jpg'));
+    assert.ok(!mixed.calls[1].formats.includes('mp4'));
+  });
+
   // --- what used to be text pins in test/size-filter.test.js -------------------------
 
   await ok('every card is judged here whatever a site managed', async () => {

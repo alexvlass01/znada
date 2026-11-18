@@ -107,11 +107,25 @@ if (step.screenshot) {
   fs.writeFileSync(screenshotPath, 'stale screenshot');
 }
 if (step.childSentinel) {
-  const source = "const fs=require('fs');setTimeout(()=>fs.writeFileSync(process.argv[1],'orphan'),Number(process.argv[2]));";
-  const child = childProcess.spawn(process.execPath, ['-e', source, step.childSentinel, String(step.childDelayMs || 2500)], {
+  const source = "const fs=require('fs');if(process.argv[3])fs.writeFileSync(process.argv[3],JSON.stringify({at:Date.now(),pid:process.pid}));setTimeout(()=>fs.writeFileSync(process.argv[1],'orphan'),Number(process.argv[2]));";
+  const child = childProcess.spawn(process.execPath, ['-e', source, step.childSentinel, String(step.childDelayMs || 2500), step.childStartedPath || ''], {
     stdio: 'ignore', windowsHide: true,
   });
   child.unref();
+}
+if (step.orphanSentinel) {
+  // A helper whose parent is already gone. Node's own job kills non-detached children
+  // with the stub, so both hops are detached: the middle process starts the writer and
+  // exits, leaving it with no live ancestor in the QA tree.
+  const writer = "const fs=require('fs');fs.writeFileSync(process.argv[3],JSON.stringify({at:Date.now(),pid:process.pid}));setTimeout(()=>fs.writeFileSync(process.argv[1],'orphan'),Number(process.argv[2]));";
+  const middle = "require('child_process').spawn(process.execPath,['-e',process.argv[1],...process.argv.slice(2)],{detached:true,stdio:'ignore',windowsHide:true}).unref();";
+  childProcess.spawn(process.execPath, ['-e', middle, writer, step.orphanSentinel, String(step.orphanDelayMs || 4000), step.orphanStartedPath], {
+    detached: true, stdio: 'ignore', windowsHide: true,
+  }).unref();
+  // Exit only once the writer runs, so the runner's cleanup always comes after it exists.
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  const until = Date.now() + 20000;
+  while (!fs.existsSync(step.orphanStartedPath) && Date.now() < until) Atomics.wait(pause, 0, 0, 50);
 }
 const finish = () => process.exit(Number(step.exit || 0));
 if (Number(step.sleepMs) > 0) setTimeout(finish, Number(step.sleepMs));
@@ -417,6 +431,10 @@ ok('package verifier rejects every unapproved external resource', () => {
     const helper = path.join(resources, 'thumbnail-helper');
     fs.mkdirSync(helper, { recursive: true });
     fs.writeFileSync(path.join(resources, 'app.asar'), 'fixture');
+    const video = path.join(resources, 'libmpv'); fs.mkdirSync(video);
+    for (const name of require('../src/video-runtime').FILES) fs.writeFileSync(path.join(video, name), 'fixture');
+    const addon = path.join(resources, 'app.asar.unpacked', 'node_modules', 'koffi', 'build', 'koffi', 'win32_x64');
+    fs.mkdirSync(addon, { recursive: true }); fs.writeFileSync(path.join(addon, 'koffi.node'), 'fixture');
     fs.writeFileSync(path.join(helper, 'Znada.ThumbnailHelper.exe'), 'fixture');
     fs.writeFileSync(path.join(helper, 'source.sha256'), `${'a'.repeat(64)}\n`);
     assert.strictEqual(verifyExternalResources(fixture).helper,
@@ -493,6 +511,34 @@ okPrivate('Codex QA runner enforces fail-closed verdict and artifact semantics',
     childProcess.spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 3000)']);
     assert.strictEqual(fs.existsSync(completedOrphanSentinel), false,
       'a successful QA attempt left an owned helper alive after its root exited');
+
+    // A helper whose parent exited before cleanup is invisible to a walk of parent PIDs
+    // (`taskkill /T`). It still belongs to the attempt and must not outlive it: such a
+    // survivor once wrote a stale PASS into report.md after the runner had said BLOCKED.
+    const trueOrphanCounter = path.join(fixture, 'true-orphan-counter.txt');
+    const trueOrphanSentinel = path.join(fixture, 'true-orphan-sentinel.txt');
+    const trueOrphanStarted = path.join(fixture, 'true-orphan-started.txt');
+    const trueOrphanDelayMs = 4000;
+    const withTrueOrphan = run('true-orphan', {
+      counterPath: trueOrphanCounter,
+      plan: [{
+        exit: 0,
+        write: true,
+        reportB64: Buffer.from(completeQaReport('PASS'), 'utf8').toString('base64'),
+        orphanSentinel: trueOrphanSentinel,
+        orphanDelayMs: trueOrphanDelayMs,
+        orphanStartedPath: trueOrphanStarted,
+      }],
+    });
+    assert.strictEqual(withTrueOrphan.status, 0, withTrueOrphan.stderr || withTrueOrphan.stdout);
+    const orphanStarted = JSON.parse(fs.readFileSync(trueOrphanStarted, 'utf8'));
+    const orphanWaitMs = Math.max(0, orphanStarted.at + trueOrphanDelayMs + 500 - Date.now());
+    childProcess.spawnSync(process.execPath,
+      ['-e', 'setTimeout(() => {}, Number(process.argv[1]))', String(orphanWaitMs)]);
+    assert.strictEqual(fs.existsSync(trueOrphanSentinel), false,
+      'a helper orphaned inside the QA attempt outlived the attempt');
+    assert.throws(() => process.kill(orphanStarted.pid, 0), { code: 'ESRCH' },
+      'the orphaned helper is still running after the attempt');
 
     const fail = run('fail', { report: completeQaReport('FAIL') });
     assert.strictEqual(fail.status, 2, fail.stderr || fail.stdout);
@@ -632,33 +678,72 @@ okPrivate('Codex QA runner enforces fail-closed verdict and artifact semantics',
     assert.strictEqual(staleMeta.verdict, 'BLOCKED');
     assert.deepStrictEqual(staleMeta.screenshots, [], 'a failed resume leaked a stale screenshot into the retry');
 
-    const watchdogCounter = path.join(fixture, 'watchdog-counter.txt');
-    const orphanSentinel = path.join(fixture, 'orphan-sentinel.txt');
-    const watchdogStarted = Date.now();
-    const watchdog = run('watchdog', {
+    const assertTimedOut = (result) => {
+      assert.strictEqual(result.status, 4, result.stderr || result.stdout);
+      assert.match(result.stdout, /^CODEX_QA_VERDICT=BLOCKED$/m);
+      assert.doesNotMatch(result.stdout, /^CODEX_QA_VERDICT=PASS$/m);
+      const meta = JSON.parse(fs.readFileSync(path.join(result.runRoot, 'meta.json'), 'utf8'));
+      assert.strictEqual(meta.timed_out, true);
+      assert.strictEqual(meta.process_tree_cleanup_succeeded, true);
+      const report = fs.readFileSync(path.join(result.runRoot, 'report.md'), 'utf8');
+      assert.strictEqual((report.match(/^VERDICT:/gm) || []).length, 1);
+      assert.match(report, /^VERDICT: BLOCKED$/m);
+    };
+
+    // QA-029: the deadline includes wrapper/PowerShell startup. One second may
+    // legitimately expire before the stub starts; it must still fail closed.
+    const shortCounter = path.join(fixture, 'short-watchdog-counter.txt');
+    const shortStarted = Date.now();
+    const shortWatchdog = run('short-watchdog', {
       timeoutSeconds: 1,
-      counterPath: watchdogCounter,
+      counterPath: shortCounter,
       plan: [{
         exit: 0,
         write: true,
         reportB64: Buffer.from(completeQaReport('PASS'), 'utf8').toString('base64'),
         sleepMs: 10_000,
-        childSentinel: orphanSentinel,
-        childDelayMs: 2500,
       }],
     });
+    assertTimedOut(shortWatchdog);
+    assert.ok(Date.now() - shortStarted < 10_000, 'the runner ignored its short QA deadline');
+    if (fs.existsSync(shortCounter)) assert.strictEqual(fs.readFileSync(shortCounter, 'utf8'), '1');
+
+    // Prove cleanup of an ACTUALLY running stub and its child separately. The
+    // startup margin belongs only to this fixture, not to the runner's deadline.
+    const watchdogCounter = path.join(fixture, 'watchdog-counter.txt');
+    const childStartedPath = path.join(fixture, 'watchdog-child-started.txt');
+    const orphanSentinel = path.join(fixture, 'orphan-sentinel.txt');
+    const childDelayMs = 15_000;
+    const watchdogStarted = Date.now();
+    const watchdog = run('running-watchdog', {
+      timeoutSeconds: 10,
+      counterPath: watchdogCounter,
+      plan: [{
+        exit: 0,
+        write: true,
+        reportB64: Buffer.from(completeQaReport('PASS'), 'utf8').toString('base64'),
+        sleepMs: 20_000,
+        childSentinel: orphanSentinel,
+        childDelayMs,
+        childStartedPath,
+      }],
+    });
+    assert.ok(fs.existsSync(watchdogCounter), 'the running-watchdog fixture never reached the stub');
     assert.strictEqual(fs.readFileSync(watchdogCounter, 'utf8'), '1', 'the watchdog fixture never reached Codex');
-    assert.strictEqual(watchdog.status, 4, watchdog.stderr || watchdog.stdout);
-    assert.match(watchdog.stdout, /^CODEX_QA_VERDICT=BLOCKED$/m);
-    assert.ok(Date.now() - watchdogStarted < 10_000, 'the runner ignored its own QA deadline');
-    const watchdogMeta = JSON.parse(fs.readFileSync(path.join(watchdog.runRoot, 'meta.json'), 'utf8'));
-    assert.strictEqual(watchdogMeta.timed_out, true);
-    assert.strictEqual(watchdogMeta.process_tree_cleanup_succeeded, true);
-    const watchdogReport = fs.readFileSync(path.join(watchdog.runRoot, 'report.md'), 'utf8');
-    assert.strictEqual((watchdogReport.match(/^VERDICT:/gm) || []).length, 1);
-    assert.match(watchdogReport, /^VERDICT: BLOCKED$/m);
-    childProcess.spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 3000)']);
+    assertTimedOut(watchdog);
+    assert.ok(Date.now() - watchdogStarted < 20_000, 'the runner ignored its running QA deadline');
+    // A fixed three-second wait can finish before a surviving child would write
+    // its sentinel. Wait past the child's own measured deadline, then assert.
+    const childStarted = JSON.parse(fs.readFileSync(childStartedPath, 'utf8'));
+    assert.ok(Number.isFinite(childStarted.at) && childStarted.at >= watchdogStarted);
+    assert.ok(Number.isInteger(childStarted.pid) && childStarted.pid > 0);
+    const waitMs = Math.max(0, childStarted.at + childDelayMs + 500 - Date.now());
+    const waited = childProcess.spawnSync(process.execPath,
+      ['-e', 'setTimeout(() => {}, Number(process.argv[1]))', String(waitMs)]);
+    assert.strictEqual(waited.status, 0, 'sentinel observation wait failed');
     assert.strictEqual(fs.existsSync(orphanSentinel), false, 'the timed-out QA process left an owned child alive');
+    assert.throws(() => process.kill(childStarted.pid, 0), { code: 'ESRCH' },
+      'the timed-out QA process left its recorded child running');
 
     const runnerError = run('runner-error', {
       extraArgs: ['-TaskFile', path.join(fixture, 'missing-task.md')],

@@ -41,10 +41,11 @@ ok('наследованные свойства объекта не станов
 
 /* -------------------------------------------------------------- потолки ---- */
 
-ok('у миниатюры свой потолок, у полной свой', () => {
+ok('у миниатюры свой потолок, у промежуточной свой, у оригинала свой', () => {
   assert.strictEqual(proxy.limitFor('thumb'), proxy.THUMB_MAX_BYTES);
   assert.strictEqual(proxy.limitFor('full'), proxy.FULL_MAX_BYTES);
-  assert.strictEqual(proxy.limitFor('sample'), proxy.FULL_MAX_BYTES);
+  assert.strictEqual(proxy.limitFor('sample'), proxy.SAMPLE_MAX_BYTES);
+  assert.ok(proxy.SAMPLE_MAX_BYTES < proxy.FULL_MAX_BYTES);
   assert.ok(proxy.THUMB_MAX_BYTES < proxy.FULL_MAX_BYTES,
     'миниатюра в 30 МБ значит, что сайт отдал не то — молча тащить это в сетку нельзя');
 });
@@ -82,7 +83,16 @@ ok('адрес собирается и разбирается обратно б�
   assert.deepStrictEqual(
     { tier: back.tier, provider: back.provider, url: back.url, field: back.field },
     { tier: 'sample', provider: 'danbooru', url, field: 'sample' });
-  assert.strictEqual(back.limit, proxy.FULL_MAX_BYTES);
+  assert.strictEqual(back.limit, proxy.SAMPLE_MAX_BYTES);
+});
+
+// BUG-065. GIF в 32.1 МБ (Gelbooru, пост 15123710) отвергался до загрузки, и
+// просмотрщик оставался на неподвижном кадре. Оригинал такого размера обязан проходить.
+ok('оригинал GIF в 32 МБ проходит потолок, промежуточная ступень его не пропустила бы', () => {
+  const real = 33660000;
+  assert.strictEqual(proxy.overLimit(real, proxy.limitFor('full')), false);
+  assert.strictEqual(proxy.overLimit(real, proxy.limitFor('sample')), true);
+  assert.strictEqual(proxy.FULL_MAX_BYTES, 100 * 1024 * 1024);
 });
 
 ok('одна и та же картинка даёт одну и ту же строку', () => {

@@ -47,7 +47,10 @@ function element() {
   reply = { items: [{ id: 'd:1' }], error: null, providerErrors: {} };
   errorCtx.ONLINE.entries = await load(1); finish();
   assert.strictEqual(errorCtx.ONLINE.entries.length, 1, 'error notice does not discard successful cards');
-  assert.strictEqual(errorNote.textContent, 'online.sourcesFailed:Gelbooru', 'paging cannot hide an earlier failed source');
+  // BUG-070: with cards on screen the failure is kept (the site's mark in Sources shows it), but the
+  // feed carries no line for it any more.
+  assert.strictEqual(errorCtx.INTERNET.failed.gelbooru, true, 'paging cannot forget an earlier failed source');
+  assert.strictEqual(errorNote.textContent, '', 'BUG-070: with cards the failed source is not a line over the feed');
   current = false; errorCtx.INTERNET.searchError = 'newer search';
   reply = { error: 'network', providerErrors: { gelbooru: 'network' } };
   await load(1);

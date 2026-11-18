@@ -149,7 +149,8 @@ function harness(reply, opts = {}) {
     lookupFn.includes("showViewerMessage(viewerFailureText(made.error, 'card.lookupFailed'))"));
   ok('the record is made through the viewer’s one authorized channel',
     viewerSrc.includes('async function ensureViewerRecord(entry)')
-    && viewerSrc.includes('window.viewerApi.cardEnsureRecord(entry.path')
+    // LIB-031: the path is the entry's own or, for an Online card the user already has, that file's.
+    && viewerSrc.includes('window.viewerApi.cardEnsureRecord(filePath')
     && !viewerSrc.includes('libraryMaterialize'));
 
   // DATA-009. The two viewer functions run for real, extracted the way

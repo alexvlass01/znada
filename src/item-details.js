@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const imageInfo = require('./image-info');
+const mediaType = require('./media-type');
 
 const DEFAULT_CACHE_CAP = 2000;
 const MAX_PATH_CHARS = 32767;
@@ -16,6 +17,7 @@ function emptyDetails() {
     height: 0,
     isFolder: false,
     motion: null,
+    video: null,
   };
 }
 
@@ -33,6 +35,28 @@ function normalizeHttpUrl(value) {
   try { parsed = new URL(value); } catch { return ''; }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
   return parsed.toString();
+}
+
+// META-005. One tag the Details sheet is already showing, and nothing else.
+// The sheet copies this exact text. It does not lowercase, rewrite or search it.
+// A control character is refused: the clipboard must receive one label, not a
+// multi-line payload a compromised renderer could hide inside a chip.
+const MAX_TAG_COPY_CHARS = 256;
+
+function hasControlChar(value) {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code <= 31 || code === 127) return true;
+  }
+  return false;
+}
+
+function copyableTag(value) {
+  if (typeof value !== 'string') return '';
+  const tag = value.trim();
+  if (!tag || tag.length > MAX_TAG_COPY_CHARS) return '';
+  if (hasControlChar(tag)) return '';
+  return tag;
 }
 
 function isSameOrDescendant(candidate, root) {
@@ -64,6 +88,8 @@ function createDetailsReader(options = {}) {
   const statPath = options.statPath || ((filePath) => fs.promises.stat(filePath));
   const readHeader = options.readHeader || readHeaderFromDisk;
   const motionOf = typeof options.motion === 'function' ? options.motion : null;
+  // MEDIA-002: length and frame size of a video, from main's one shared reader.
+  const videoOf = typeof options.video === 'function' ? options.video : null;
   const requestedCap = Math.trunc(Number(options.cacheCap));
   const cacheCap = Number.isFinite(requestedCap) && requestedCap > 0
     ? requestedCap : DEFAULT_CACHE_CAP;
@@ -124,8 +150,16 @@ function createDetailsReader(options = {}) {
       width: 0,
       height: 0,
       motion: null,
+      video: null,
     };
     if (!isFile) return base;
+
+    // A video's header is not a picture header; its size comes from Windows' properties.
+    if (videoOf && mediaType.isVideoPath(filePath)) {
+      const video = await Promise.resolve().then(() => videoOf(filePath)).catch(() => null);
+      const info = video || { durationMs: 0, width: 0, height: 0 };
+      return { ...base, width: info.width, height: info.height, video: info };
+    }
 
     const cachePath = process.platform === 'win32' ? filePath.toLowerCase() : filePath;
     const [dimensions, motion] = await Promise.all([
@@ -141,9 +175,11 @@ module.exports = {
   DEFAULT_CACHE_CAP,
   MAX_PATH_CHARS,
   emptyDetails,
+  MAX_TAG_COPY_CHARS,
   isValidAbsolutePath,
   isSameOrDescendant,
   normalizeHttpUrl,
+  copyableTag,
   readHeaderFromDisk,
   createDetailsReader,
 };

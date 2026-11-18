@@ -15,14 +15,26 @@
 // derive from this list. That is the whole point: ONE list, so widening it cannot
 // half-happen.
 //
-// The kinds this file used to carry (image / animation / video) are gone. They were a
-// second classification alongside the format, and after this rule nothing asked for
-// them: video never arrives because `webm` is not on the list, and the day it does
-// arrive it needs a player, not a label.
+// MEDIA-002. Video is a SECOND list, not a wider first one. A video file is shown in the
+// Library as a card, but nothing that puts a picture on the desktop may ever see it:
+// the slideshow, folder expansion and the apply step all ask `isWallpaperFormat` /
+// `isWallpaperPath`, so leaving this list alone is what keeps video off the desktop.
+// What the Library shows is the union, `libraryExtensions()`.
 
 const WALLPAPER_FORMATS = Object.freeze(['jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif']);
 
 const FORMAT_SET = new Set(WALLPAPER_FORMATS);
+
+// Owner 2026-11-01: as many as people actually keep in folders, from day one. Windows
+// gives a frame only where it has a codec; a format it cannot read still gets a card.
+const VIDEO_FORMATS = Object.freeze([
+  'mp4', 'm4v', 'mov', 'qt', 'webm', 'mkv', 'avi', 'wmv', 'asf', 'mpg', 'mpeg', 'm2v',
+  'ts', 'mts', 'm2ts', '3gp', '3g2', 'flv', 'ogv', 'f4v', 'vob', 'divx',
+]);
+
+const ONLINE_VIDEO_FORMATS = Object.freeze(['mp4', 'webm']);
+
+const VIDEO_SET = new Set(VIDEO_FORMATS);
 
 // Content-Type is untrusted input too. Keep its spelling explicit: normalizing the tail
 // of any slash-separated string would accidentally turn e.g. video/gif into an image.
@@ -59,6 +71,37 @@ function fileExtensions() {
   return WALLPAPER_FORMATS.map((format) => `.${format}`);
 }
 
+// The format of a path, from its extension. Only the last dot counts, so a folder name
+// with a dot in it does not lend the file a format.
+function formatOfPath(p) {
+  const s = String(p == null ? '' : p);
+  const base = s.slice(Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\')) + 1);
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? normalizeFormat(base.slice(dot + 1)) : '';
+}
+
+// May this FILE go on the desktop? The one question the apply path asks.
+function isWallpaperPath(p) {
+  return FORMAT_SET.has(formatOfPath(p));
+}
+
+function isVideoFormat(value) {
+  return VIDEO_SET.has(normalizeFormat(value));
+}
+
+function isVideoPath(p) {
+  return VIDEO_SET.has(formatOfPath(p));
+}
+
+function videoExtensions() {
+  return VIDEO_FORMATS.map((format) => `.${format}`);
+}
+
+// Everything the Library shows as a card: pictures and video.
+function libraryExtensions() {
+  return fileExtensions().concat(videoExtensions());
+}
+
 function wallpaperMime(value) {
   const mime = String(value == null ? '' : value).split(';', 1)[0].trim().toLowerCase();
   const format = MIME_FORMATS[mime];
@@ -83,7 +126,14 @@ function sameWallpaperFormat(left, right) {
 
 module.exports = {
   WALLPAPER_FORMATS,
+  VIDEO_FORMATS,
+  ONLINE_VIDEO_FORMATS,
   normalizeFormat,
+  isWallpaperPath,
+  isVideoFormat,
+  isVideoPath,
+  videoExtensions,
+  libraryExtensions,
   isWallpaperFormat,
   fileExtensions,
   wallpaperMime,

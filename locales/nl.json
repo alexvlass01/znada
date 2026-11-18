@@ -232,7 +232,7 @@
     "addFolder": "Map toevoegen…",
     "empty": "Je bibliotheek is leeg — sleep hier afbeeldingen naartoe of klik op \"Toevoegen\".",
     "emptyFolder": "Deze map bevat geen afbeeldingen.",
-    "noMatches": "Niets komt overeen met de zoekopdracht of tag. Wis ze om alles te zien.",
+    "noMatches": "Hier is niets gevonden. Wis de zoekopdracht, tags of filters om alles te zien.",
     "emptyFavorites": "Nog geen favorieten — markeer een foto met de ster en hij verschijnt hier.",
     "emptyFolders": "Nog geen mappen — voeg er een toe met ‘Map toevoegen…’.",
     "back": "‹ Alle mappen",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} foto",
     "photosCount_few": "{n} foto's",
     "photosCount_many": "{n} foto's",
-    "photosCount_other": "{n} foto's"
+    "photosCount_other": "{n} foto's",
+    "kindPhoto": "Foto’s",
+    "kindVideo": "Video’s",
+    "dialogFilterMedia": "Afbeeldingen en video’s"
   },
   "details": {
     "type": "Type",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Algemeen",
     "ratingSensitive": "Gevoelig",
     "ratingQuestionable": "Twijfelachtig",
-    "ratingExplicit": "Expliciet"
+    "ratingExplicit": "Expliciet",
+    "copyTag": "Tag {tag} kopiëren",
+    "tagCopied": "Tag gekopieerd",
+    "tagCopyFailed": "Kon de tag niet kopiëren",
+    "typeVideo": "Video",
+    "duration": "Duur"
   },
   "motion": {
     "format": "Animatie · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "Favorieten die niet in het account passen en op deze computer zijn gebleven: {n}",
     "syncHeldToast_few": "Favorieten die niet in het account passen en op deze computer zijn gebleven: {n}",
     "syncHeldToast_many": "Favorieten die niet in het account passen en op deze computer zijn gebleven: {n}",
-    "syncHeldToast_other": "Favorieten die niet in het account passen en op deze computer zijn gebleven: {n}"
+    "syncHeldToast_other": "Favorieten die niet in het account passen en op deze computer zijn gebleven: {n}",
+    "sourceFailed": "Deze site reageerde niet"
   },
   "theme": {
     "group": "Windows-thema",
@@ -486,7 +495,10 @@
     "libraryStore": "Bibliotheekbestand",
     "configStore": "Instellingenbestand",
     "wallpaperSource": "Bron van ingestelde achtergrond",
-    "poolConsistency": "Achtergrondtoewijzing hersteld na een onderbroken opslagbewerking"
+    "poolConsistency": "Achtergrondtoewijzing hersteld na een onderbroken opslagbewerking",
+    "configRestored": "Het instellingenbestand was beschadigd en is hersteld vanuit de kopie van {date}",
+    "libraryRestored": "Het bibliotheekbestand was beschadigd en is hersteld vanuit de kopie van {date}",
+    "folderStateRestored": "Het bestand met mapgegevens was beschadigd en is hersteld vanuit de kopie van {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada kon de achtergrond niet wijzigen",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada kon je achtergrond niet vinden",
     "wallpaperSourceMissingBody": "De ingestelde afbeelding is niet meer aanwezig. Als het station of de map is verplaatst, zet deze dan terug en de achtergrond wordt bij de volgende wissel geladen.",
     "poolConsistencyTitle": "Znada heeft een achtergrondinstelling hersteld",
-    "poolConsistencyBody": "Een opslagbewerking werd afgebroken (waarschijnlijk door stroomuitval of geforceerde afsluiting) en een monitor verwees naar een onvolledig opgeslagen afbeelding. De instelling is gewist. Je foto's zijn onaangetast gebleven."
+    "poolConsistencyBody": "Een opslagbewerking werd afgebroken (waarschijnlijk door stroomuitval of geforceerde afsluiting) en een monitor verwees naar een onvolledig opgeslagen afbeelding. De instelling is gewist. Je foto's zijn onaangetast gebleven.",
+    "configRestoredTitle": "Instellingenbestand beschadigd — Znada heeft het hersteld",
+    "libraryRestoredTitle": "Bibliotheekbestand beschadigd — Znada heeft het hersteld",
+    "folderStateRestoredTitle": "Bestand met mapgegevens beschadigd — Znada heeft het hersteld",
+    "configRestoredBody": "Znada kon het instellingenbestand niet lezen. Het kan door een stroomstoring of crash beschadigd zijn geraakt. De instellingen zijn hersteld vanuit een reservekopie ({date}). Latere wijzigingen kunnen ontbreken.",
+    "libraryRestoredBody": "Znada kon het bibliotheekbestand niet lezen. Het kan door een stroomstoring of crash beschadigd zijn geraakt. De bibliotheek is hersteld vanuit een reservekopie ({date}). Latere favorieten, tags en toewijzingen kunnen ontbreken. Je afbeeldingen zijn niet gewijzigd.",
+    "folderStateRestoredBody": "Znada kon het bestand met gegevens over gekoppelde mappen niet lezen. Het kan door een stroomstoring of crash beschadigd zijn geraakt. Het bestand is hersteld vanuit een reservekopie ({date}). Foto’s die je daarna uit die mappen hebt verwijderd, kunnen weer verschijnen."
   },
   "toast": {
     "applied": "Achtergrond toegepast",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Kan het zoekvoorbeeld niet voorbereiden.",
     "lookupChanged": "De afbeelding is gewijzigd of niet meer beschikbaar. Start een nieuwe zoekopdracht.",
     "lookupResponseFailed": "Kan het antwoord van de bron niet verifiëren. Er zijn geen gegevens gewijzigd.",
-    "lookupHttpError": "De site gaf fout {n}. Probeer het later opnieuw."
+    "lookupHttpError": "De site gaf fout {n}. Probeer het later opnieuw.",
+    "lookupDismissed": "Vergelijking gesloten. Geen gegevens gewijzigd."
   },
   "whatsNew": {
     "button": "Wat is er nieuw",
@@ -656,5 +675,38 @@
     "unavailable": "Niet beschikbaar",
     "retry": "Kan de afbeelding niet laden. Probeer het opnieuw.",
     "writeFailed": "Kan favorieten niet opslaan. Uw eerdere favorieten zijn ongewijzigd."
+  },
+  "libraryChecks": {
+    "title": "Bibliotheekcontrole",
+    "duplicatesSwitch": "Identieke bestanden zoeken",
+    "duplicatesTitle": "Identieke bestanden",
+    "show": "Weergeven",
+    "checking": "Bezig met controleren…",
+    "copiesCount": "Extra kopieën: {n}",
+    "noneFound": "Niets gevonden",
+    "foundToast": "Identieke bestanden gevonden: {n}",
+    "duplicatesEmpty": "Geen identieke bestanden."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Openen in de videospeler",
+    "openFailed": "Kon deze video niet openen",
+    "notWallpaper": "Video’s kunnen nog niet als bureaubladachtergrond worden ingesteld",
+    "skippedOnAssign": "Foto’s toegewezen. Video’s kunnen nog niet als bureaubladachtergrond worden ingesteld",
+    "play": "Afspelen",
+    "pause": "Pauzeren",
+    "seek": "Afspeelpositie",
+    "volume": "Volume",
+    "mute": "Geluid dempen",
+    "unmute": "Geluid aanzetten",
+    "playback": "Video afspelen",
+    "controls": "Videobediening",
+    "playbackFailed": "Kon deze video niet afspelen.",
+    "openExternal": "Openen in een andere speler",
+    "loading": "Video openen…",
+    "downloading": "Video downloaden…",
+    "local": "Video uit de bibliotheek",
+    "localFolder": "Video uit een map"
   }
 }

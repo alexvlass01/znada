@@ -28,6 +28,10 @@
 }(typeof window !== 'undefined' ? window : globalThis, function cardActionsFactory() {
   const IMAGE = 'image';
   const FOLDER = 'folder';
+  // MEDIA-002. Shared with renderer/media-kind.js: the window loads it first, Node tests
+  // require it. Without it nothing counts as video, which only ever offers MORE actions.
+  const mediaKind = (typeof window !== 'undefined' && window.MediaKind)
+    || (typeof require === 'function' ? require('./media-kind') : null);
 
   function str(value) {
     return typeof value === 'string' ? value : '';
@@ -40,10 +44,14 @@
     const source = record || {};
     const pooled = item || null;
     const type = (pooled && pooled.type === FOLDER) || source.type === FOLDER ? FOLDER : IMAGE;
+    const filePath = str((pooled && pooled.path) || source.path);
     return {
       kind: 'local',
       type,
-      path: str((pooled && pooled.path) || source.path),
+      path: filePath,
+      // MEDIA-002. A video is a Library card, not a wallpaper: no assigning, no clipboard
+      // image, no tag lookup yet (MEDIA-007). Everything else behaves as for a photo.
+      video: type === IMAGE && !!mediaKind && mediaKind.isVideoPath(filePath),
       id: str((pooled && pooled.id) || source.id),
       inLibrary: !!pooled,
       page: str(pooled && pooled.source),
@@ -84,6 +92,7 @@
       path: str(pooled && pooled.path),
       id: str(pooled && pooled.id),
       inLibrary: !!pooled,
+      video: !!mediaKind?.isOnlineVideo?.(source),
       page: str(source.page),
       stableFileUrl: !!str(source.full),
       freshFileUrl: !!source.bookmarkKey,
@@ -194,7 +203,7 @@
       // An online picture must be downloaded before a monitor can show it. The owner
       // confirmed that assigning therefore puts it in the library too.
       needsFile: true,
-      applies: (s) => !s.removedView && (s.kind === 'local' ? !!s.path : canProduceFile(s)),
+      applies: (s) => !s.removedView && !s.video && (s.kind === 'local' ? !!s.path : canProduceFile(s)),
     },
     {
       id: 'favorite',
@@ -228,7 +237,7 @@
       group: 'primary',
       multi: true,
       needsFile: true,
-      applies: (s) => s.kind === 'local' && !s.removedView && s.type === IMAGE && !!s.path,
+      applies: (s) => s.kind === 'local' && !s.removedView && s.type === IMAGE && !!s.path && !s.video,
     },
     {
       id: 'details',
@@ -250,7 +259,7 @@
       group: 'transfer',
       multi: true,
       needsFile: true,
-      applies: (s) => !s.removedView && canProduceFile(s),
+      applies: (s) => !s.removedView && (!s.video || s.kind === 'local' || !!s.path) && canProduceFile(s),
     },
     {
       id: 'copyFile',
@@ -258,7 +267,8 @@
       group: 'transfer',
       multi: false,
       needsFile: true,
-      applies: (s) => !s.removedView && canProduceFile(s),
+      // The clipboard takes a picture; a video has none to give.
+      applies: (s) => !s.removedView && !s.video && canProduceFile(s),
     },
     {
       id: 'copyLink',

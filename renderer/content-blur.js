@@ -24,9 +24,19 @@
     function identity(descriptor) {
       const item = descriptor.path ? findLocal(descriptor.path) || {} : descriptor.item || {};
       const rating = policy.of(item);
-      const source = item.source || item.page || (!descriptor.path && !item.provider && item.id ? `znada:${item.id}` : '');
-      const key = source ? `source:${source}` : descriptor.path ? `path:${pathKey(descriptor.path)}`
-        : `online:${item.provider || 'cloud'}:${item.id || item.full || item.thumb || ''}`;
+      let key;
+      if (descriptor.path) {
+        // Local copies retain their established source/path identity.
+        const source = item.source || item.page;
+        key = source ? `source:${source}` : `path:${pathKey(descriptor.path)}`;
+      } else {
+        // Attribution can name an author shared by many different posts. Only the
+        // site's post identity may disclose another mounted copy of an online card.
+        const provider = item.provider || 'znada';
+        const cloud = provider === 'znada' || provider === 'cloud';
+        key = cloud && item.id ? `source:znada:${item.id}`
+          : `online:${provider}:${item.id || item.page || item.full || item.thumb || ''}`;
+      }
       return { key: `${key}|${rating}`, rating };
     }
     function covered(binding) {

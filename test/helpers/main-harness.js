@@ -36,6 +36,7 @@ function makeElectronStub(userData, options = {}) {
   const handlers = new Map();
   const calls = {
     dialogs: [],
+    openedPaths: [],
     removalQuestions: [],
     trashed: [],
     notifications: [],
@@ -54,6 +55,7 @@ function makeElectronStub(userData, options = {}) {
     errorBoxes: [],
     windows: [],
     trayTooltips: [],
+    trayMenus: [],
     appUserModelIds: [],
     sessionFetches: [],
   };
@@ -146,7 +148,7 @@ function makeElectronStub(userData, options = {}) {
     electron: {
       app,
       BrowserWindow: windowClass,
-      Tray: class { constructor() {} setToolTip(tip) { calls.trayTooltips.push(tip); } setContextMenu() {} on() {} destroy() {} setImage() {} },
+      Tray: class { constructor() {} setToolTip(tip) { calls.trayTooltips.push(tip); } setContextMenu(menu) { calls.trayMenus.push(menu); } on() {} destroy() {} setImage() {} },
       Menu: { buildFromTemplate: () => ({}), setApplicationMenu: () => {} },
       ipcMain: {
         // Refused like Electron refuses it. The registered set is what the contract tests
@@ -189,7 +191,8 @@ function makeElectronStub(userData, options = {}) {
         // TypeError inside a listen callback, which took the whole process down rather
         // than failing the call - so nothing had ever driven sign-in here.
         openExternal: async (url) => { calls.opened.push(url); },
-        openPath: () => {},
+        // Records the file and answers like Electron: '' for success (MEDIA-002 asks).
+        openPath: async (target) => { calls.openedPaths.push(target); return ''; },
         // Writes a real placeholder file inside the temp profile and records what it
         // was pointed at. Leaving this out of the stub made every shortcut test pass
         // for the wrong reason: the call threw, main.js caught it, and "nothing was
@@ -246,7 +249,9 @@ function makeElectronStub(userData, options = {}) {
       powerMonitor: { on: () => {} },
       safeStorage: options.safeStorage
         || { isEncryptionAvailable: () => false, encryptString: () => Buffer.alloc(0), decryptString: () => '' },
-      Notification: class { constructor() {} show() {} on() {} static isSupported() { return false; } },
+      // A test that needs to read what Windows would be asked to show passes its own class.
+      Notification: options.Notification
+        || class { constructor() {} show() {} on() {} static isSupported() { return false; } },
       clipboard: { writeText: () => {} },
       protocol: {
         registeredSchemes: [],

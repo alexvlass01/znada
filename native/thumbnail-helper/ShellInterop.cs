@@ -153,9 +153,14 @@ namespace Znada.ThumbnailHelper
         private const uint DibRgbColors = 0;
         private static readonly Guid ShellItemId = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
         private static readonly Guid LocalThumbnailCacheId = new Guid("50EF4544-AC9F-4A8E-B21B-8A26180DB13F");
+        // MEDIA-002: pictures, then video. Mirrors libraryExtensions() in src/media-type.js;
+        // test/media-type.test.js holds the two lists equal. Windows gives a video frame
+        // only where a codec is installed; without one the request fails like any other.
         private static readonly HashSet<string> Extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif"
+            ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif",
+            ".mp4", ".m4v", ".mov", ".qt", ".webm", ".mkv", ".avi", ".wmv", ".asf", ".mpg", ".mpeg", ".m2v",
+            ".ts", ".mts", ".m2ts", ".3gp", ".3g2", ".flv", ".ogv", ".f4v", ".vob", ".divx"
         };
 
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
@@ -395,6 +400,133 @@ namespace Znada.ThumbnailHelper
             if (value == null || !Marshal.IsComObject(value)) return;
             try { Marshal.FinalReleaseComObject(value); }
             catch { }
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PropertyKey
+    {
+        internal Guid FormatId;
+        internal uint PropertyId;
+
+        internal PropertyKey(string formatId, uint propertyId)
+        {
+            FormatId = new Guid(formatId);
+            PropertyId = propertyId;
+        }
+    }
+
+    // Only the two members read here: the type tag and the 8-byte value. Size 24 is the
+    // x64 PROPVARIANT, so Windows never writes past the end of the struct.
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    internal struct PropVariant
+    {
+        [FieldOffset(0)] internal ushort VarType;
+        [FieldOffset(8)] internal ulong UInt64Value;
+        [FieldOffset(8)] internal uint UInt32Value;
+    }
+
+    [ComImport]
+    [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IPropertyStore
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int GetAt(uint index, out PropertyKey key);
+        [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
+        [PreserveSig] int SetValue(ref PropertyKey key, ref PropVariant value);
+        [PreserveSig] int Commit();
+    }
+
+    internal sealed class MediaInfo
+    {
+        internal double DurationMs;
+        internal int Width;
+        internal int Height;
+    }
+
+    // MEDIA-002. A video's length and frame size, read from the file's Windows properties
+    // (the "Length" column in Explorer). The file is never decoded here: Windows' property
+    // handler reads the container header, so a large video costs the same as a small one.
+    internal static class MediaInfoReader
+    {
+        private const ushort VtUi4 = 19;
+        private const ushort VtUi8 = 21;
+        private static readonly Guid PropertyStoreId = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
+        private static readonly PropertyKey Duration = new PropertyKey("64440490-4C8B-11D1-8B70-080036B11A03", 3);
+        private static readonly PropertyKey FrameWidth = new PropertyKey("64440491-4C8B-11D1-8B70-080036B11A03", 3);
+        private static readonly PropertyKey FrameHeight = new PropertyKey("64440491-4C8B-11D1-8B70-080036B11A03", 4);
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+        private static extern int SHGetPropertyStoreFromParsingName(
+            [MarshalAs(UnmanagedType.LPWStr)] string path,
+            IntPtr bindContext,
+            uint flags,
+            ref Guid interfaceId,
+            [MarshalAs(UnmanagedType.Interface)] out IPropertyStore store);
+
+        [DllImport("ole32.dll", PreserveSig = true)]
+        private static extern int PropVariantClear(ref PropVariant value);
+
+        internal static MediaInfo Read(string inputPath)
+        {
+            if (String.IsNullOrWhiteSpace(inputPath) || inputPath.IndexOf('\0') >= 0 || !Path.IsPathRooted(inputPath))
+                throw new HelperFailure("bad_request", "Source path is invalid", false);
+            string fullPath;
+            try { fullPath = Path.GetFullPath(inputPath); }
+            catch { throw new HelperFailure("bad_request", "Source path is invalid", false); }
+            if (!File.Exists(fullPath)) throw new HelperFailure("not_found", "Source file is unavailable", false);
+
+            IPropertyStore store = null;
+            try
+            {
+                Guid iid = PropertyStoreId;
+                // GPS_DEFAULT (0): read-only store, the file's own property handler.
+                int hr = SHGetPropertyStoreFromParsingName(fullPath, IntPtr.Zero, 0, ref iid, out store);
+                if (hr < 0 || store == null)
+                    throw new HelperFailure("extract_failed", "Windows could not read the file properties", false);
+                ulong ticks = ReadNumber(store, Duration, VtUi8);
+                return new MediaInfo
+                {
+                    // 100-nanosecond units; 0 means Windows did not say.
+                    DurationMs = ticks > 0 ? Math.Round(ticks / 10000.0) : 0,
+                    Width = (int)Math.Min(ReadNumber(store, FrameWidth, VtUi4), 100000),
+                    Height = (int)Math.Min(ReadNumber(store, FrameHeight, VtUi4), 100000)
+                };
+            }
+            catch (HelperFailure)
+            {
+                throw;
+            }
+            catch
+            {
+                throw new HelperFailure("extract_failed", "Windows could not read the file properties", false);
+            }
+            finally
+            {
+                if (store != null && Marshal.IsComObject(store))
+                {
+                    try { Marshal.FinalReleaseComObject(store); }
+                    catch { }
+                }
+            }
+        }
+
+        private static ulong ReadNumber(IPropertyStore store, PropertyKey key, ushort expected)
+        {
+            PropVariant value;
+            PropertyKey local = key;
+            if (store.GetValue(ref local, out value) < 0) return 0;
+            try
+            {
+                if (value.VarType == VtUi8 && expected == VtUi8) return value.UInt64Value;
+                if (value.VarType == VtUi4) return value.UInt32Value;
+                return 0;
+            }
+            finally
+            {
+                PropVariantClear(ref value);
+            }
         }
     }
 }

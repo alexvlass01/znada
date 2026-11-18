@@ -15,7 +15,7 @@
     "diagnostics/main/ipc-instrumentation.js": "fb3db8d1afd19ea8155f366f6746e027378042cb8e9946bfdcda772337b98d54",
     "diagnostics/main/probe-preload.js": "c4865663f928345c3243db38e76ee39d40e3cac178e270b7aa4c39a3fbd235b9",
     "diagnostics/main/process-sampler.js": "0b9068ff633a224dc5c45a3119b1950c6b6c7a75addc2cd6f45db236deafa954",
-    "main.js": "f9f5a48fb0cc96ebff8d45cab3e74306a5f06b5252587adb3221d131e79673ab",
+    "main.js": "3cba3cf5c60b0fd63b23156f2139b6dc6d0832ba643cf2c8dc2efbd807dd3c1a",
     "src/apply-outcome.js": "179b789038b8e5fa840f511d01b87f9dc9da9c44d2f7aeac6498b4ff99babb34",
     "src/bookmark-preview.js": "905c8a6d63ec85015548d9de8178c59e6da26c6897c8a542292c80882dd718e0",
     "src/bookmark-resolver.js": "491f642d611d8ea6d166f6c2b78ec4b1ab5ec6262c11f6e80e030f86651f04f9",
@@ -35,62 +35,71 @@
     "src/cloud/provider.js": "4ddd3c5b9b3197911ba89657655929af134e8e64053cf568a381b39af450dca4",
     "src/cloud/session.js": "bd982ab87618e8c60bb8c1e8dfa7445c1d4cc6d6456c721a2dadcb8ff87ffa11",
     "src/coalesce.js": "a21c847fe1d19b24d66ede12c592df72d4d15661d5027ea27fabbdc5acd94d39",
-    "src/config-store.js": "7f8457c2ba7127714587556f154746597b718312e0bea3de1162811d0aee0647",
-    "src/config.js": "a87cacfc5149d9756250b3ec591d59f2811f834ffa0d672686a599ab0661410c",
-    "src/usage-ping.js": "8eb9c4e0c229750142aef88779985d8c6d326954b8d22b84c64c7640e4ee671f",
+    "src/config-store.js": "f3ecf826c1822b2f2afa3659d96fb2cc15507f394b8bb5069ade0253ffc68260",
+    "src/config.js": "c40c21ce864a2d7e461431a35bd4fb26863af12e279dc5cae8adf5537db539f1",
     "src/content-rating.js": "3e076a8d2b2a9825d6d6b208d2f45d37e74bed14871fde3e51ebbfedcda38b0a",
-    "src/danbooru.js": "3b126362111574645deb5ae67c6fdf33fc5b178af0684897eeac74695220591c",
+    "src/danbooru.js": "41463b5612d90bfe2e3cec35884318a7481bead33422dcdbb15132644b3c4874",
+    "src/data-snapshots.js": "2a9f43984be72924c7bf48ba7f161bd4cb3a7798404b9ccc74e191402999e8a3",
     "src/dev-launch-gate.js": "285d5b0b898e66c6497e2ca3e7636e80402ab2bb4898fdfc3d7b9a08dea789a9",
     "src/diagnostics-gate.js": "5a2cd2a9de742e5b2fbed8a0b6ee03acfa25796794b5913b4b725004d6301f86",
+    "src/duplicate-files.js": "8190dada48366bf6b051d30b57616d47f128d14a07000d65fd6a373e4a65b403",
     "src/event-log.js": "1e4620a75618e2d354690216c6468e36b991c59276f6a614afa065949ff125c8",
     "src/failure-notifier.js": "a2a16545a468e2a12b1f7b9d61b73472533fdb8e0ff5123fd955d60bf1320090",
     "src/fingerprint.js": "8d63737b7b94455bdb9f382c1a3ff73fc6bf7e57a2b25511bd44cf1e81d66aa8",
-    "src/folder-state.js": "f0898e48ec3bcd7a2ecb222e3361cd27e51dc4f56551b57c53677fb644f3f976",
+    "src/folder-state.js": "520dcbc563d45a22482bfd5cfd95e51d2a3f4fe8be348d4af2a924559d665631",
     "src/gallery-payload.js": "cba9c7a1c81bdfe99b7323d30f22aed2ecb00cb56c14dc97c204041c550666cc",
-    "src/gelbooru.js": "e43f228b053b32937dce8b61a4f95dba8b961d4228a3ac835881176e755a0c6c",
+    "src/gelbooru.js": "91c334c3677d7b5d695dc70ee865e8208521442ffec137afb040286466d7c73b",
     "src/hotkey.js": "ce88fdf1576dc4dc206a892d209443506d6a30e5c04ffab0b963a9366e54bfd6",
-    "src/i18n-context.js": "842bc49cbd81043c79fe4877539ee5b6118cd6c8abf89230b28f02da8dbc5b1d",
+    "src/i18n-context.js": "2cc4f404660bc6897ae3a56b051cbd735528ccb33e76d7eafaa4c0f451d70bdf",
     "src/i18n-state.js": "3b6deb544472c05c0bdcd8b206ee37eafe3080041166fd3a471697500ceb68bd",
     "src/image-info.js": "d8b5af910a568dff0b6567084104f4193882bbcec5a354328d9018b5d28214de",
-    "src/image-motion.js": "56acf2d507750b058933e28502cc1972ac6e02358c645ea98ed23c9fe9b9786b",
-    "src/iqdb.js": "e8d44d5a93c44400e909fa25401c0f92ee9afed52fb6bba134de6474c7677a18",
+    "src/image-motion.js": "47702ec359afbdd1b9d4f1ed7cda3e4bbfc64ac18113f9bbd05bec3248721acd",
     "src/ipc-authority.js": "77cd93560c9f9406b8759a89e6d29ecc810d7439fa8ba39799829cac3712fc7d",
-    "src/item-details.js": "4bac00c03e41600e06421d0780847d7121756e250280adbcce07f1c5b5a82250",
+    "src/iqdb.js": "e8d44d5a93c44400e909fa25401c0f92ee9afed52fb6bba134de6474c7677a18",
+    "src/item-details.js": "905de087bb6c4ba31e2bb5f7d3c3d85b0bfafce6b7717a4eb20c72d080288146",
     "src/latest-intent.js": "faec5dce219c65cde1c7c63caa9826e3ed183181057589b55e466630a9c51a15",
-    "src/library-assignment.js": "fc462aa09a56723dd83e9c44e793336563b52c8b41cb7845f6281e85ca5cc94d",
+    "src/library-assignment.js": "c93781111138057fd5d2aae68c6697b4ae773b49fcd3f42da15fe74e824543d1",
+    "src/library-checks.js": "1a2bdf920d221b53e05f0016414a13a9dc49e396697125fb1166e45a3d2cc66a",
     "src/library-freeze.js": "2ce46bf793b1fba961e3b83b5d8cf8d34ecdef1c43780922b4c7292378c9f807",
     "src/library-removal-question.js": "7288ed24fc4e31ff45f0dfd4ff2c322b5f17d51f138ab06b9a6f14adb256a11a",
+    "src/library-removal.js": "0c946809fc315289be1ee5982f1d24f904392de23cdecd45e22a49a816051c87",
     "src/library-search.js": "9675edf3b08f78cada1dfa699319f403fdeb309a7286e8e8364ea02f7f4c2f56",
-    "src/library-service.js": "48affff2592720ed188eca4d4884c2f16cdbeac2ff56747d7f38fcc864de3875",
-    "src/library-store.js": "e432bf6c7ee9220477edb25cb6bb3a18fb461c22aedb560adc8c7ddb824cf532",
+    "src/library-service.js": "e93352df82746a577309d26f57e9b2b546c42c3e46bd41564d78128d23a31242",
+    "src/library-store.js": "ae0f6ad808606ac69ea74e886b0160b304cf1195c8e2124a515ab0f6adb0c710",
     "src/library.js": "caae14c27cbc091cfbd924d7b1dc4b7fd6d8571d82028d5de3ef7e76fa178eed",
+    "src/live-folder-index.js": "64ed5ee8fd824ace265808479e401d42be93671cc97f28202a4229fd8078b6e9",
     "src/live-folder-watch.js": "b05237431eaa873b1732593ca916371586899060a20ee0843951feb851b7830d",
-    "src/managed-folder.js": "69bdaec30153b644918ac4c2014d91adeb67d982f77407c58c5e546c56b459d0",
+    "src/managed-folder.js": "0465a491c1b8ef94c6eda9d0088195c1b94e3bfd05dd24ede92a5212f1462154",
     "src/media-move.js": "ae6d18ff7103a98f8bcd10aa78a1275549b10acc613b2e2ebb8804bc9ca5d7c7",
-    "src/media-proxy.js": "16910b9e4360063ba06ba56acd9d1e35b205916cd60d9ec91a74b68e18449a17",
+    "src/media-proxy.js": "b670056498559700d970b8a636c48a69e98e5b3ad670fcef4061f890bba40be9",
     "src/media-root.js": "11f044b45edccb8d8e8c6c7beae2a5441752ecef52a5be4864745938f9e9d7f5",
-    "src/media-type.js": "6bb5015fb6b0e0e52562757626567c5945b2cab0dc0c799bf8ea17cd5974a1c9",
-    "src/metadata-lookup-service.js": "8b317d6660163873bdf8c290dac432a65b14b6bac32d68d1de70fdbe8a258406",
-    "src/metadata-lookup.js": "33fa812b6e5cdcd9fe671290185a67fe5bfcd3b777faa3437c00d9d8757070d6",
-    "src/metadata-store.js": "828a3af3a00534710cc5e0b3ae37390a25824a3d0fe844fad6c1fc6d5c3b0955",
+    "src/media-type.js": "b1ffdec3f60cd82cbf03be27f9ce7363bdcb44b7f5f3780153e780d7c7e216f4",
+    "src/metadata-hash.js": "890684c2b18356c2185c4cd5d138792cd0a76c234a8854923b687225878e3bc5",
+    "src/metadata-lookup-service.js": "a1b04a4c2bb57fe506c804153b691bd01e2aa87c463be76af5bd48630d1a23e0",
+    "src/metadata-lookup.js": "4d0ecd702c5970c0aa3083915f55ae4e33a19f847b99194a8f013f4c148781c4",
+    "src/metadata-store.js": "09fd8e6d6868910dc4d6368f17b764e5b766376fef61f62f220a936d0173ebcc",
+    "src/metadata-work-queue.js": "a2e00de68a87ce57e9775377e5a4ec8b1dca47a4a314fedd77df54b93ccdd8ff",
     "src/next-change.js": "b7e9199d16831ee3dbeea9aeaeee08d54240b87f87f6efa12fff89a9d2429a8d",
-    "src/notification-delivery.js": "7e035981b8f573fda6303f32b1e6c853765376892cb14d2c35371c9a422f8041",
-    "src/online-add.js": "d76d9c588e8620936aa7bc6ee2ebc88280aba9689a5dec9a5868ea3e46ed14ee",
+    "src/no-clobber-move.js": "294c5f74446db962544f14fee34690dc2686a8dc63a500926264016a7f076e6f",
+    "src/notification-delivery.js": "f0cc8b763e556e2042042aaed0d8096255e25a623c2a4a1da27cf7f107832f3c",
+    "src/online-add.js": "9e42a126cd4f5a8057f1c4f7dce6923783dfaf70341b1b7b562bff5b0058c679",
+    "src/online-have.js": "ac86b891a49405c561b68b8afa4214c647e239d8e60412daf51ffa97f82947b1",
     "src/online-identity.js": "19aff6a9a38d666b1cb23d41806502d3beaa7847e76870da188ef625a0fa01e2",
     "src/online-quick-filters.js": "8c027c0d6e8aa4624029e58db262967785fcfb27e07d4c88b18e81ef335c2a19",
-    "src/online-resume.js": "5dad5295dffa95530ffea5c5938d24d3d8dfaec4d395504fcaf759e1da5a512b",
-    "src/online-search.js": "17d9f65d6b75d0176cd841e2500d51d8409518852d478008a30c6ad913060922",
+    "src/online-resume.js": "cecf0160654ff5833420e6818062ca3038aae9b74dbcb10825226b461f20a5e4",
+    "src/online-search.js": "3c1bbd2b1ff7050165b8bb5263ad7d61703a07c17b92f44b3f60be8203339385",
     "src/online-sources.js": "2a123685a73ef844f5fdbc79277c13c130f3273e504dcdf2a75c8f98fc267d16",
     "src/online-tag-limit.js": "3d6ffd63aca1edd5b09f27b3cbb7573bdc23f5946cb886bc7cd02d65225f2e3d",
-    "src/online.js": "ca7483799de769557e3fc785c0eb68f7548d7339c4ee6d490b416364d5d02168",
+    "src/online-video.js": "3ea1ae31d59b2ba4e540f7e3cbca1b5fbabc03cba4cc8f3d1227cc1d87ef3ef8",
+    "src/online.js": "088f6c49f6459fd91bdddd9305df62aa734167a8e51f659bc6f89a3b1ab55f1c",
     "src/original-store.js": "8e4a797cb17eec046a46b1b36b87bd3d45dcb63792ac4fe8ff232c66a2b813bf",
     "src/path-grants.js": "ec91684c77378c27bad24fd30f04ae2ecb6d37c79ec0b5bf8952a41701636581",
     "src/path-key.js": "4f9fea37fbc096a014d5d371ffc64fa00b65364c8e945d2cc364cb1900cab91d",
     "src/photo-import.js": "438f4b5e8eb8ae9676d6e4bbb830f69d91e7d3e73e5469983c18fcfe0c8d306c",
-    "src/playlist.js": "c86fcabd3f7f19e951d54d0e1c87bd6074ec85cffe55356af6836be07a4eb55e",
+    "src/playlist.js": "a601fa602b0b45c19154c3e042d973d0cdd0e9ae13293f58d853dbd96a1105f8",
     "src/pool-consistency.js": "0146d2062bd964810a5634283d68723843070b3cd9aa82c421b2ddf013e24f77",
     "src/profile-migration.js": "d8f9428f207e551271e2f18e3107974a2a09551592440f1a2a96fb7b3b576325",
-    "src/provider-access.js": "43cb30d8ff673068153b80351f5bc0c24585c2c2f363cd4e06f2d2d915319c2f",
+    "src/provider-access.js": "0061d26ab8dea67019955ca429aa4c971ef74bf2b35185082c30293fab2a53b6",
     "src/provider-registry.js": "1401e62b554ed813f4dbd9bb1573d8f357b3266a2b699887e3a17c1dccd3a1bb",
     "src/request-budget.js": "ac85f3886de53efedc80d7b50a9703dd4a35577d2a6aabc931f6e872dd81bf5b",
     "src/schedule.js": "927c5866631228cfaced76b05474b5a689dfc12c257fdd44b5731ffe9d4271ad",
@@ -98,10 +107,16 @@
     "src/stealth-session.js": "f872d595bada205b7011ec547894756e46c86137912ddb08aa782d133531ef7d",
     "src/tag-suggest.js": "891277fdd839efe232dbf6b31d8ce6009f3e2f071f394260a44f71fa8aea6f46",
     "src/task-queue.js": "cd2af9939cda596baacc489ad98cd1e33dec3fe32342cd837ca7e6d13d78e4f1",
-    "src/thumbnail-host.js": "03b42212cafb3d610fb30cae9b9e53395bceb4aa6adf0bfb84be7c2f825fad22",
-    "src/thumbnail-service.js": "710fdf0b35edab61a4534a2f04a9a07d9066ac5247b44848d1c76e997c903f4b",
+    "src/thumbnail-host.js": "bd6d20ac29e5b54d94c29958a023441421556739d6f3e7ab78f2b2ab7ed09425",
+    "src/thumbnail-service.js": "8b97c397e0c21959ee41b1d887ceef6e5a695dc2724d474c7684b9bdf9e07d9b",
     "src/thumbnail.js": "748a5a30a0beed05d97c778de6ff4186dd9cc8b78a6a19ebfea42ff371912649",
     "src/tray.js": "4ca055c39bcc9a60adb5c65e2da71258a5f1b8f681cdae56fd0dfa84a608adbe",
+    "src/usage-ping.js": "8eb9c4e0c229750142aef88779985d8c6d326954b8d22b84c64c7640e4ee671f",
+    "src/video-handles.js": "d16283cc02a87ede4c9ce1c518f73f0c48606da0d7edbf72810988d21d4e304c",
+    "src/video-player.js": "de491473240ccf5349e16fbdd7db2fe9638bbcb660377da5170a07ddf76bb12f",
+    "src/video-runtime.js": "e2533838657191f184a1bd4d07f69f16ab83609d4fa5c652659c847d0b74e610",
+    "src/video-session.js": "40198c349a06602b50a7a3ee71e4c94637405add99dd3adb78664de9f87af03d",
+    "src/video-worker.js": "96abcae0fbc5c4d9bb0e5ce4a5d7dfa2739a388a7ad9f2a65f71a269c357b4a2",
     "src/wallhaven.js": "eadcf0bc37938fe995c4a331c8327afbc6218533ba7b6a5711de6dbd2d6a1dbd",
     "src/wallpaper-host.js": "768888374bdfbc62f8893673d540709b874d376a04dcc18136bdae176e95b50e",
     "src/wallpaper-platform.js": "b014f715d6be428603e90e3a5dbd87c304784f57ab1921ad5d601adfe3f986ca",
@@ -109,121 +124,553 @@
     "src/windows-launch.js": "994b7e92fa2ca1b9372064bd8acfc42fa56228a8fde55b4a7a9cc4bb8ffc9426"
   },
   "channels": {
-    "add-slot-folder": {"file":"main.js","effect":"frozen-pool"},
-    "add-slot-images": {"file":"main.js","effect":"frozen-pool"},
-    "add-slot-paths": {"file":"main.js","effect":"frozen-pool"},
-    "apply-now": {"file":"main.js","effect":"no-pool-write"},
-    "bookmark-resolve": {"file":"src/bookmark-runtime.js","effect":"no-pool-write"},
-    "bookmark-sync-retry": {"file":"src/bookmark-runtime.js","effect":"exempt","reason":"only asks the sync engine to run; the engine checks the media-folder freeze itself before every pool write and stops"},
-    "bookmark-sync-status": {"file":"src/bookmark-runtime.js","effect":"no-pool-write"},
-    "bookmark-tags": {"file":"src/bookmark-runtime.js","effect":"frozen-pool"},
-    "card-assign-targets": {"file":"main.js","effect":"no-pool-write"},
-    "card-copy-file": {"file":"main.js","effect":"no-pool-write"},
-    "card-copy-link": {"file":"main.js","effect":"no-pool-write"},
-    "card-ensure-record": {"file":"main.js","effect":"frozen-pool"},
-    "card-open-source": {"file":"main.js","effect":"no-pool-write"},
-    "card-save-as": {"file":"main.js","effect":"no-pool-write"},
-    "check-for-updates": {"file":"main.js","effect":"no-pool-write"},
-    "clear-slot": {"file":"main.js","effect":"frozen-placement"},
-    "cloud-add": {"file":"main.js","effect":"frozen-pool"},
-    "cloud-favorite": {"file":"main.js","effect":"no-pool-write"},
-    "cloud-favorites": {"file":"main.js","effect":"no-pool-write"},
-    "cloud-session": {"file":"main.js","effect":"no-pool-write"},
-    "cloud-signin": {"file":"main.js","effect":"no-pool-write"},
-    "cloud-signin-cancel": {"file":"main.js","effect":"no-pool-write"},
-    "cloud-signout": {"file":"main.js","effect":"no-pool-write"},
-    "create-shortcuts": {"file":"main.js","effect":"no-pool-write"},
-    "current-image": {"file":"main.js","effect":"no-pool-write"},
-    "cycle-theme-override": {"file":"main.js","effect":"no-pool-write"},
-    "detect-location": {"file":"main.js","effect":"no-pool-write"},
-    "diagnostics-clear-sessions": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-clock": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-export-sanitized": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-mark": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-open-report": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-open-session-folder": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-record": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-start": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-status": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-stop": {"file":"diagnostics/main/controller.js","effect":"no-pool-write"},
-    "diagnostics-test-notification": {"file":"main.js","effect":"no-pool-write"},
-    "event-log-clear": {"file":"main.js","effect":"no-pool-write"},
-    "event-log-get": {"file":"main.js","effect":"no-pool-write"},
-    "expand-folders": {"file":"main.js","effect":"no-pool-write"},
-    "favorite-set": {"file":"src/bookmark-runtime.js","effect":"frozen-pool"},
-    "favorite-state": {"file":"src/bookmark-runtime.js","effect":"no-pool-write"},
-    "favorites-list": {"file":"src/bookmark-runtime.js","effect":"no-pool-write"},
-    "feature-flags": {"file":"main.js","effect":"no-pool-write"},
-    "file-url": {"file":"main.js","effect":"no-pool-write"},
-    "folder-entries": {"file":"main.js","effect":"no-pool-write"},
-    "folder-info": {"file":"main.js","effect":"no-pool-write"},
-    "gallery-close": {"file":"main.js","effect":"no-pool-write"},
-    "gallery-open": {"file":"main.js","effect":"no-pool-write"},
-    "gallery-payload": {"file":"main.js","effect":"no-pool-write"},
-    "gallery-toggle-fullscreen": {"file":"main.js","effect":"no-pool-write"},
-    "get-cloud-capability": {"file":"main.js","effect":"no-pool-write"},
-    "get-config": {"file":"main.js","effect":"no-pool-write"},
-    "get-i18n": {"file":"main.js","effect":"no-pool-write"},
-    "get-monitors": {"file":"main.js","effect":"no-pool-write"},
-    "get-release-info": {"file":"main.js","effect":"no-pool-write"},
-    "get-theme": {"file":"main.js","effect":"no-pool-write"},
-    "get-update-state": {"file":"main.js","effect":"no-pool-write"},
-    "get-version": {"file":"main.js","effect":"no-pool-write"},
-    "get-wallpaper-theme": {"file":"main.js","effect":"no-pool-write"},
-    "install-update": {"file":"main.js","effect":"no-pool-write"},
-    "internet-add": {"file":"main.js","effect":"frozen-pool"},
-    "internet-search": {"file":"main.js","effect":"no-pool-write"},
-    "internet-status": {"file":"main.js","effect":"no-pool-write"},
-    "internet-tag-suggest": {"file":"main.js","effect":"no-pool-write"},
-    "item-copy-path": {"file":"main.js","effect":"no-pool-write"},
-    "item-details": {"file":"main.js","effect":"no-pool-write"},
-    "item-lookup-metadata": {"file":"main.js","effect":"frozen-pool"},
-    "item-open-source": {"file":"main.js","effect":"no-pool-write"},
-    "item-reveal": {"file":"main.js","effect":"no-pool-write"},
-    "library-add-folder": {"file":"main.js","effect":"frozen-pool"},
-    "library-add-images": {"file":"main.js","effect":"frozen-pool"},
-    "library-add-paths": {"file":"main.js","effect":"frozen-pool"},
-    "library-add-tag": {"file":"main.js","effect":"frozen-pool"},
-    "library-assign": {"file":"main.js","effect":"frozen-pool"},
-    "library-assign-record": {"file":"main.js","effect":"frozen-pool"},
-    "library-assign-records": {"file":"main.js","effect":"frozen-pool"},
-    "library-delete-forever": {"file":"main.js","effect":"frozen-pool"},
-    "library-ensure-sizes": {"file":"main.js","effect":"frozen-pool"},
-    "library-hidden-list": {"file":"main.js","effect":"no-pool-write"},
-    "library-materialize": {"file":"main.js","effect":"frozen-pool"},
-    "library-path-sizes": {"file":"main.js","effect":"no-pool-write"},
-    "library-recent": {"file":"main.js","effect":"no-pool-write"},
-    "library-refresh": {"file":"main.js","effect":"frozen-pool"},
-    "library-removal-answer": {"file":"main.js","effect":"no-pool-write"},
-    "library-remove-many": {"file":"main.js","effect":"frozen-pool"},
-    "library-remove-tag": {"file":"main.js","effect":"frozen-pool"},
-    "library-restore": {"file":"main.js","effect":"frozen-pool"},
-    "library-toggle-favorite": {"file":"main.js","effect":"frozen-pool"},
-    "library-undo-remove": {"file":"main.js","effect":"frozen-pool"},
-    "media-folder-move": {"file":"main.js","effect":"exempt","reason":"the move itself: it is what the freeze is for, and a second move is refused by its own busy check"},
-    "media-folder-pick": {"file":"main.js","effect":"no-pool-write"},
-    "media-folder-plan": {"file":"main.js","effect":"no-pool-write"},
-    "media-folder-state": {"file":"main.js","effect":"no-pool-write"},
-    "media-folder-stop": {"file":"main.js","effect":"no-pool-write"},
-    "media-motion": {"file":"main.js","effect":"no-pool-write"},
-    "next-change-get": {"file":"main.js","effect":"no-pool-write"},
-    "next-wallpaper": {"file":"main.js","effect":"no-pool-write"},
-    "open-releases": {"file":"main.js","effect":"no-pool-write"},
-    "open-website": {"file":"main.js","effect":"no-pool-write"},
-    "quit-app": {"file":"main.js","effect":"no-pool-write"},
-    "remove-slot-item": {"file":"main.js","effect":"frozen-placement"},
-    "set-autostart": {"file":"main.js","effect":"no-pool-write"},
-    "set-config": {"file":"main.js","effect":"exempt","reason":"settings only; the move does not rewrite them"},
-    "set-hotkey": {"file":"main.js","effect":"exempt","reason":"a global shortcut, saved with the settings"},
-    "set-hotkey-recording": {"file":"main.js","effect":"no-pool-write"},
-    "set-slideshow": {"file":"main.js","effect":"no-pool-write"},
-    "set-slideshow-index": {"file":"main.js","effect":"no-pool-write"},
-    "set-slideshow-to-path": {"file":"main.js","effect":"frozen-placement"},
-    "set-start-minimized": {"file":"main.js","effect":"no-pool-write"},
-    "shortcuts-status": {"file":"main.js","effect":"no-pool-write"},
-    "thumb": {"file":"main.js","effect":"exempt","reason":"proportions measured from the file, written back later; lost at worst, and measured again"},
-    "thumb-aspects": {"file":"main.js","effect":"exempt","reason":"proportions for a batch of cards, the same backfill"},
-    "thumb-info": {"file":"main.js","effect":"exempt","reason":"the same thumbnail, with whether the picture moves"}
+    "add-slot-folder": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "add-slot-images": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "add-slot-paths": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "apply-now": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "bookmark-resolve": {
+      "file": "src/bookmark-runtime.js",
+      "effect": "no-pool-write"
+    },
+    "bookmark-sync-retry": {
+      "file": "src/bookmark-runtime.js",
+      "effect": "exempt",
+      "reason": "only asks the sync engine to run; the engine checks the media-folder freeze itself before every pool write and stops"
+    },
+    "bookmark-sync-status": {
+      "file": "src/bookmark-runtime.js",
+      "effect": "no-pool-write"
+    },
+    "bookmark-tags": {
+      "file": "src/bookmark-runtime.js",
+      "effect": "frozen-pool"
+    },
+    "card-assign-targets": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "card-copy-file": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "card-copy-link": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "card-ensure-record": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "card-open-source": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "card-save-as": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "check-for-updates": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "clear-slot": {
+      "file": "main.js",
+      "effect": "frozen-placement"
+    },
+    "cloud-add": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "cloud-favorite": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "cloud-favorites": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "cloud-session": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "cloud-signin": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "cloud-signin-cancel": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "cloud-signout": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "create-shortcuts": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "current-image": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "cycle-theme-override": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "details-copy-tag": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "detect-location": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-clear-sessions": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-clock": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-export-sanitized": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-mark": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-open-report": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-open-session-folder": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-record": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-start": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-status": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-stop": {
+      "file": "diagnostics/main/controller.js",
+      "effect": "no-pool-write"
+    },
+    "diagnostics-test-notification": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "event-log-clear": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "event-log-get": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "expand-folders": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "favorite-set": {
+      "file": "src/bookmark-runtime.js",
+      "effect": "frozen-pool"
+    },
+    "favorite-state": {
+      "file": "src/bookmark-runtime.js",
+      "effect": "no-pool-write"
+    },
+    "favorites-list": {
+      "file": "src/bookmark-runtime.js",
+      "effect": "no-pool-write"
+    },
+    "feature-flags": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "file-url": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "folder-entries": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "folder-info": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "gallery-close": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "gallery-open": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "gallery-payload": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "gallery-toggle-fullscreen": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-cloud-capability": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-config": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-i18n": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-monitors": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-release-info": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-theme": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-update-state": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-version": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "get-wallpaper-theme": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "install-update": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "internet-add": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "internet-search": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "internet-status": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "internet-tag-suggest": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "item-copy-path": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "item-details": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "item-lookup-metadata": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "item-open-source": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "item-reveal": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "library-add-folder": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-add-images": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-add-paths": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-add-tag": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-assign": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-assign-record": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-assign-records": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-checks-ack": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "library-checks-state": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "library-delete-forever": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-duplicates": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "library-ensure-sizes": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-hidden-list": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "library-materialize": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-path-sizes": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "library-recent": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "library-refresh": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-removal-answer": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "library-remove-many": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-remove-tag": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-restore": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-toggle-favorite": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "library-undo-remove": {
+      "file": "main.js",
+      "effect": "frozen-pool"
+    },
+    "media-folder-move": {
+      "file": "main.js",
+      "effect": "exempt",
+      "reason": "the move itself: it is what the freeze is for, and a second move is refused by its own busy check"
+    },
+    "media-folder-pick": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "media-folder-plan": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "media-folder-state": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "media-folder-stop": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "media-motion": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "media-motion-many": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "online-have-many": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "next-change-get": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "next-wallpaper": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "open-releases": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "open-video": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "open-website": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "quit-app": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "remove-slot-item": {
+      "file": "main.js",
+      "effect": "frozen-placement"
+    },
+    "set-autostart": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "set-config": {
+      "file": "main.js",
+      "effect": "exempt",
+      "reason": "settings only; the move does not rewrite them"
+    },
+    "set-hotkey": {
+      "file": "main.js",
+      "effect": "exempt",
+      "reason": "a global shortcut, saved with the settings"
+    },
+    "set-hotkey-recording": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "set-slideshow": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "set-slideshow-index": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "set-slideshow-to-path": {
+      "file": "main.js",
+      "effect": "frozen-placement"
+    },
+    "set-start-minimized": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "shortcuts-status": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "thumb": {
+      "file": "main.js",
+      "effect": "exempt",
+      "reason": "proportions measured from the file, written back later; lost at worst, and measured again"
+    },
+    "thumb-aspects": {
+      "file": "main.js",
+      "effect": "exempt",
+      "reason": "proportions for a batch of cards, the same backfill"
+    },
+    "thumb-info": {
+      "file": "main.js",
+      "effect": "exempt",
+      "reason": "the same thumbnail, with whether the picture moves"
+    },
+    "gallery-video": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    },
+    "internet-cancel-video": {
+      "file": "main.js",
+      "effect": "no-pool-write"
+    }
   },
-  "libraryExports": {"pool":["addItem","addPath","addTag","bumpRev","migrateConfig","migrateFavoriteDates","migrateSlot","removeItem","removeTag","rememberDimensions","setAspect","toggleFavorite","updateItem"],"placement":["clearSlotExplicitEmpty","markSlotExplicitEmpty","replaceIdInSlots"],"read":["allTags","allowsLegacyFallback","aspectOf","baseName","ephemeralFolderImages","findConfirmedMissingLiveFolderImageIds","findMissingIds","flattenImages","getItem","idFor","isPathInsideRoot","isUnderPath","listItems","makeItem","needsFavoriteDates","normTag","pathKey","recentImages","referencedFiles","resolveIds","revOf"]}
+  "libraryExports": {
+    "pool": [
+      "addItem",
+      "addPath",
+      "addTag",
+      "bumpRev",
+      "migrateConfig",
+      "migrateFavoriteDates",
+      "migrateSlot",
+      "removeItem",
+      "removeTag",
+      "rememberDimensions",
+      "setAspect",
+      "toggleFavorite",
+      "updateItem"
+    ],
+    "placement": [
+      "clearSlotExplicitEmpty",
+      "markSlotExplicitEmpty",
+      "replaceIdInSlots"
+    ],
+    "read": [
+      "allTags",
+      "allowsLegacyFallback",
+      "aspectOf",
+      "baseName",
+      "ephemeralFolderImages",
+      "findConfirmedMissingLiveFolderImageIds",
+      "findMissingIds",
+      "flattenImages",
+      "getItem",
+      "idFor",
+      "isPathInsideRoot",
+      "isUnderPath",
+      "listItems",
+      "makeItem",
+      "needsFavoriteDates",
+      "normTag",
+      "pathKey",
+      "recentImages",
+      "referencedFiles",
+      "resolveIds",
+      "revOf"
+    ]
+  }
 }

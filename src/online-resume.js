@@ -50,6 +50,7 @@ function signatureOf(request) {
     purity.sketchy ? 1 : 0,
     purity.nsfw ? 1 : 0,
     String(r.sourcesKey || ''),
+    ...(Array.isArray(r.kinds) ? [r.kinds.join(',')] : []),
   ].join('|');
 }
 

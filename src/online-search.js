@@ -224,7 +224,7 @@ function create(deps = {}) {
   // answer, in the order the registry lists them, and everything peculiar to a site lives
   // in that site's own file.
 
-  // Is this a picture Znada can use?
+  // Is this media in the requested Online feed?
   //
   // The sites used to decide this themselves and throw the rest away before the app could
   // see it — which is why a video from a board was unreachable no matter what the app
@@ -234,17 +234,27 @@ function create(deps = {}) {
   // not carry one on a browse card, and it is ours — what is in it is our doing, so it
   // vouches for its content instead. Which of the two a site is, it declares; a site that
   // said it states formats and then sends a card without one is refused, not excused.
-  function usableCard(item, descriptor) {
+  function usableCard(item, descriptor, request) {
     if (!item) return false;
     const states = !descriptor || !descriptor.capabilities || descriptor.capabilities.cardFormat !== false;
-    return states ? mediaFormats.isWallpaperFormat(item.format) : true;
+    const format = mediaFormats.normalizeFormat(item.format);
+    if (states && !request.formats.includes(format)) return false;
+    const video = mediaFormats.isVideoFormat(format);
+    if (video && request.kinds && descriptor?.capabilities?.onlineVideo !== true) return false;
+    const kind = video ? 'video' : item.animated === true ? 'gif' : 'photo';
+    return !request.kinds || request.kinds.includes(kind);
   }
 
   // What a site's `search` is handed: the round's parameters plus the one format list. The
   // tag-limit check counts the words of exactly this, so what is counted is what is sent
   // (LIB-014 stage 3).
   function providerSearchParams(params) {
-    return { ...(params || {}), formats: ACCEPTED_FORMAT_LIST };
+    const kinds = params?.kinds;
+    if (!kinds) return { ...params, formats: ACCEPTED_FORMAT_LIST };
+    const images = kinds.includes('photo') ? ACCEPTED_FORMAT_LIST
+      : kinds.includes('gif') ? ACCEPTED_FORMAT_LIST.filter(format => ['gif', 'webp', 'png'].includes(format)) : [];
+    const video = kinds.includes('video') ? mediaFormats.ONLINE_VIDEO_FORMATS : [];
+    return { ...params, formats: [...images, ...video] };
   }
 
   async function searchOneProvider(descriptor, params) {
@@ -255,12 +265,13 @@ function create(deps = {}) {
     if (descriptor.credentials && descriptor.credentials.required && !credentials) {
       return { ...blank, error: 'unavailable' };
     }
+    const request = providerSearchParams(params);
     let res;
     try {
       // The format rule travels WITH the request. A site that can narrow its own reply
       // does so; one that cannot simply ignores it and is filtered below instead.
       res = await descriptor.search(
-        providerSearchParams(params),
+        request,
         providers.context(descriptor, credentials),
       );
     } catch (err) {
@@ -277,7 +288,7 @@ function create(deps = {}) {
       // itself. Some hosts refuse a request that does not say where it came from, and a
       // window cannot send that — so those go through main. Carried ON THE CARD, so the
       // windows never have to hold the registry or name a site.
-      items: (Array.isArray(res.items) ? res.items : []).filter((item) => usableCard(item, descriptor))
+      items: (Array.isArray(res.items) ? res.items : []).filter((item) => usableCard(item, descriptor, request))
         .map((item) => ({
           ...item,
           loadsDirectly: !!descriptor.loadsDirectly,
@@ -378,8 +389,10 @@ function create(deps = {}) {
   // with the shipped sites alone, and a wrapper that quietly reaches for the wrong list is
   // exactly the kind of thing a test cannot see.
   async function searchRound(token, sorting, extra, list, browsing = false) {
+    const videoOnly = extra?.kinds?.length === 1 && extra.kinds[0] === 'video';
     const live = (Array.isArray(list) ? list : registry.active())
       .filter(sourceEnabled)
+      .filter(descriptor => !videoOnly || descriptor.capabilities?.onlineVideo === true)
       .filter((descriptor) => !onlineResume.isFinished(token, onlineResume.slotKey(descriptor.id, sorting)));
     // LIB-014 stage 3. A site this query does not fit is not asked at all: it sits this search
     // out and is named in `paused`. Nothing about it is recorded — it did not fail, so its
@@ -518,6 +531,10 @@ function create(deps = {}) {
   // The `internet-search` channel. The window's flag alone never decides curation.
   async function search(opts) {
     const o = { ...(opts || {}), sourcesKey: sourcesSignature() };
+    if (Array.isArray(o.kinds)) {
+      o.kinds = ['photo', 'gif', 'video'].filter(kind => o.kinds.includes(kind));
+      if (!o.kinds.length) o.kinds = ['photo', 'gif', 'video'];
+    } else delete o.kinds;
     // Both conditions, not just the renderer's flag: curation must never be able to
     // silently narrow a real search, whatever the renderer believes it asked for.
     const browsing = o.browse === true && !String(o.q || '').trim();

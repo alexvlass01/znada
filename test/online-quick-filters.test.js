@@ -111,7 +111,7 @@ function button(quick, width) {
     INTERNET: { purity: { sfw: true, sketchy: false, nsfw: false }, providers },
     t: (key, params) => (params ? `${key}:${params.n}` : key),
     getComputedStyle: () => ({ columnGap: '8px' }),
-    window: { api: { setConfig: async (patch) => { saved.push(JSON.stringify(patch)); return { ...ctx.config, ...patch }; } } },
+    window: { LibraryKind: require('../renderer/library-kind'), api: { setConfig: async (patch) => { saved.push(JSON.stringify(patch)); return { ...ctx.config, ...patch }; } } },
     $: (id) => ({
       '#onlineQuickFilters': row, '#onlineFilterCount': badge,
       '#onlineQuickPurityLabel': label, '#whFilterToggle': filters,

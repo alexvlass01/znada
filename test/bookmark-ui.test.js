@@ -26,7 +26,7 @@ function code(name) {
   ];
   let mounted = [], stateCalls = 0, downloads = 0, on = false;
   const empty = {};
-  const context = { window: { api: {
+  const context = { window: { MediaKind: require('../renderer/media-kind'), api: {
     favoritesList: async () => ({ owner: 'anonymous', entries }),
     favoriteState: async () => { stateCalls++; return { on, owner: 'anonymous' }; },
     favoriteSet: async (card, value) => { assert.equal(card.owner, 'anonymous'); on = value; return { on, error: null }; },
@@ -39,6 +39,8 @@ function code(name) {
   localGridDescriptor: (item) => ({ kind: 'pool-image', key: item.id, item }),
   setLibEmptyText() {}, libEmptyKey: (key) => key, setLibViewHeader() {},
   renderLibRailTags() {},
+  // MEDIA-004: the kind of file is tested in library-search.test.js; nothing is narrowed here.
+  kindFilterActive: () => false, renderLibFilterButton() {},
   reconcileSelectionRecords() {}, selectionRecordFromEntry: () => null,
   mountUnifiedGrid: (_grid, descriptors) => { mounted = descriptors; }, assignedIds: () => new Set(),
   localGridVersion() {}, buildLocalGridCard() {}, bindLocalGridCard() {},
@@ -70,6 +72,107 @@ function code(name) {
   context.galleryItemFromLibrary = (item) => item;
   await context.openBookmark({ bookmarkKey: 'wallhaven:abc123' }, {});
   assert.equal(downloads, 1); assert.equal(opened.id, 'downloaded');
+  const remoteVideo = { provider: 'danbooru', id: '3', format: 'mp4' };
+  context.window.api.bookmarkResolve = async () => ({ item: remoteVideo });
+  context.openGalleryViewer = (items) => { opened = items[0]; };
+  context.galleryItemFromInternet = (item) => ({ kind: 'internet', raw: item });
+  await context.openBookmark({ bookmarkKey: 'danbooru:3' }, {});
+  assert.equal(opened.kind, 'internet');
+  assert.equal(opened.raw.bookmarkKey, 'danbooru:3');
+  assert.equal(downloads, 1, 'opening a video bookmark starts the viewer without adding it');
+
+  {
+    const remote = { kind: 'bookmark', key: 'danbooru:3', favoritedAt: 300,
+      record: { source: 'danbooru', post_id: '3', state: 'active', metadata: { title: 'A clip' } } };
+    const still = { ...remote, key: 'danbooru:4',
+      record: { ...remote.record, post_id: '4', metadata: { title: 'A still image' } } };
+    const animation = { ...remote, key: 'danbooru:5',
+      record: { ...remote.record, post_id: '5', metadata: { title: 'An animation' } } };
+    const priorList = context.window.api.favoritesList;
+    context.window.LibraryKind = require('../renderer/library-kind');
+    context.KIND = { on: ['video'], moving: new Map() };
+    context.LIB.filter = 'favorite';
+    context.LIB.q = '';
+    context.LIB.tags = [];
+    context.kindFilterActive = () => context.KIND.on.length !== 3;
+    context.scheduleKindCheck = () => {};
+    context.requestAnimationFrame = () => 1;
+    vm.runInContext(code('entryKind'), context);
+    context.window.api.favoritesList = async () => ({ owner: 'anonymous', entries: [remote, still, animation] });
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [remote.key, still.key, animation.key],
+      'video-only Favorites lets unresolved cards reach the resolver');
+    context.rememberFavoriteMediaKind(mounted[0], remoteVideo, 'anonymous');
+    context.rememberFavoriteMediaKind(mounted[1], { format: 'jpg' }, 'anonymous');
+    context.rememberFavoriteMediaKind(mounted[2], { format: 'gif', animated: true }, 'anonymous');
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [remote.key]);
+    context.KIND.on = ['photo'];
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [still.key]);
+    context.KIND.on = ['gif'];
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [animation.key],
+      'resolved animated bookmarks keep their media kind when the grid is rebuilt');
+    context.KIND.on = ['video'];
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [remote.key]);
+    context.window.api.favoritesList = async () => ({ owner: 'account:B', entries: [still] });
+    await context.renderUnifiedFavorites(1);
+    assert.equal(mounted[0].item.format, undefined, 'format hints do not cross accounts');
+
+    // BUG-086: a fresh account with only GIF selected. Unresolved booru bookmarks
+    // must reach the resolver first, otherwise an animated one never appears.
+    const gifRemote = { ...remote, key: 'gelbooru:6',
+      record: { ...remote.record, source: 'gelbooru', post_id: '6', metadata: { title: 'A gif' } } };
+    const gifStill = { ...remote, key: 'gelbooru:7',
+      record: { ...remote.record, source: 'gelbooru', post_id: '7', metadata: { title: 'A still' } } };
+    const gifClip = { ...remote, key: 'gelbooru:8',
+      record: { ...remote.record, source: 'gelbooru', post_id: '8', metadata: { title: 'A video' } } };
+    context.KIND.on = ['gif'];
+    context.window.api.favoritesList = async () => ({ owner: 'account:C', entries: [gifRemote, gifStill, gifClip] });
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [gifRemote.key, gifStill.key, gifClip.key],
+      'GIF-only Favorites lets unresolved cards reach the resolver');
+    // The resolver's answer must redraw the grid by itself, once per frame, and only
+    // when the answer changes whether the card is shown.
+    const frames = [];
+    let redraws = 0;
+    const priorRenderLibrary = context.renderLibrary;
+    context.renderLibrary = () => { redraws++; };
+    context.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length; };
+    vm.runInContext('FAVORITES.kindFrame = null', context);
+    context.rememberFavoriteMediaKind(mounted[0], { format: 'gif', animated: true }, 'account:C');
+    assert.equal(frames.length, 0, 'a GIF that stays in the GIF-only grid needs no redraw');
+    context.rememberFavoriteMediaKind(mounted[1], { format: 'png' }, 'account:C');
+    context.rememberFavoriteMediaKind(mounted[2], { provider: 'gelbooru', id: '8', format: 'mp4' }, 'account:C');
+    assert.equal(frames.length, 1, 'a still and a video leaving the grid schedule one redraw');
+    frames[0]();
+    assert.equal(redraws, 1, 'the scheduled frame redraws the GIF-only grid');
+    context.renderLibrary = priorRenderLibrary;
+    context.requestAnimationFrame = () => 1;
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [gifRemote.key],
+      'resolved stills and videos leave the GIF-only grid');
+    context.KIND.on = ['video'];
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [gifClip.key]);
+    context.KIND.on = ['photo'];
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [gifStill.key]);
+    // Photo-only must not open the gate: unresolved bookmarks already count as photos.
+    context.window.api.favoritesList = async () => ({ owner: 'account:D', entries: [gifRemote] });
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [gifRemote.key]);
+    context.KIND.on = ['gif'];
+    context.window.api.favoritesList = async () => ({ owner: 'account:E', entries: [gifRemote] });
+    await context.renderUnifiedFavorites(1);
+    assert.deepEqual(Array.from(mounted, (row) => row.key), [gifRemote.key],
+      'a GIF resolved under another account is asked again, not taken from the old cache');
+    context.kindFilterActive = () => false;
+    context.window.api.favoritesList = priorList;
+    await context.renderUnifiedFavorites(1);
+  }
 
   // A refused bookmark-tag edit must explain a running media move, keep the tags
   // unchanged and let the editor stay open for retry.

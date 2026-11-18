@@ -78,6 +78,17 @@ function gif(frames) {
     }
   });
 
+  // MEDIA-004. The Library's "Filters" ask about many files in one call.
+  await check('many files at once: same answers, same authority, one per path', async () => {
+    const out = await main.invoke('media-motion-many', [moving, still, photo, outside, 'relative.gif', 42]);
+    // null = no answer: a picture that cannot move is not read at all (the window never asks
+    // about one), and a path nothing vouches for is refused.
+    assert.deepStrictEqual(out, [true, false, null, null, null, null]);
+    assert.deepStrictEqual(await main.invoke('media-motion-many', 'nope'), []);
+    const many = await main.invoke('media-motion-many', new Array(2500).fill(still));
+    assert.strictEqual(many.length, 2000, 'one call is bounded');
+  });
+
   await check('the details sheet gets the exact frame count', async () => {
     const details = await main.invoke('item-details', moving);
     assert.strictEqual(details.exists, true);

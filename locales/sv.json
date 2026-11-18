@@ -232,7 +232,7 @@
     "addFolder": "Lägg till mapp…",
     "empty": "Ditt bibliotek är tomt — släpp bilder här eller klicka på \"Lägg till\".",
     "emptyFolder": "Denna mapp har inga bilder.",
-    "noMatches": "Inget matchar sökningen eller taggen. Rensa dem för att se allt.",
+    "noMatches": "Inget hittades här. Rensa sökningen, taggarna eller filtren för att visa allt.",
     "emptyFavorites": "Inga favoriter än — markera ett foto med stjärnan så visas det här.",
     "emptyFolders": "Inga mappar än — lägg till en med ”Lägg till mapp…”.",
     "back": "‹ Alla mappar",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} foto",
     "photosCount_few": "{n} foton",
     "photosCount_many": "{n} foton",
-    "photosCount_other": "{n} foton"
+    "photosCount_other": "{n} foton",
+    "kindPhoto": "Foton",
+    "kindVideo": "Videor",
+    "dialogFilterMedia": "Bilder och videor"
   },
   "details": {
     "type": "Typ",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Allmän",
     "ratingSensitive": "Känslig",
     "ratingQuestionable": "Tveksam",
-    "ratingExplicit": "Barnförbjudet"
+    "ratingExplicit": "Barnförbjudet",
+    "copyTag": "Kopiera taggen {tag}",
+    "tagCopied": "Taggen kopierades",
+    "tagCopyFailed": "Det gick inte att kopiera taggen",
+    "typeVideo": "Video",
+    "duration": "Längd"
   },
   "motion": {
     "format": "Animation · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "Favoriter som inte fick plats på kontot och blev kvar på den här datorn: {n}",
     "syncHeldToast_few": "Favoriter som inte fick plats på kontot och blev kvar på den här datorn: {n}",
     "syncHeldToast_many": "Favoriter som inte fick plats på kontot och blev kvar på den här datorn: {n}",
-    "syncHeldToast_other": "Favoriter som inte fick plats på kontot och blev kvar på den här datorn: {n}"
+    "syncHeldToast_other": "Favoriter som inte fick plats på kontot och blev kvar på den här datorn: {n}",
+    "sourceFailed": "Webbplatsen svarade inte"
   },
   "theme": {
     "group": "Windows-tema",
@@ -486,7 +495,10 @@
     "libraryStore": "Biblioteksfil",
     "configStore": "Inställningsfil",
     "wallpaperSource": "Källa för konfigurerad bakgrund",
-    "poolConsistency": "Bakgrundstilldelning reparerades efter avbruten sparning"
+    "poolConsistency": "Bakgrundstilldelning reparerades efter avbruten sparning",
+    "configRestored": "Inställningsfilen var skadad och återställdes från kopian från {date}",
+    "libraryRestored": "Biblioteksfilen var skadad och återställdes från kopian från {date}",
+    "folderStateRestored": "Filen med mappinformation var skadad och återställdes från kopian från {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada kunde inte ändra bakgrunden",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada kunde inte hitta din bakgrundsbild",
     "wallpaperSourceMissingBody": "Den valda bilden finns inte längre kvar. Om enheten eller mappen flyttades, återställ den så återkommer bakgrunden vid nästa byte.",
     "poolConsistencyTitle": "Znada reparerade en bakgrundsinställning",
-    "poolConsistencyBody": "En sparning avbröts (förmodligen på grund av strömavbrott eller tvingad avstängning) och en skärm blev kopplad till en bild som inte sparades färdigt. Inställningen har rensats. Dina foton påverkades inte."
+    "poolConsistencyBody": "En sparning avbröts (förmodligen på grund av strömavbrott eller tvingad avstängning) och en skärm blev kopplad till en bild som inte sparades färdigt. Inställningen har rensats. Dina foton påverkades inte.",
+    "configRestoredTitle": "Inställningsfilen var skadad — Znada återställde den",
+    "libraryRestoredTitle": "Biblioteksfilen var skadad — Znada återställde den",
+    "folderStateRestoredTitle": "Filen med mappinformation var skadad — Znada återställde den",
+    "configRestoredBody": "Znada kunde inte läsa inställningsfilen. Den kan ha skadats vid ett strömavbrott eller en krasch. Inställningarna återställdes från en säkerhetskopia ({date}). Senare ändringar kan saknas.",
+    "libraryRestoredBody": "Znada kunde inte läsa biblioteksfilen. Den kan ha skadats vid ett strömavbrott eller en krasch. Biblioteket återställdes från en säkerhetskopia ({date}). Senare favoriter, taggar och tilldelningar kan saknas. Dina bilder ändrades inte.",
+    "folderStateRestoredBody": "Znada kunde inte läsa filen med information om anslutna mappar. Den kan ha skadats vid ett strömavbrott eller en krasch. Filen återställdes från en säkerhetskopia ({date}). Foton som du tagit bort från de mapparna efteråt kan visas igen."
   },
   "toast": {
     "applied": "Bakgrundsbild tillämpad",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Kunde inte förbereda sökförhandsvisningen.",
     "lookupChanged": "Bilden har ändrats eller är inte längre tillgänglig. Starta en ny sökning.",
     "lookupResponseFailed": "Kunde inte verifiera källans svar. Inga data har ändrats.",
-    "lookupHttpError": "Webbplatsen returnerade fel {n}. Försök igen senare."
+    "lookupHttpError": "Webbplatsen returnerade fel {n}. Försök igen senare.",
+    "lookupDismissed": "Jämförelsen stängdes. Inga data ändrades."
   },
   "whatsNew": {
     "button": "Nyheter",
@@ -656,5 +675,38 @@
     "unavailable": "Inte tillgänglig",
     "retry": "Kunde inte läsa in bilden. Försök igen.",
     "writeFailed": "Kunde inte spara favoriter. Dina tidigare favoriter är oförändrade."
+  },
+  "libraryChecks": {
+    "title": "Bibliotekskontroll",
+    "duplicatesSwitch": "Sök efter identiska filer",
+    "duplicatesTitle": "Identiska filer",
+    "show": "Visa",
+    "checking": "Kontrollerar…",
+    "copiesCount": "Extra kopior: {n}",
+    "noneFound": "Inga hittades",
+    "foundToast": "Identiska filer hittades: {n}",
+    "duplicatesEmpty": "Inga identiska filer."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Öppna i videospelaren",
+    "openFailed": "Det gick inte att öppna videon",
+    "notWallpaper": "Videor kan ännu inte användas som skrivbordsbakgrund",
+    "skippedOnAssign": "Foton tilldelades. Videor kan ännu inte användas som skrivbordsbakgrund",
+    "play": "Spela upp",
+    "pause": "Pausa",
+    "seek": "Uppspelningsposition",
+    "volume": "Volym",
+    "mute": "Stäng av ljudet",
+    "unmute": "Slå på ljudet",
+    "playback": "Videouppspelning",
+    "controls": "Videokontroller",
+    "playbackFailed": "Det gick inte att spela upp videon.",
+    "openExternal": "Öppna i en annan spelare",
+    "loading": "Öppnar video…",
+    "downloading": "Laddar ned video…",
+    "local": "Video från biblioteket",
+    "localFolder": "Video från en mapp"
   }
 }

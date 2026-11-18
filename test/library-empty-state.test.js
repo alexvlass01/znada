@@ -74,6 +74,8 @@ const photo = (id, extra = {}) => ({ id, type: 'image', path: `C:/photos/${id}.p
     setLibViewHeader: (count) => { ctx.count = count; },
     renderEntriesLazily() {},
     inRemovedView: () => ctx.LIB.filter === 'removed',
+    // MEDIA-004: the kind of file is tested in library-search.test.js; nothing is narrowed here.
+    kindFilterActive: () => false, renderLibFilterButton() {},
     window: { api: {
       expandFolders: async () => ({ images: reply.expand }),
       folderEntries: async () => reply.folder,

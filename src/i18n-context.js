@@ -27,6 +27,7 @@ const DEFAULT_SOURCE_FILES = [
   'renderer/card-transfer.js',
   'renderer/card-metadata.js',
   'renderer/online-browse.js',
+  'renderer/online-video-download.js',
   // ONL-016 moved the same way: which rows the details sheet contains, and therefore
   // which labels it names, is decided here rather than in renderer.js.
   'renderer/card-details.js',

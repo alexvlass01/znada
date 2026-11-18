@@ -117,9 +117,15 @@
   function localRows(subject, item) {
     const isFolder = (item && item.type === FOLDER) || subject.type === FOLDER;
     const path = str((item && item.path) || subject.path);
+    // MEDIA-002: the subject says whether this local file is a video (renderer/card-actions.js).
+    const isVideo = !isFolder && !!subject.video;
+    const typeKey = isFolder ? 'details.typeFolder' : (isVideo ? 'details.typeVideo' : 'details.typeImage');
     const rows = [
-      { id: 'type', labelKey: 'details.type', kind: 'i18n', valueKey: isFolder ? 'details.typeFolder' : 'details.typeImage' },
+      { id: 'type', labelKey: 'details.type', kind: 'i18n', valueKey: typeKey },
     ];
+    // Its length comes from Windows with the rest of the file facts; a video Windows
+    // cannot read loses the row rather than showing an empty one.
+    if (isVideo) rows.push({ id: 'duration', labelKey: 'details.duration', kind: 'pending', fill: 'duration' });
     if (!isFolder) {
       rows.push({ id: 'resolution', labelKey: 'details.resolution', kind: 'pending', fill: 'resolution' });
       rows.push({ id: 'size', labelKey: 'details.size', kind: 'pending', fill: 'size' });

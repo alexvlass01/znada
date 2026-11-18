@@ -659,3 +659,342 @@ body {
   margin-top: 1px;
   color: #62a0ea;
 }
+
+/* ============================================================================
+   MEDIA-008 — the video player: what a person sees and presses while a video is
+   open. Built by renderer/viewer-video.js; nothing here affects photos or GIFs.
+
+   One strip along the bottom edge: the timeline across the window, under it play,
+   sound and time on the left. The counter and the fullscreen button of the viewer
+   stay where they are for photos and simply read as part of the same strip.
+   ========================================================================== */
+.media-image.media-video { opacity: 1; z-index: 3; }
+#viewerActions > .online-video-download {
+  /* Keep Cancel clear of the Library action when a transfer finishes before a click. */
+  order: -1;
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 8px;
+  align-items: center;
+}
+#viewerActions .online-video-download progress { width: 96px; }
+
+.media-video[hidden],
+.media-video-controls[hidden],
+.video-guard[hidden],
+.video-flash[hidden] { display: none; }
+
+/* A taller, darker foot so white controls read over any frame. The counter keeps
+   its place. The strip must not swallow a press meant for the picture. */
+.media-viewer.has-video .media-footer {
+  min-height: 136px;
+  align-items: flex-end;
+  padding-bottom: 22px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.44) 46%, transparent);
+  pointer-events: none;
+}
+
+/* A press that misses a control by a few pixels lands here and does nothing,
+   instead of closing the viewer or pausing the video. */
+.video-guard {
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 86px;
+}
+
+.media-video-controls {
+  position: absolute;
+  z-index: 12;
+  left: 18px;
+  right: 18px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Only the timeline and the buttons take presses: the fullscreen button of the
+     viewer sits in the same strip, under this box. */
+  pointer-events: none;
+}
+
+.video-timeline,
+.video-row { pointer-events: auto; }
+
+.video-timeline {
+  position: relative;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.video-seek,
+.video-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+}
+
+/* --p is the played share, --h the share under the pointer (both 0..1, set from JS).
+   The fill runs edge to edge (empty at the start, full at the end); the handle's
+   centre travels 7px inside each edge, and the handle itself covers the difference. */
+.video-seek {
+  width: 100%;
+  height: 20px;
+  --p: 0;
+  --h: 0;
+  --x: calc(100% * var(--p));
+  --hx: calc(100% * var(--h));
+}
+
+.video-seek::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(to right,
+    #fff var(--x),
+    rgba(255, 255, 255, 0.5) var(--x),
+    rgba(255, 255, 255, 0.5) max(var(--x), var(--hx)),
+    rgba(255, 255, 255, 0.26) max(var(--x), var(--hx)));
+  transition: height 120ms ease;
+}
+
+.video-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+.video-timeline:hover .video-seek:not(:disabled)::-webkit-slider-runnable-track,
+.video-seek:active::-webkit-slider-runnable-track { height: 6px; }
+
+.video-timeline:hover .video-seek:not(:disabled)::-webkit-slider-thumb,
+.video-seek:active::-webkit-slider-thumb {
+  margin-top: -4px;
+  transform: scale(1);
+}
+
+.video-seek:focus-visible::-webkit-slider-thumb { transform: scale(1); }
+.video-seek:focus-visible::-webkit-slider-runnable-track { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55); }
+.video-seek:disabled { cursor: default; }
+
+.video-tip {
+  position: absolute;
+  left: 0;
+  bottom: 24px;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(20, 20, 23, 0.92);
+  color: #fff;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.video-tip.on { opacity: 1; }
+
+.video-row {
+  align-self: flex-start;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.video-btn {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.video-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.video-play svg {
+  width: 22px;
+  height: 22px;
+}
+
+.video-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.video-btn:active:not(:disabled) { background: rgba(255, 255, 255, 0.22); }
+.video-btn:disabled { opacity: 0.5; cursor: default; }
+.video-btn:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: -2px; }
+
+/* One button, three faces: pause while playing, play while paused, replay at the end. */
+.video-play .i-play,
+.video-play .i-replay,
+.video-play[data-state="paused"] .i-pause,
+.video-play[data-state="ended"] .i-pause { display: none; }
+.video-play[data-state="paused"] .i-play,
+.video-play[data-state="ended"] .i-replay { display: inline; }
+
+.video-mute .i-muted,
+.video-mute[data-level="off"] .i-wave1,
+.video-mute[data-level="off"] .i-wave2,
+.video-mute[data-level="low"] .i-wave2 { display: none; }
+.video-mute[data-level="off"] .i-muted { display: inline; }
+
+.video-sound {
+  display: flex;
+  align-items: center;
+}
+
+/* The level opens next to the speaker only when the pointer (or focus) is there. */
+.video-volume {
+  width: 0;
+  height: 20px;
+  opacity: 0;
+  --p: 1;
+  --x: calc(100% * var(--p));
+  transition: width 160ms ease, margin 160ms ease, opacity 160ms ease;
+}
+
+.video-sound:hover .video-volume:not(:disabled),
+.video-sound:focus-within .video-volume:not(:disabled),
+.video-volume:active {
+  width: 76px;
+  margin: 0 8px 0 2px;
+  opacity: 1;
+}
+
+.video-volume::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #fff var(--x), rgba(255, 255, 255, 0.28) var(--x));
+}
+
+.video-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.video-volume:focus-visible::-webkit-slider-runnable-track { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55); }
+
+.video-time {
+  margin-left: 8px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Play/pause from a press on the picture or from the keyboard answers in the middle
+   of the frame, since the panel may be hidden at that moment. */
+.video-flash {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  top: 50%;
+  width: 76px;
+  height: 76px;
+  margin: -38px 0 0 -38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.52);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.video-flash svg {
+  width: 32px;
+  height: 32px;
+}
+
+.video-flash .i-pause,
+.video-flash[data-icon="pause"] .i-play { display: none; }
+.video-flash[data-icon="pause"] .i-pause { display: inline; }
+.video-flash.on { animation: video-flash 520ms ease-out; }
+
+@keyframes video-flash {
+  0% { opacity: 0; transform: scale(0.82); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.22); }
+}
+
+/* With a video open the fullscreen button drops its own box and matches the buttons
+   on the left of the same strip. */
+.media-viewer.has-video .media-fullscreen {
+  bottom: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  border-color: transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: none;
+  transition: color 120ms ease, background 120ms ease, opacity 240ms ease;
+}
+
+.media-viewer.has-video .media-fullscreen:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.media-viewer.has-video .media-fullscreen svg {
+  width: 19px;
+  height: 19px;
+}
+
+.media-viewer.has-video .media-notice { bottom: 96px; }
+
+/* While the video plays and nobody touches anything, everything drawn over the
+   picture leaves, the pointer included. The class is set by viewer-video.js. */
+.media-viewer.has-video .media-topbar,
+.media-viewer.has-video .media-footer,
+.media-viewer.has-video .media-video-controls { transition: opacity 240ms ease; }
+.media-viewer.has-video .media-nav {
+  transition: background 120ms ease, border-color 120ms ease, opacity 240ms ease, transform 120ms ease;
+}
+
+.media-viewer.video-idle .media-topbar,
+.media-viewer.video-idle .media-footer,
+.media-viewer.video-idle .media-nav,
+.media-viewer.video-idle .media-fullscreen,
+.media-viewer.video-idle .media-video-controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.media-viewer.video-idle,
+.media-viewer.video-idle .media-stage,
+.media-viewer.video-idle .media-video { cursor: none !important; }
+
+@media (max-width: 620px) {
+  /* No room for the counter between the time and the fullscreen button. */
+  .media-viewer.has-video .media-footer { color: transparent; }
+}

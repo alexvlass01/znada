@@ -44,6 +44,13 @@ function allowedDownloadUrl(item) {
   return registry.matchesHost(item.provider, 'image', item.full);
 }
 
+function allowedVideo(item) {
+  const descriptor = registry.byId(item?.provider);
+  return descriptor?.capabilities?.onlineVideo === true && allowedDownloadUrl(item)
+    && mediaFormats.ONLINE_VIDEO_FORMATS.includes(item.format)
+    && new URL(item.full).pathname.toLowerCase().endsWith('.' + item.format);
+}
+
 // Bytes the MAIN process may fetch on the viewer's behalf (some hosts need a Referer
 // the window cannot send). Same CDN rules, plus whatever a provider marks as reachable
 // only this way — Gelbooru's apex hotlink endpoint.
@@ -200,6 +207,7 @@ module.exports = {
   itemKeys,
   safeProviderUrl,
   allowedDownloadUrl,
+  allowedVideo,
   isAllowedProviderImageUrl,
   allowedFullFetchUrl,
   allowedSampleFetchUrl,

@@ -232,7 +232,7 @@
     "addFolder": "Añadir carpeta…",
     "empty": "Su biblioteca está vacía: arrastre imágenes aquí o haga clic en «Añadir fotos…».",
     "emptyFolder": "Esta carpeta no contiene imágenes.",
-    "noMatches": "Nada coincide con la búsqueda o la etiqueta. Bórralas para verlo todo.",
+    "noMatches": "No se encontró nada aquí. Borra la búsqueda, las etiquetas o los filtros para verlo todo.",
     "emptyFavorites": "Aún no hay favoritos: marca una foto con la estrella y aparecerá aquí.",
     "emptyFolders": "Aún no hay carpetas: añade una con «Añadir carpeta…».",
     "back": "‹ Todas las carpetas",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} foto",
     "photosCount_few": "{n} fotos",
     "photosCount_many": "{n} fotos",
-    "photosCount_other": "{n} fotos"
+    "photosCount_other": "{n} fotos",
+    "kindPhoto": "Fotos",
+    "kindVideo": "Vídeos",
+    "dialogFilterMedia": "Imágenes y vídeos"
   },
   "details": {
     "type": "Tipo",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Para todos",
     "ratingSensitive": "Sensible",
     "ratingQuestionable": "Cuestionable",
-    "ratingExplicit": "Explícito"
+    "ratingExplicit": "Explícito",
+    "copyTag": "Copiar etiqueta {tag}",
+    "tagCopied": "Etiqueta copiada",
+    "tagCopyFailed": "No se pudo copiar la etiqueta",
+    "typeVideo": "Vídeo",
+    "duration": "Duración"
   },
   "motion": {
     "format": "Animación · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "{n} favorito no cabía en la cuenta — se quedó en este equipo",
     "syncHeldToast_few": "{n} favoritos no cabían en la cuenta — se quedaron en este equipo",
     "syncHeldToast_many": "{n} favoritos no cabían en la cuenta — se quedaron en este equipo",
-    "syncHeldToast_other": "{n} favoritos no cabían en la cuenta — se quedaron en este equipo"
+    "syncHeldToast_other": "{n} favoritos no cabían en la cuenta — se quedaron en este equipo",
+    "sourceFailed": "Este sitio no respondió"
   },
   "theme": {
     "group": "Tema de Windows",
@@ -486,7 +495,10 @@
     "libraryStore": "Archivo de biblioteca",
     "configStore": "Archivo de configuración",
     "wallpaperSource": "Origen del fondo configurado",
-    "poolConsistency": "Asignación de fondo reparada tras un guardado interrumpido"
+    "poolConsistency": "Asignación de fondo reparada tras un guardado interrumpido",
+    "configRestored": "El archivo de configuración estaba dañado y se restauró desde la copia del {date}",
+    "libraryRestored": "El archivo de la biblioteca estaba dañado y se restauró desde la copia del {date}",
+    "folderStateRestored": "El archivo de información de carpetas estaba dañado y se restauró desde la copia del {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada no pudo cambiar el fondo de pantalla",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada no pudo encontrar tu fondo de pantalla",
     "wallpaperSourceMissingBody": "La imagen seleccionada ya no está en su ubicación. Si se movió el disco o la carpeta, restaúrala y el fondo se aplicará en el próximo cambio.",
     "poolConsistencyTitle": "Znada reparó un ajuste de fondo de pantalla",
-    "poolConsistencyBody": "Se interrumpió un guardado (probablemente por un corte de energía o apagado forzado) y un monitor quedó vinculado a una imagen que no se terminó de guardar. Se ha restablecido el ajuste. Tus fotos no se han modificado."
+    "poolConsistencyBody": "Se interrumpió un guardado (probablemente por un corte de energía o apagado forzado) y un monitor quedó vinculado a una imagen que no se terminó de guardar. Se ha restablecido el ajuste. Tus fotos no se han modificado.",
+    "configRestoredTitle": "Archivo de configuración dañado: Znada lo restauró",
+    "libraryRestoredTitle": "Archivo de la biblioteca dañado: Znada lo restauró",
+    "folderStateRestoredTitle": "Archivo de información de carpetas dañado: Znada lo restauró",
+    "configRestoredBody": "Znada no pudo leer el archivo de configuración. Pudo dañarse por un corte eléctrico o un fallo. La configuración se restauró desde una copia de seguridad ({date}). Es posible que falten cambios posteriores.",
+    "libraryRestoredBody": "Znada no pudo leer el archivo de la biblioteca. Pudo dañarse por un corte eléctrico o un fallo. La biblioteca se restauró desde una copia de seguridad ({date}). Es posible que falten favoritos, etiquetas y asignaciones posteriores. Tus imágenes no se modificaron.",
+    "folderStateRestoredBody": "Znada no pudo leer el archivo de información de las carpetas conectadas. Pudo dañarse por un corte eléctrico o un fallo. El archivo se restauró desde una copia de seguridad ({date}). Las fotos retiradas de esas carpetas después de esa fecha pueden volver a aparecer."
   },
   "toast": {
     "applied": "Fondo de pantalla aplicado",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "No se pudo preparar la vista previa para la búsqueda.",
     "lookupChanged": "La imagen cambió o ya no está disponible. Inicie una nueva búsqueda.",
     "lookupResponseFailed": "No se pudieron confirmar los datos de la respuesta del sitio. No se modificaron datos.",
-    "lookupHttpError": "El sitio devolvió el error {n}. Inténtelo más tarde."
+    "lookupHttpError": "El sitio devolvió el error {n}. Inténtelo más tarde.",
+    "lookupDismissed": "Comparación cerrada. No se modificaron datos."
   },
   "whatsNew": {
     "button": "Novedades",
@@ -656,5 +675,38 @@
     "unavailable": "No disponible",
     "retry": "No se pudo cargar la imagen. Inténtelo de nuevo.",
     "writeFailed": "No se pudieron guardar los favoritos. Se conservan las marcas anteriores."
+  },
+  "libraryChecks": {
+    "title": "Revisión de la biblioteca",
+    "duplicatesSwitch": "Buscar archivos idénticos",
+    "duplicatesTitle": "Archivos idénticos",
+    "show": "Mostrar",
+    "checking": "Comprobando…",
+    "copiesCount": "Copias adicionales: {n}",
+    "noneFound": "No se encontró ninguno",
+    "foundToast": "Archivos idénticos encontrados: {n}",
+    "duplicatesEmpty": "No hay archivos idénticos."
+  },
+  "video": {
+    "badge": "Vídeo",
+    "badgeLength": "Vídeo · {length}",
+    "openHint": "Abrir en el reproductor de vídeo",
+    "openFailed": "No se pudo abrir este vídeo",
+    "notWallpaper": "Todavía no se pueden usar vídeos como fondo de pantalla",
+    "skippedOnAssign": "Fotos asignadas. Todavía no se pueden usar vídeos como fondo de pantalla",
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "seek": "Posición de reproducción",
+    "volume": "Volumen",
+    "mute": "Silenciar",
+    "unmute": "Activar sonido",
+    "playback": "Reproducción de vídeo",
+    "controls": "Controles de vídeo",
+    "playbackFailed": "No se pudo reproducir este vídeo.",
+    "openExternal": "Abrir en otro reproductor",
+    "loading": "Abriendo vídeo…",
+    "downloading": "Descargando vídeo…",
+    "local": "Vídeo de la biblioteca",
+    "localFolder": "Vídeo de una carpeta"
   }
 }

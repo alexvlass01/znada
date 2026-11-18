@@ -146,6 +146,37 @@ const md5Hex16 = (buf) => crypto.createHash('md5').update(buf).digest('hex').sli
     assert.ok(fs.readFileSync(imposter).equals(OTHER_BYTES), 'existing file must not be overwritten');
   });
 
+  await test('a source replacement after the read cannot change the bytes filed under that hash', async (tmp) => {
+    const profile = path.join(tmp, 'Profile');
+    const source = path.join(tmp, 'source.png');
+    const incoming = Buffer.from('AAAA');
+    fs.mkdirSync(profile);
+    fs.writeFileSync(source, incoming);
+    const mf = createManagedFolder({ userDataPath: profile, getConfig: () => ({}) });
+    mf.refresh();
+    const createReadStream = fs.createReadStream;
+    let exchanged = false;
+    fs.createReadStream = (...args) => {
+      const stream = createReadStream(...args);
+      if (args[0] === source && !exchanged) stream.once('end', () => {
+        fs.writeFileSync(source, 'BBBB');
+        exchanged = true;
+      });
+      return stream;
+    };
+    try {
+      const first = await mf.importWallpaper(source);
+      assert.ok(exchanged);
+      assert.deepStrictEqual(fs.readFileSync(first), incoming);
+      assert.strictEqual(path.basename(first), `source-${md5Hex16(incoming)}.png`);
+      fs.writeFileSync(source, incoming);
+      assert.strictEqual(await mf.importWallpaper(source), first);
+      assert.deepStrictEqual(fs.readdirSync(mf.wallpapersDir()), [path.basename(first)]);
+    } finally {
+      fs.createReadStream = createReadStream;
+    }
+  });
+
   await test('photoForPool references an active watched-folder image and copies hidden or outside files', async (tmp) => {
     const profileDir = path.join(tmp, 'Profile');
     const watchedDir = path.join(tmp, 'Watched');

@@ -104,11 +104,11 @@ ok('tests that read the source pass with the line endings of a fresh Windows clo
   if (process.env.ZNADA_FRESH_CLONE_EOL) return;
   const hook = path.join(__dirname, 'helpers', 'fresh-clone-eol.js').split(path.sep).join('/');
   const readsSource = /readFileSync\([^)]*(?:renderer|main\.js|preload|["'`]src["'`]|src[\\/]|index\.html|styles\.css|locales|H\.ROOT|\bROOT\b)/i;
-  const steps = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts.test.split(' && ');
+  const steps = require('../scripts/test-steps.json');
   const readers = steps
-    .map((step) => /^node (test\/[^ ]+\.test\.js)$/.exec(step))
+    .filter((step) => step.length === 1 && /^test\/[^ ]+\.test\.js$/.test(step[0]))
     .filter(Boolean)
-    .map((match) => match[1])
+    .map((step) => step[0])
     .filter((file) => file !== 'test/static-gates.test.js')
     .filter((file) => readsSource.test(fs.readFileSync(path.join(ROOT, file), 'utf8')));
   // An empty list would pass by checking nothing - the very failure this file exists to catch.
@@ -131,15 +131,24 @@ ok('tests that read the source pass with the line endings of a fresh Windows clo
   assert.deepStrictEqual(broken, [], `these pass here but fail in a fresh Windows clone:\n  ${broken.join('\n  ')}`);
 });
 
-// A test file that `npm test` never names is another silent gate: it passes by not running.
+// A test file that the npm test manifest never names is another silent gate: it passes by not running.
 // test/media-proxy.test.js - PERF-008's own checks of the stream proxy - sat outside the chain
 // from the day it was written, so neither the suite nor the release review ever ran it.
 ok('every test file in test/ is run by npm test', () => {
-  const chain = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts.test;
-  const files = fs.readdirSync(__dirname).filter((name) => name.endsWith('.test.js')).sort();
-  assert.ok(files.includes('static-gates.test.js'), 'the test directory was not read');
-  const missing = files.filter((name) => !chain.includes(`node test/${name}`));
-  assert.deepStrictEqual(missing, [], 'not in scripts.test: ' + missing.join(', '));
+  const command = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts.test;
+  assert.strictEqual(command, 'node scripts/run-tests.js', 'npm test must use the sequential runner');
+  const steps = require('../scripts/test-steps.json');
+  assert.ok(Array.isArray(steps) && steps.length > 0, 'empty test manifest');
+  for (const step of steps) {
+    assert.ok(Array.isArray(step) && step.length > 0 && step.every((arg) => typeof arg === 'string' && arg.length > 0),
+      'each step must contain a Node script and optional arguments');
+    assert.ok(fs.statSync(path.join(ROOT, step[0])).isFile(), 'missing script: ' + step[0]);
+  }
+  const listed = steps.filter((step) => /^test\/.*\.test\.js$/.test(step[0])).map((step) => step[0]);
+  assert.strictEqual(new Set(listed).size, listed.length, 'duplicate test steps');
+  const files = fs.readdirSync(__dirname).filter((name) => name.endsWith('.test.js')).map((name) => 'test/' + name).sort();
+  assert.ok(files.includes('test/static-gates.test.js'), 'the test directory was not read');
+  assert.deepStrictEqual(listed.slice().sort(), files, 'test manifest must name every test exactly once');
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed\n`);

@@ -34,6 +34,19 @@ ok('source URLs are limited to normalized HTTP(S)',
   && details.normalizeHttpUrl('javascript:alert(1)') === ''
   && details.normalizeHttpUrl('not a url') === '');
 
+ok('a details tag is copied unchanged and is not a free-form clipboard payload',
+  details.copyableTag('beatrice_(re:zero)') === 'beatrice_(re:zero)'
+  && details.copyableTag('  Sky  ') === 'Sky'
+  && details.copyableTag('hello world') === 'hello world'
+  && details.copyableTag('a'.repeat(details.MAX_TAG_COPY_CHARS)) === 'a'.repeat(details.MAX_TAG_COPY_CHARS)
+  && details.copyableTag('a'.repeat(details.MAX_TAG_COPY_CHARS + 1)) === ''
+  && details.copyableTag('line\nbreak') === ''
+  && details.copyableTag('tab\there') === ''
+  && details.copyableTag('nul\0here') === ''
+  && details.copyableTag('   ') === ''
+  && details.copyableTag(null) === ''
+  && details.copyableTag({ tag: 'sky' }) === '');
+
 ok('configured folder roots authorize themselves and descendants, not sibling prefixes',
   details.isSameOrDescendant(
     'C:\\Wallpapers\\Nested\\image.png',
@@ -138,6 +151,29 @@ ok('configured folder roots authorize themselves and descendants, not sibling pr
   ok('a failed motion read leaves the rest of the sheet intact',
     broken.motion === null && broken.width === 320 && broken.exists);
   ok('without a motion reader the field is present and empty', real.motion === null && invalid.motion === null);
+
+  // MEDIA-002: a video's length and frame size come from Windows' properties, never its header.
+  let videoHeaderReads = 0;
+  let videoFails = false;
+  const videoReader = details.createDetailsReader({
+    statPath: async () => ({ size: 10, mtimeMs: 1, isFile: () => true, isDirectory: () => false }),
+    readHeader: async () => { videoHeaderReads += 1; return pngHeader(320, 240); },
+    video: async () => {
+      if (videoFails) throw new Error('no codec');
+      return { durationMs: 74000, width: 1920, height: 1080 };
+    },
+  });
+  const clip = await videoReader('C:\\Wallpapers\\jars.mov');
+  ok('a video sheet carries its length and frame size from the video reader',
+    clip.video && clip.video.durationMs === 74000 && clip.width === 1920 && clip.height === 1080
+      && videoHeaderReads === 0 && clip.motion === null);
+  videoFails = true;
+  const silent = await videoReader('C:\\Wallpapers\\broken.webm');
+  ok('a video Windows cannot read still opens its sheet, with an empty length',
+    silent.exists && silent.video && silent.video.durationMs === 0 && silent.width === 0);
+  const still = await videoReader('C:\\Wallpapers\\photo.png');
+  ok('a picture beside the video reader is still measured from its header',
+    still.video === null && still.width === 320 && videoHeaderReads === 1);
 
   console.log('\nAll ' + passed + ' item-details tests passed.');
 })().catch((err) => {

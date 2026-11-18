@@ -75,7 +75,7 @@ console.log('\nBUG-046: что окно просит через прокси, а
     }
   });
 
-  const viewer = load('renderer/viewer.js', ['mediaProxyUrl', 'previewSource', 'fullSource', 'sampleSource']);
+  const viewer = load('renderer/viewer.js', ['isVideoEntry', 'mediaProxyUrl', 'previewSource', 'fullSource', 'sampleSource']);
   const main = load('renderer/renderer.js', ['internetThumbUrl', 'detailsPreviewUrl', 'setInternetCardThumbnail']);
 
   // Строители адреса — единственное место, где решается «через прокси или нет». Прежде

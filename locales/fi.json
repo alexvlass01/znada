@@ -232,7 +232,7 @@
     "addFolder": "Lisää kansio…",
     "empty": "Kirjastosi on tyhjä — pudota kuvia tähän tai napsauta \"Lisää\".",
     "emptyFolder": "Tässä kansiossa ei ole kuvia.",
-    "noMatches": "Mikään ei vastaa hakua tai tunnistetta. Tyhjennä ne nähdäksesi kaiken.",
+    "noMatches": "Täältä ei löytynyt mitään. Tyhjennä haku, tunnisteet tai suodattimet, niin näet kaiken.",
     "emptyFavorites": "Ei vielä suosikkeja — merkitse kuva tähdellä, niin se näkyy täällä.",
     "emptyFolders": "Ei vielä kansioita — lisää kansio painikkeella ”Lisää kansio…”.",
     "back": "‹ Kaikki kansiot",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} kuva",
     "photosCount_few": "{n} kuvaa",
     "photosCount_many": "{n} kuvaa",
-    "photosCount_other": "{n} kuvaa"
+    "photosCount_other": "{n} kuvaa",
+    "kindPhoto": "Valokuvat",
+    "kindVideo": "Videot",
+    "dialogFilterMedia": "Kuvat ja videot"
   },
   "details": {
     "type": "Tyyppi",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Sallittu",
     "ratingSensitive": "Arkaluontoinen",
     "ratingQuestionable": "Kysymyksiä herättävä",
-    "ratingExplicit": "Seksuaalinen"
+    "ratingExplicit": "Seksuaalinen",
+    "copyTag": "Kopioi tunniste {tag}",
+    "tagCopied": "Tunniste kopioitu",
+    "tagCopyFailed": "Tunnistetta ei voitu kopioida",
+    "typeVideo": "Video",
+    "duration": "Kesto"
   },
   "motion": {
     "format": "Animaatio · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "Suosikkeja, jotka eivät mahtuneet tilille ja jäivät tälle tietokoneelle: {n}",
     "syncHeldToast_few": "Suosikkeja, jotka eivät mahtuneet tilille ja jäivät tälle tietokoneelle: {n}",
     "syncHeldToast_many": "Suosikkeja, jotka eivät mahtuneet tilille ja jäivät tälle tietokoneelle: {n}",
-    "syncHeldToast_other": "Suosikkeja, jotka eivät mahtuneet tilille ja jäivät tälle tietokoneelle: {n}"
+    "syncHeldToast_other": "Suosikkeja, jotka eivät mahtuneet tilille ja jäivät tälle tietokoneelle: {n}",
+    "sourceFailed": "Sivusto ei vastannut"
   },
   "theme": {
     "group": "Windowsin teema",
@@ -486,7 +495,10 @@
     "libraryStore": "Kirjastotiedosto",
     "configStore": "Asetustiedosto",
     "wallpaperSource": "Määritetyn taustakuvan lähde",
-    "poolConsistency": "Taustakuvan määritys korjattiin keskeytyneen tallennuksen jälkeen"
+    "poolConsistency": "Taustakuvan määritys korjattiin keskeytyneen tallennuksen jälkeen",
+    "configRestored": "Asetustiedosto oli vioittunut ja palautettiin {date} tallennetusta kopiosta",
+    "libraryRestored": "Kirjastotiedosto oli vioittunut ja palautettiin {date} tallennetusta kopiosta",
+    "folderStateRestored": "Kansioiden tietotiedosto oli vioittunut ja palautettiin {date} tallennetusta kopiosta"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada ei pystynyt vaihtamaan taustakuvaa",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada ei löytänyt taustakuvaasi",
     "wallpaperSourceMissingBody": "Asetettua kuvaa ei enää löydy. Jos asema tai kansio siirrettiin, palauta se takaisin, ja taustakuva palautuu seuraavassa vaihdossa.",
     "poolConsistencyTitle": "Znada korjasi taustakuva-asetuksen",
-    "poolConsistencyBody": "Tallennus keskeytyi (todennäköisesti sähkökatkon tai pakotetun sammutuksen vuoksi), ja näyttö jäi viittaamaan kuvaan, jonka tallennus ei valmistunut. Asetus on nollattu. Valokuviisi ei koskettu."
+    "poolConsistencyBody": "Tallennus keskeytyi (todennäköisesti sähkökatkon tai pakotetun sammutuksen vuoksi), ja näyttö jäi viittaamaan kuvaan, jonka tallennus ei valmistunut. Asetus on nollattu. Valokuviisi ei koskettu.",
+    "configRestoredTitle": "Asetustiedosto oli vioittunut — Znada palautti sen",
+    "libraryRestoredTitle": "Kirjastotiedosto oli vioittunut — Znada palautti sen",
+    "folderStateRestoredTitle": "Kansioiden tietotiedosto oli vioittunut — Znada palautti sen",
+    "configRestoredBody": "Znada ei voinut lukea asetustiedostoa. Se saattoi vioittua sähkökatkon tai kaatumisen takia. Asetukset palautettiin varmuuskopiosta ({date}). Myöhemmät muutokset saattavat puuttua.",
+    "libraryRestoredBody": "Znada ei voinut lukea kirjastotiedostoa. Se saattoi vioittua sähkökatkon tai kaatumisen takia. Kirjasto palautettiin varmuuskopiosta ({date}). Myöhemmät suosikit, tunnisteet ja määritykset saattavat puuttua. Kuvatiedostoja ei muutettu.",
+    "folderStateRestoredBody": "Znada ei voinut lukea liitettyjen kansioiden tietotiedostoa. Se saattoi vioittua sähkökatkon tai kaatumisen takia. Tiedosto palautettiin varmuuskopiosta ({date}). Myöhemmin näistä kansioista poistetut kuvat voivat näkyä uudelleen."
   },
   "toast": {
     "applied": "Taustakuva otettu käyttöön",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Haun esikatselua ei voitu valmistella.",
     "lookupChanged": "Kuva on muuttunut tai ei ole enää saatavilla. Aloita uusi haku.",
     "lookupResponseFailed": "Lähteen vastausta ei voitu varmistaa. Tietoja ei muutettu.",
-    "lookupHttpError": "Sivusto palautti virheen {n}. Yritä myöhemmin."
+    "lookupHttpError": "Sivusto palautti virheen {n}. Yritä myöhemmin.",
+    "lookupDismissed": "Vertailu suljettu. Tietoja ei muutettu."
   },
   "whatsNew": {
     "button": "Uutta",
@@ -656,5 +675,38 @@
     "unavailable": "Ei saatavilla",
     "retry": "Kuvaa ei voitu ladata. Yritä uudelleen.",
     "writeFailed": "Suosikkeja ei voitu tallentaa. Aiemmat suosikit eivät muuttuneet."
+  },
+  "libraryChecks": {
+    "title": "Kirjaston tarkistus",
+    "duplicatesSwitch": "Etsi identtisiä tiedostoja",
+    "duplicatesTitle": "Identtiset tiedostot",
+    "show": "Näytä",
+    "checking": "Tarkistetaan…",
+    "copiesCount": "Ylimääräisiä kopioita: {n}",
+    "noneFound": "Ei löytynyt",
+    "foundToast": "Identtisiä tiedostoja löytyi: {n}",
+    "duplicatesEmpty": "Ei identtisiä tiedostoja."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Avaa videosoittimessa",
+    "openFailed": "Videota ei voitu avata",
+    "notWallpaper": "Videoita ei vielä voi asettaa taustakuvaksi",
+    "skippedOnAssign": "Valokuvat määritetty. Videoita ei vielä voi asettaa taustakuvaksi",
+    "play": "Toista",
+    "pause": "Keskeytä",
+    "seek": "Toistokohta",
+    "volume": "Äänenvoimakkuus",
+    "mute": "Mykistä",
+    "unmute": "Poista mykistys",
+    "playback": "Videon toisto",
+    "controls": "Videon säätimet",
+    "playbackFailed": "Videota ei voitu toistaa.",
+    "openExternal": "Avaa toisessa soittimessa",
+    "loading": "Avataan videota…",
+    "downloading": "Ladataan videota…",
+    "local": "Video kirjastosta",
+    "localFolder": "Video kansiosta"
   }
 }

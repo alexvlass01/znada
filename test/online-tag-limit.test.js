@@ -282,6 +282,11 @@ const verdict = (descriptor, q, sort = 'date_added', extra = {}) =>
     };
     const mark = renderer.match(/const ONLINE_PAUSE_MARK = [^;]+;/);
     assert.ok(mark, 'the pause mark is one constant');
+    const failMark = renderer.match(/const ONLINE_FAIL_MARK = [^;]+;/);
+    assert.ok(failMark, 'BUG-070: the failure mark is one constant too');
+    // BUG-070. The row the Sources and Filters buttons sit in; the dot is a class on it.
+    const barClasses = new Set();
+    const bar = { parentElement: { classList: { toggle: (c, on) => (on ? barClasses.add(c) : barClasses.delete(c)) } } };
     // The rows as applyOnlineSourceUI builds them: name, then the number's place.
     const rows = ['wallhaven', 'gelbooru', 'danbooru'].map((id) => {
       const classes = new Set();
@@ -308,7 +313,7 @@ const verdict = (descriptor, q, sort = 'date_added', extra = {}) =>
       console: { error: () => {} },
       t: (key) => key,
       detailsLocale: () => 'en',
-      $: (sel) => ({ '#whNote': note, '#onlineSourceOptions': host, '#whMore': { hidden: true, disabled: false }, '#whQuery': { value: 'sky mountain' } }[sel] || null),
+      $: (sel) => ({ '#whNote': note, '#onlineSourceOptions': host, '#whMore': { hidden: true, disabled: false }, '#whQuery': { value: 'sky mountain' }, '#whFilterToggle': bar }[sel] || null),
       hideOnlineTagSuggest: () => {},
       applyFavToggleUI: () => {},
       replaceOnlineEntries: (list) => { ctx.ONLINE.entries = list.slice(); },
@@ -322,6 +327,7 @@ const verdict = (descriptor, q, sort = 'date_added', extra = {}) =>
     };
     vm.createContext(ctx);
     vm.runInContext(mark[0], ctx);
+    vm.runInContext(failMark[0], ctx);
     for (const n of ['onlineSearchIsCurrent', 'loadInternetResults', 'publishOnlineBatch',
       'finalizeOnlineFeed', 'doOnlineSearch', 'loadMoreOnline', 'renderOnlineSourceCounts']) {
       vm.runInContext(fnSrc(n), ctx);
@@ -357,6 +363,29 @@ const verdict = (descriptor, q, sort = 'date_added', extra = {}) =>
     await ctx.doOnlineSearch(true);
     ok('a site that really failed is still named, and the paused one still shows its pause',
       note.textContent.startsWith('online.sourcesFailed') && d.row.classList.has('paused'));
+    ok('BUG-070: the failed site is marked in Sources and the button row gets its dot',
+      by('gelbooru').row.classList.has('failed') && by('gelbooru').span.title === 'online.sourceFailed'
+      && by('gelbooru').attrs.role === 'img' && barClasses.has('online-sources-failed'));
+    ok('BUG-070: a paused site is never also marked failed', !d.row.classList.has('failed'));
+
+    // BUG-070 (owner, 2026-11-07). With cards on screen the feed carries no line for a site that
+    // did not answer: the mark in Sources says it, and the feed does not move.
+    reply = { items: [{ id: 'w2' }], totals: {}, providerErrors: { danbooru: '503' }, error: null,
+      paused: {}, allPaused: false, resume: null };
+    await ctx.doOnlineSearch(true);
+    ok('BUG-070: cards and a failed site — no line over the feed, the site carries the mark',
+      note.textContent === '' && ctx.ONLINE.entries.length === 1
+      && d.row.classList.has('failed') && d.span.innerHTML.includes('<svg') && d.name.title === 'online.sourceFailed');
+    ok('BUG-070: …the others are not marked', !by('wallhaven').row.classList.has('failed'));
+
+    reply = { items: [{ id: 'w3' }], totals: {}, providerErrors: {}, error: null, paused: {}, allPaused: false, resume: null };
+    await ctx.doOnlineSearch(true);
+    ok('BUG-070: a new search that every site answers clears the mark and the dot',
+      !d.row.classList.has('failed') && d.span.title === '' && d.attrs.role === undefined && !barClasses.has('online-sources-failed'));
+
+    reply = { items: [{ id: 'w4' }], totals: {}, providerErrors: {}, error: 'network', paused: {}, allPaused: false, resume: null };
+    await ctx.doOnlineSearch(true);
+    ok('BUG-070: a failure no site can be blamed for still has its line', note.textContent.startsWith('online.error'));
   }
 
   console.log(`\nAll ${passed} online-tag-limit tests passed.`);

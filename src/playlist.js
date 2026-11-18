@@ -14,7 +14,11 @@ const { pathKey } = require('./path-key');
 // ONL-015. Which picture files a folder may yield is THE SAME question as which a site
 // may send, so there is one answer and it lives in src/media-type.js. It used to be
 // written out here and, separately and differently, inside each site adapter.
-const IMG_EXTS = new Set(require('./media-type').fileExtensions());
+const mediaType = require('./media-type');
+const IMG_EXTS = new Set(mediaType.fileExtensions());
+// MEDIA-002. What BROWSING a folder shows: pictures and video. The slideshow scan
+// (`scanFolder`) and `resolveSlot` keep IMG_EXTS — they feed the desktop.
+const LIBRARY_EXTS = new Set(mediaType.libraryExtensions());
 
 // Normalize a slot to { items: Item[] }. Legacy format was a plain string path
 // (or empty). Item = { type: 'image' | 'folder', path }.
@@ -55,7 +59,7 @@ function scanFolderEntries(dir) {
     for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, d.name);
       if (d.isDirectory()) folders.push(full);
-      else if (d.isFile() && IMG_EXTS.has(path.extname(d.name).toLowerCase())) images.push(full);
+      else if (d.isFile() && LIBRARY_EXTS.has(path.extname(d.name).toLowerCase())) images.push(full);
     }
     folders.sort((a, b) => a.localeCompare(b));
     images.sort((a, b) => a.localeCompare(b));
@@ -117,6 +121,10 @@ function resolveSlot(slot, library, opts = {}) {
     if (!it || !it.path) continue;
     const paths = it.type === 'folder' ? scanFolder(it.path, { force: !!opts.forceFolderScan }) : [it.path];
     for (const p of paths) {
+      // MEDIA-002. The one door to the desktop: a video record that reached a slot by any
+      // route (an older build, a hand-edited profile, a bug elsewhere) stops here. Only
+      // video is refused: a photo whose old copy has an unusual extension must keep working.
+      if (mediaType.isVideoPath(p)) continue;
       const k = pathKey(p);
       if (exclude && exclude.has(k)) continue;
       if (!seen.has(k) && fs.existsSync(p)) { seen.add(k); out.push(p); }
@@ -197,6 +205,7 @@ module.exports = {
   // A fresh facade prevents a caller from widening every scanner for the rest of the
   // process with `playlist.IMG_EXTS.add(...)`.
   get IMG_EXTS() { return new Set(IMG_EXTS); },
+  get LIBRARY_EXTS() { return new Set(LIBRARY_EXTS); },
   normalizeSlot, scanFolder, scanFolderEntries, scanFolderImagesDeep,
   resolveSlot, resolvedIndexOf, pickCurrent, nextIndex, reconcilePosition, usesInterval,
 };

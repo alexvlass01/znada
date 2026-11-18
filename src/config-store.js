@@ -10,7 +10,7 @@
 /**
  * @param {{
  *   configPath: string,
- *   configMod: { load: (path: string) => any, save: (config: any, path: string, options?: { skipLibrary?: boolean, keepInline?: boolean }) => boolean },
+ *   configMod: { load: (path: string, options?: { restore?: any }) => any, save: (config: any, path: string, options?: { skipLibrary?: boolean, keepInline?: boolean }) => boolean },
  *   libraryStore: {
  *     createWriter: (options: { configPath: string, onWriteFailure?: () => void }) => { markDirty: (library: any, trash: any) => void, flush: () => boolean, isPending: () => boolean, dispose: () => void },
  *     save: (library: any, configPath: string, trash: any) => boolean,
@@ -23,16 +23,25 @@
  *   broadcast: () => void,
  *   notify: (channel: string, messageKey: string, options: { titleKey: string, bodyKey: string }) => void,
  *   randomId: () => string,
+ *   restore?: ((kind: string) => ({ text: string, takenAt: number } | null)) | null,
+ *   reportRestored?: (kind: string, takenAt: number) => void,
  *   log?: { error: (...args: any[]) => void },
  * }} dependencies
  */
 function createConfigStore({
   configPath, configMod, libraryStore, poolConsistency, normalizeOnlineSources,
-  getConfig, setConfig, onLoaded, broadcast, notify, randomId, log = console,
+  getConfig, setConfig, onLoaded, broadcast, notify, randomId,
+  restore = null, reportRestored = () => {}, log = console,
 }) {
   // Set when the pool file could not be read at startup: every write is suppressed so a
   // temporary access problem cannot be turned into an empty library on disk.
   let libraryUnsafeToWrite = false;
+  // DATA-001. Set when this session's settings or library came from a last good copy.
+  // The copy is a few hours older than the damaged file, so own-copies added since then
+  // have no record any more; the collector would read them as orphans and move them to
+  // wallpapers/.trash. Holding it for the session keeps them where they are until a
+  // restart, which is what a person who looks for them first will expect.
+  let restoredThisSession = false;
   // BUG-023. The same rule for config.json. A read failure is not an empty profile: the
   // app runs on defaults for this session and writes nothing over the file it could not
   // read, so a locked file or a bad sector cannot become "your settings are gone".
@@ -96,8 +105,27 @@ function createConfigStore({
     reportLibraryStoreProblem('unreadable');
   }
 
+  // DATA-001. The restore is decided inside configMod.load(); this wrapper does what
+  // has to follow it on every exit of loadFiles(), including the early ones a degraded
+  // pool takes: put a restored config.json back on disk (otherwise the damaged file
+  // would be found, and restored, again on the next start) and tell the user.
   function load() {
-    const loaded = configMod.load(configPath);
+    loadFiles();
+    const config = getConfig();
+    const cfgSource = config._configSource || {};
+    const poolSource = config._poolSource || {};
+    const configRestoredAt = cfgSource.state === 'restored' ? Number(cfgSource.restoredAt) || 0 : 0;
+    const poolRestoredAt = Number(poolSource.restoredAt) || 0;
+    if (configRestoredAt || poolRestoredAt) restoredThisSession = true;
+    if (configRestoredAt) {
+      writeConfigFile({ skipLibrary: true, keepInline: libraryUnsafeToWrite });
+      reportRestored('config', configRestoredAt);
+    }
+    if (poolRestoredAt) reportRestored('library', poolRestoredAt);
+  }
+
+  function loadFiles() {
+    const loaded = configMod.load(configPath, { restore });
     loaded.onlineSources = normalizeOnlineSources(loaded.onlineSources);
     setConfig(loaded);
     // DATA-006. Straight after the settings are in memory and before anything can reach
@@ -179,10 +207,15 @@ function createConfigStore({
     const repaired = poolConsistency.repairDanglingSlots(config.monitors, config.library);
     if (repaired) {
       log.error(`Ссылок в никуда убрано: ${repaired} (файлы обоев не тронуты).`);
-      notify('pool-consistency', 'journal.poolConsistency', {
-        titleKey: 'notify.poolConsistencyTitle',
-        bodyKey: 'notify.poolConsistencyBody',
-      });
+      // DATA-001. After a restore from a copy these are photos added after the copy was
+      // taken, not an interrupted save; the restore notice already explains them, and
+      // this one would blame a power cut.
+      if (!source.restoredAt) {
+        notify('pool-consistency', 'journal.poolConsistency', {
+          titleKey: 'notify.poolConsistencyTitle',
+          bodyKey: 'notify.poolConsistencyBody',
+        });
+      }
       saveSettings();
     }
 
@@ -190,7 +223,10 @@ function createConfigStore({
     // was rolled back may have added ids there since. Either way the merged result has
     // to reach the store BEFORE config.json is allowed to stop carrying it — and only
     // if that write is confirmed, which configMod.save now reports.
-    if (!source.storeExisted || source.mergedInline || source.broken || source.normalizeAdded) {
+    // DATA-001: a store restored from a copy is rewritten here too, so the damaged file is
+    // replaced by the healthy one (its bytes are kept in the .corrupt-*.bak beside it).
+    if (!source.storeExisted || source.mergedInline || source.broken || source.normalizeAdded
+      || source.restoredAt) {
       const ok = libraryStore.save(config.library, configPath, config.libraryTrash);
       if (ok) {
         writeConfigFile({ skipLibrary: true, keepInline: false });
@@ -314,6 +350,8 @@ function createConfigStore({
     poolWritable: () => !libraryUnsafeToWrite,
     // The collector and the folder move refuse to act on either kind of degraded copy.
     writesBlocked: () => libraryUnsafeToWrite || configUnsafeToWrite,
+    // The collector alone also stops after a restore from a copy (see restoredThisSession).
+    sweepBlocked: () => libraryUnsafeToWrite || configUnsafeToWrite || restoredThisSession,
     flush: () => libraryWriter.flush(),
     poolWritePending: () => libraryWriter.isPending(),
     dispose: () => libraryWriter.dispose(),

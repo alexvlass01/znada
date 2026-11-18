@@ -18,6 +18,14 @@
   }
   if (root) root.UnifiedGrid = api;
 })(typeof window !== 'undefined' ? window : null, function createApi(JustifiedLayout, VirtualWindow, VirtualGridDom) {
+  // The grids have no padding/border/scale transform. Their DOMRect is the actual
+  // flex width; clientWidth rounds up at fractional display scales (BUG-054).
+  const WIDTH_EPSILON = 1 / 64;
+  function measureWidth(grid) {
+    const width = grid.getBoundingClientRect?.().width;
+    return Number.isFinite(width) ? width : grid.clientWidth;
+  }
+
   const DEFAULTS = Object.freeze({
     gap: 10,
     minAspect: 0.65,
@@ -251,7 +259,7 @@
 
     function relayout(opts = {}) {
       if (!isValid()) return { anchorRestored: false };
-      const width = grid.clientWidth;
+      const width = measureWidth(grid);
       if (width < 40) return { anchorRestored: false };
       state.layoutWidth = width;
       const aspects = state.entries.map((entry, index) => aspectAt(index));
@@ -404,7 +412,7 @@
 
     function handleViewportResize(anchor) {
       if (!isValid()) return false;
-      const shrinking = state.layoutWidth > 0 && grid.clientWidth < state.layoutWidth - 0.5;
+      const shrinking = state.layoutWidth > 0 && measureWidth(grid) <= state.layoutWidth - WIDTH_EPSILON;
       if (shrinking) relayout({ anchor: anchor || null });
       else updateWindow(false);
       return shrinking;
@@ -424,10 +432,10 @@
     }
 
     function onObservedWidth() {
-      if (!isValid() || Math.abs(grid.clientWidth - state.layoutWidth) < 0.5 || widthFrame) return;
+      if (!isValid() || Math.abs(measureWidth(grid) - state.layoutWidth) < WIDTH_EPSILON || widthFrame) return;
       widthFrame = requestFrame(() => {
         widthFrame = 0;
-        if (!isValid() || Math.abs(grid.clientWidth - state.layoutWidth) < 0.5) return;
+        if (!isValid() || Math.abs(measureWidth(grid) - state.layoutWidth) < WIDTH_EPSILON) return;
         if (typeof options.onWidthChange === 'function') options.onWidthChange(state);
         else relayout({ anchor: typeof options.captureAnchor === 'function' ? options.captureAnchor(grid) : null });
       });
@@ -480,12 +488,12 @@
     relayout({ anchor: options.anchor || null });
     widthFrame = requestFrame(() => {
       widthFrame = 0;
-      if (!isValid() || Math.abs(grid.clientWidth - state.layoutWidth) < 0.5) return;
+      if (!isValid() || Math.abs(measureWidth(grid) - state.layoutWidth) < WIDTH_EPSILON) return;
       if (typeof options.onWidthChange === 'function') options.onWidthChange(state);
       else relayout({ anchor: typeof options.captureAnchor === 'function' ? options.captureAnchor(grid) : null });
     });
     return state;
   }
 
-  return { create, DEFAULTS };
+  return { create, DEFAULTS, measureWidth, WIDTH_EPSILON };
 });

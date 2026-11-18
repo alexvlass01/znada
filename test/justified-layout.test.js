@@ -42,7 +42,7 @@ const cssSafe = J.layoutRows(new Array(20).fill(1.6), 562, { gap: 10, targetHeig
 ok('CSS-rounded complete rows never overflow and wrap their final card',
   cssSafe.rows.slice(0, -1).every((row) => {
     const serializedWidth = cssSafe.boxes.slice(row.start, row.end)
-      .reduce((sum, box) => sum + Number(box.width.toFixed(2)), 0)
+      .reduce((sum, box) => sum + Math.round(Number(box.width.toFixed(2)) * 64) / 64, 0)
       + 10 * (row.end - row.start - 1);
     return serializedWidth <= 562 && 562 - serializedWidth < 0.05;
   }));
@@ -65,5 +65,18 @@ ok('every box height matches its row height', rich.rows.every((row) => {
 const emptyRows = J.layoutRows([], 500);
 ok('layoutRows on empty input yields no rows and zero height',
   emptyRows.rows.length === 0 && emptyRows.totalHeight === 0 && emptyRows.boxes.length === 0);
+
+// Chromium stores layout dimensions in 1/64 CSS px, after parsing our two-decimal
+// inline widths. Merely summing the decimal strings misses a wrapped last card.
+for (const width of [600, 600.125, 600.375, 681.625, 681.375, 721.984375]) {
+  const result = J.layoutRows(Array.from({ length: 60 }, (_, i) => 0.65 + (i * 37 % 211) / 100),
+    width, { gap: 10, targetHeight: 150 });
+  ok(`browser-rounded rows fit fractional container ${width}`, result.rows.every((row, index) => {
+    const used = result.boxes.slice(row.start, row.end)
+      .reduce((sum, box) => sum + Math.round(Number(box.width.toFixed(2)) * 64) / 64, 0)
+      + 10 * (row.end - row.start - 1);
+    return used <= width && (index === result.rows.length - 1 || width - used < 1 / 64);
+  }));
+}
 
 console.log('\nAll ' + passed + ' justified-layout tests passed.');

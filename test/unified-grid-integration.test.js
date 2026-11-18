@@ -71,12 +71,8 @@ ok('single and batch atomic assignment channels cross preload and main',
   && main.includes("ipcMain.handle('library-assign-record'")
   && preload.includes("ipcRenderer.invoke('library-assign-records'")
   && main.includes("ipcMain.handle('library-assign-records'"));
-const assignRecordsMainStart = main.indexOf("ipcMain.handle('library-assign-records'");
-const assignRecordsMainEnd = main.indexOf("ipcMain.handle('library-materialize'", assignRecordsMainStart);
-const assignRecordsMain = main.slice(assignRecordsMainStart, assignRecordsMainEnd);
-ok('existing-card batch assignment skips the unlimited live-folder discovery scan',
-  assignRecordsMain.includes('const needsDiscovery = records.some')
-  && assignRecordsMain.indexOf('if (needsDiscovery)') < assignRecordsMain.indexOf('folderState.listImages(liveFolderState)'));
+// CODE-001 2.3b: the old listImages source check is now an executable real-main
+// scenario in test/live-folder-index-main.test.js (known vs transient assignment).
 ok('transient action popups share one lazy materialization promise',
   renderer.includes('window.CardInteraction.createLazyPoolItem(it, materializeFn)'));
 // LIB-004 reversed this deliberately: removal now means "stop showing this in
@@ -91,12 +87,23 @@ ok('the renderer sends the path and kind of each card, since only some have a po
 ok('bulk removal crosses one batch IPC instead of looping config writes',
   preload.includes("ipcRenderer.invoke('library-remove-many'")
   && main.includes("ipcMain.handle('library-remove-many'"));
-const removeManyStart = main.indexOf("ipcMain.handle('library-remove-many'");
-const removeManyEnd = main.indexOf("ipcMain.handle('library-toggle-favorite'", removeManyStart);
-const removeMany = main.slice(removeManyStart, removeManyEnd);
+// CODE-001 2.2b: the bodies of the removal handlers live in src/library-removal.js; main.js
+// keeps one-line handlers. Behaviour of the module itself: test/library-removal.test.js,
+// end to end through the real main.js: test/library-orchestration.test.js and the rest.
+const removal = readSrc('src', 'library-removal.js');
+ok('the removal handlers in main.js hand over to the removal module',
+  main.includes("return libraryRemoval.removeMany(rawRecords, { senderIsMain: () => ipcAuthority.roleOf(e) === 'main' });")
+  && main.includes("ipcMain.handle('library-undo-remove', async (e, expectedToken) => libraryRemoval.undo(expectedToken));")
+  && main.includes("ipcMain.handle('library-hidden-list', () => libraryRemoval.hiddenList());")
+  && main.includes("ipcMain.handle('library-restore', async (e, rawPaths) => libraryRemoval.restore(rawPaths));")
+  && main.includes("ipcMain.handle('library-delete-forever', async (e, rawPaths) => libraryRemoval.deleteForever(rawPaths));"));
+const removeManyStart = removal.indexOf('function removeMany(');
+const removeManyEnd = removal.indexOf('function undoRemoval(', removeManyStart);
+const removeMany = removal.slice(removeManyStart, removeManyEnd);
 ok('bulk removal filters each slot once and never loops the single-item path',
-  removeMany.includes('slot.itemIds.filter((id) => !removedIds.has(id))')
-  && !removeMany.includes('removeFromLibrary('));
+  removeManyStart > 0 && removeManyEnd > removeManyStart
+  && removeMany.includes('slot.itemIds = slot.itemIds.filter((/** @type {string} */ id) => !removedIds.has(id));')
+  && !removeMany.includes('removeFromLibrary(') && !removeMany.includes('removeRecord('));
 ok('bulk removal never truncates the batch it was given',
   !removeMany.includes('rawRecords.slice(') && !removeMany.includes('records.slice('));
 // The whole point of LIB-004 is that a photo can be removed without deleting it.
@@ -105,11 +112,11 @@ ok('bulk removal never truncates the batch it was given',
 // negated, so it passed no matter what the removal code did: a test that could not fail,
 // standing guard over the invariant that removing a photo must not delete the file.
 ok('bulk removal marks folder-backed photos as removed instead of touching files',
-  removeMany.includes('folderState.setHidden(liveFolderState')
+  removeMany.includes('const hiddenResult = marks.setHidden(')
   && !/\bfs\.(unlink|rm|rmSync|unlinkSync)/.test(removeMany));
 ok('removal keeps enough state to be undone, including slot membership',
   removeMany.includes('undo.slots.push(')
-  && removeMany.includes('lastLibraryRemoval = ')
+  && removeMany.includes('lastRemoval = ')
   && main.includes("ipcMain.handle('library-undo-remove'"));
 ok('removed photos can still be found and put back later',
   main.includes("ipcMain.handle('library-hidden-list'")
@@ -131,15 +138,17 @@ ok('the success message counts what main reports, not what was requested',
 // Three reviews in a row found defects in main's orchestration while the suite was
 // green, because the modules it calls were correct in isolation. These read the two
 // handlers directly.
-const purgeStart = main.indexOf("ipcMain.handle('library-delete-forever'");
-const purgeEnd = main.indexOf("ipcMain.handle('library-restore'", purgeStart);
-const purge = main.slice(purgeStart, purgeEnd);
+const purgeStart = removal.indexOf('async function deleteForever(');
+const purgeEnd = removal.indexOf('function recordTargetLost(', purgeStart);
+const purge = removal.slice(purgeStart, purgeEnd);
 ok('deleting a file from disk never marks it visible again',
-  purgeStart > 0 && !purge.includes('setHidden(liveFolderState, Array.from(gone), false)')
+  purgeStart > 0 && purgeEnd > purgeStart
+  && !purge.includes('setHidden(liveFolderState, Array.from(gone), false)')
   && !/setHidden\([^)]*false\)/.test(purge));
 ok('deleting from disk goes to the recycle bin and only for already-removed paths',
-  purge.includes('shell.trashItem(')
-  && purge.includes("return { config, deleted: 0, error: 'not_removed' }")
+  purge.includes('await trashItem(target);')
+  && main.includes('trashItem: (p) => shell.trashItem(p),')
+  && purge.includes("return { config: getConfig(), deleted: 0, error: 'not_removed' }")
   && !/fs\.(unlink|rmSync|unlinkSync)/.test(purge));
 ok('a removed folder is hidden by prefix even when it has a pool record of its own',
   removeMany.includes("records.filter((r) => r.type === 'folder').map((r) => r.path)")
@@ -155,7 +164,6 @@ ok('bulk delete-from-disk skips folder cards, like the card menu does',
 // in the right order, and whether the result is written to disk is proved by
 // test/library-orchestration.test.js, which executes these handlers for real. Do not
 // treat a green result here as evidence that removal works.
-const assignment = readSrc('src', 'library-assignment.js');
 // CODE-001 2.2a: the funnel, the lock and "in use" live in src/library-service.js; main.js
 // keeps one-line wrappers. Behaviour of the module itself: test/library-service.test.js.
 const service = readSrc('src', 'library-service.js');
@@ -165,20 +173,15 @@ ok('there is one funnel into the pool, and it clears the removed state',
   && service.includes('clearRemovedState(srcPath) || revisionMoved')
   && (service.match(/library\.addPath\(/g) || []).length === 1
   && !main.includes('library.addPath('));
-// The funnel is worthless if another module creates pool entries beside it: the
-// assignment path did exactly that, so a photo could land in a slot while still
-// marked removed.
-ok('the assignment module creates pool entries through the same funnel',
-  assignment.includes("if (typeof options.addToPool === 'function') return options.addToPool(type, p, options.extra);")
-  && (assignment.match(/library\.addPath\(/g) || []).length === 1
-  && main.includes('{ ...options, addToPool }')
-  && main.includes('options: { ...(entry.options || {}), addToPool },'));
+// Single/batch funnel wiring and revival persistence are exercised through the
+// actual main/IPC in library-assignment-main.test.js, including existing records.
+// Searching for an options.addToPool string here cannot prove that it is called.
 // "In use" is asked of the playlist itself rather than rebuilt beside it. Building a
 // parallel list was how an assigned FOLDER contributed its own path but not the photos
 // it actually serves. Behaviour: test/library-invariants.test.js.
 ok('deleting from disk asks the playlist what is in use, not a parallel list',
-  purge.includes('const activePaths = () => inUsePaths();')
-  && main.includes('function inUsePaths() { return libraryService.inUsePaths(); }')
+  purge.includes('const activePaths = () => pool.inUsePaths();')
+  && main.includes('pool: libraryService,')
   && service.includes('resolved = playlist.resolveSlot(slotFor(monitorId, theme), getConfig().library, {')
   && purge.includes('allowed.has(pathKey(p)) && !before.has(pathKey(p))'));
 // One re-check after the dialog says nothing about the state between the second and
@@ -187,9 +190,9 @@ ok('deleting from disk asks the playlist what is in use, not a parallel list',
 // Behaviour proved in test/library-orchestration.test.js ("restored while the dialog
 // is open", "becomes active between two deletions").
 ok('each deletion is guarded at the moment it happens, inside the library lock',
-  purge.includes('return withLibraryLock(async () => {')
+  purge.includes('return pool.withLock(async () => {')
   && purge.includes('if (!deletable().has(key) || activePaths().has(key)) { skipped++; continue; }')
-  && main.includes('function withLibraryLock(fn) { return libraryService.withLock(fn); }')
+  && main.includes('pool: libraryService,')
   && service.includes('const result = mutationQueue.then(fn, fn);'));
 // Windows hands the same file back as C:/x/a.jpg and C:\x\a.jpg; comparing raw
 // lowercased strings let a guard miss the file it was meant to protect. One module
@@ -199,25 +202,35 @@ ok('paths are compared through one canonical key',
   && !purge.includes('.toLowerCase()')
   && readSrc('src', 'library.js').includes("require('./path-key')")
   && readSrc('src', 'playlist.js').includes("require('./path-key')")
-  && renderer.includes('window.ZnadaPathKey.pathKey(p)')
-  && main.includes('set.add(pathKey(im.path));'));
+  && renderer.includes('window.ZnadaPathKey.pathKey(p)'));
+// The hidden-cache canonical-key check runs behaviourally in live-folder-index.test.js.
+// It must match pathKey, even when a Windows path uses backslashes.
 ok('removal clears a matching legacy fallback and undo puts it back',
   removeMany.includes("for (const key of ['lightWallpaper', 'darkWallpaper'])")
-  && main.includes('for (const [key, value] of Object.entries(undo.legacy || {}))'));
+  && removal.includes('for (const [key, value] of Object.entries(undo.legacy || {}))'));
 ok('undo returns only what it removed instead of overwriting the slot',
-  main.includes('const undoRestoredIds = new Set();')
-  && main.includes('if (!undoRestoredIds.has(id) || present.has(id)) return;')
+  removal.includes('const undoRestoredIds = new Set();')
+  && removal.includes('if (!undoRestoredIds.has(id) || present.has(id)) return;')
+  && !removal.includes('slot.itemIds = snap.itemIds.slice();')
   && !main.includes('slot.itemIds = snap.itemIds.slice();'));
 ok('a restored watched folder is scanned, not just watched',
-  main.includes('requestLiveFolderRefresh(restoredFolders.map((it) => it.id));'));
+  removal.includes('liveFolders.refresh(restoredFolders.map((/** @type {any} */ it) => it.id));')
+  && main.includes('refresh: (ids) => requestLiveFolderRefresh(ids),'));
+// QA-028: removal/Undo/restore must retain manual-apply semantics in Game Mode.
+ok('the removal service applies wallpaper as a manual action',
+  main.includes('wallpaper: {\n    apply: () => applyForTheme(null, true),'));
 // Exact-path matching let a removed folder still be entered and list its children,
 // and restoring one of those children did nothing because the removal is on the parent.
 // "Inside that folder" has ONE answer now (library.isUnderPath), instead of a prefix
 // compare rewritten at each site — one of which called C:\photos2 a child of C:\photos.
 ok('a removed folder hides its descendants through the shared containment helper',
   main.includes('const visibleFolders = folders.filter((f) => !underRemoved(f));')
-  && (main.match(/library\.isUnderPath\(/g) || []).length >= 5
-  && !/key === dir \|\| key\.startsWith\(`\$\{dir\}\/`\)/.test(main));
+  // Counted over the main process (main.js and the removal module, CODE-001 2.2b), not
+  // weakened: before the move all five sites were in main.js.
+  && ((main.match(/library\.isUnderPath\(/g) || []).length
+    + (removal.match(/library\.isUnderPath\(/g) || []).length) >= 5
+  && !/key === dir \|\| key\.startsWith\(`\$\{dir\}\/`\)/.test(main)
+  && !/key === dir \|\| key\.startsWith\(`\$\{dir\}\/`\)/.test(removal));
 // The descendants must be known BEFORE the snapshot and the pool/slot removal — the
 // previous attempt found them afterwards and then did nothing with them. Executable
 // proof, including undo and the playlist, is in test/library-orchestration.test.js.
@@ -227,7 +240,8 @@ ok('a removed folder takes its already-materialized photos with it, collected up
   && removeMany.indexOf('const descendants = []') < removeMany.indexOf('for (const id of removedIds) library.removeItem')
   && removeMany.includes('for (const it of descendants) {'));
 ok('undo keeps the recovery entry when the copy could not be brought back',
-  main.includes('if (isOwnWallpaperCopy(item.path) && !restoreOwnCopyFile(item)) {'));
+  removal.includes('if (ownCopies.isOwnCopy(item.path) && !restoreOwnCopyFile(item)) {')
+  && main.includes('isOwnCopy: (p) => isOwnWallpaperCopy(p),'));
 // Not "refuse the click" — do not offer the action at all. A star, a bulk Assign or a
 // tag row in the trash is an offer to make a removed photo active again.
 ok('the trash offers no action that would quietly revive a photo',
@@ -255,7 +269,9 @@ ok('bulk delete-from-disk stays hidden without an image, and while the feature i
   && renderer.includes('CardActions.menuGroupsFor(subject, { physicalDelete: FEATURES.physicalDelete })')
   && readSrc('renderer', 'card-actions.js').includes("if (action.id === 'deleteForever' && !features.physicalDelete) return false;")
   && renderer.includes('await loadFeatureFlags();')
-  && main.includes("if (!physicalDeleteEnabled) return { config, deleted: 0, error: 'disabled' };")
+  && removal.includes("if (!physicalDeleteEnabled()) return { config: getConfig(), deleted: 0, error: 'disabled' };")
+  && main.includes('let physicalDeleteEnabled = false;')
+  && main.includes('physicalDeleteEnabled: () => physicalDeleteEnabled,')
   && preload.includes("getFeatureFlags: () => ipcRenderer.invoke('feature-flags')"));
 ok('the removed view keeps a folder a folder',
   renderer.includes("kind: im.type === 'folder' ? 'subfolder' : undefined,"));
@@ -270,7 +286,7 @@ ok('the settings handler uses the settings-only save',
   && !main.includes('poolCounts()'));
 
 ok('the count is in cards, not in internal bookkeeping rows',
-  main.includes('const affected = records.filter((rec) => (')
+  removal.includes('const affected = records.filter((rec) => (')
   && !renderer.includes('(res.removed || 0) + (res.hidden || 0)'));
 // Twice now a defect has survived a green suite because a SECOND, un-updated call
 // existed in the interface. Removal has to have exactly one way in: the older
@@ -338,9 +354,10 @@ ok('mixed folder/image views assign gallery indexes independently from grid inde
 ok('aspect refinement writes by virtual grid index',
   renderer.includes('virtual.setAspect(gridIndex, safe, { relayout: false })'));
 // One definition plus one call per local view (All, open folder, pool filters,
-// removed). A new view must reuse this adapter rather than grow a parallel path.
+// removed, identical files). A new view must reuse this adapter rather than grow a
+// parallel path.
 ok('every local view enters the shared local adapter',
-  (renderer.match(/renderEntriesLazily\(/g) || []).length === 5);
+  (renderer.match(/renderEntriesLazily\(/g) || []).length === 6);
 ok('the active resize target switches between local and Online grids',
   renderer.includes("return LIB.filter === 'online' ? $('#whGrid') : $('#libGrid');"));
 

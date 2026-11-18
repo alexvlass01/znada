@@ -1,6 +1,33 @@
 'use strict';
 // ONL-002. Favorites UI shares Library state and orchestration in this renderer.
-const FAVORITES = { entries: [], generation: 0, owner: 'anonymous' };
+const FAVORITES = { entries: [], generation: 0, owner: 'anonymous', mediaKinds: new Map(), kindFrame: null };
+
+function kindPendingForMediaBookmark(entry) {
+  return entry.kind === 'bookmark' && ['danbooru', 'gelbooru'].includes(entry.item.provider)
+    && !FAVORITES.mediaKinds.has(entry.key);
+}
+
+function favoriteKindMatches(entry, itemOf) {
+  // A bookmark key carries no media type, so until the card resolver answers an
+  // unresolved booru bookmark reads as a photo. Let it reach the resolver when
+  // Videos (BUG-080) or GIFs (BUG-086) are selected, even if Photos is off.
+  return ((KIND.on.includes('video') || KIND.on.includes('gif')) && kindPendingForMediaBookmark(entry))
+    || window.LibraryKind.matches(KIND.on, entryKind(entry, itemOf));
+}
+
+function rememberFavoriteMediaKind(entry, item, owner) {
+  if (owner !== FAVORITES.owner || !kindPendingForMediaBookmark(entry)) return;
+  const active = LIB.filter === 'favorite' && kindFilterActive();
+  const matched = active && favoriteKindMatches(entry, (row) => row.item);
+  FAVORITES.mediaKinds.set(entry.key, { format: item.format || '', animated: item.animated === true });
+  if (!active || FAVORITES.kindFrame !== null) return;
+  const classified = { ...entry, item };
+  if (matched === favoriteKindMatches(classified, (row) => row.item)) return;
+  FAVORITES.kindFrame = requestAnimationFrame(() => {
+    FAVORITES.kindFrame = null;
+    if (owner === FAVORITES.owner && LIB.filter === 'favorite' && kindFilterActive()) renderLibrary();
+  });
+}
 
 function bookmarkDisplayEntry(entry) {
   if (entry.kind === 'local') return { ...entry, path: entry.item.path };
@@ -13,6 +40,7 @@ function bookmarkDisplayEntry(entry) {
     tags: [...(meta.source_tags || []), ...(meta.user_tags || [])],
     author: meta.author || '', rating: meta.source_rating || '',
     purity: ({ general: 'sfw', suggestive: 'sketchy', explicit: 'nsfw' })[meta.source_rating] || '',
+    ...FAVORITES.mediaKinds.get(entry.key),
     page: record.source === 'wallhaven' ? `https://wallhaven.cc/w/${record.post_id}`
       : record.source === 'danbooru' ? `https://danbooru.donmai.us/posts/${record.post_id}`
         : record.source === 'gelbooru' ? `https://gelbooru.com/index.php?page=post&s=view&id=${record.post_id}` : '',
@@ -25,7 +53,10 @@ async function refreshFavorites() {
   let result;
   try { result = await window.api.favoritesList(); } catch { return false; }
   if (generation !== FAVORITES.generation) return false;
+  if (FAVORITES.owner !== result.owner) FAVORITES.mediaKinds.clear();
   FAVORITES.owner = result.owner;
+  const keys = new Set((result?.entries || []).map((entry) => entry.key));
+  for (const key of FAVORITES.mediaKinds.keys()) if (!keys.has(key)) FAVORITES.mediaKinds.delete(key);
   FAVORITES.entries = (result?.entries || []).map(bookmarkDisplayEntry);
   return true;
 }
@@ -33,7 +64,7 @@ async function refreshFavorites() {
 async function renderUnifiedFavorites(token) {
   if (!await refreshFavorites() || token !== allViewToken || LIB.filter !== 'favorite') return;
   renderLibRailTags();
-  const entries = libNarrow(FAVORITES.entries, (entry) => entry.item);
+  const entries = libNarrow(FAVORITES.entries, (entry) => entry.item, { kindMatches: favoriteKindMatches });
   sortItems(entries, { path: (entry) => entry.path, added: (entry) => entry.favoritedAt,
     id: (entry) => entry.key, size: (entry) => entry.item.size || 0 });
   const descriptors = entries.map((entry) => entry.kind === 'local'
@@ -125,6 +156,10 @@ async function openBookmark(item, card) {
   // Keep the stable key across IPC so main rechecks the current session/link
   // before use, just as it does for the card's Add button (the resolver memoizes).
   const descriptor = { ...result.item, bookmarkKey: item.bookmarkKey };
+  if (window.MediaKind.isOnlineVideo(descriptor)) {
+    openGalleryViewer([galleryItemFromInternet(descriptor)]);
+    return;
+  }
   const downloaded = result.item.provider === 'znada'
     ? await window.api.cloudAdd(descriptor) : await window.api.internetAdd(descriptor, '');
   if (downloaded?.error || !downloaded?.id) { toast(CardTransfer.errorMessage(t, downloaded?.error)); return; }
@@ -135,6 +170,7 @@ async function openBookmark(item, card) {
 
 function buildBookmarkCard(entry) {
   const item = entry.item;
+  const owner = FAVORITES.owner;
   const card = item.provider === 'znada' ? buildCloudCard(item) : buildInternetCard(item);
   card.dataset.bookmark = entry.key;
   // Existing card layout, hover, context menu and grid sizing remain in charge.
@@ -160,9 +196,11 @@ function buildBookmarkCard(entry) {
   window.api.bookmarkResolve(entry.key).then((result) => {
     if (!card.isConnected || !result || result.error === 'session_changed') return;
     if (result.item) {
+      rememberFavoriteMediaKind(entry, result.item, owner);
       Object.assign(item, result.item, { bookmarkKey: entry.key,
         tags: [...new Set([...(result.item.tags || []), ...(entry.record.metadata.user_tags || [])])] });
       if (item.width && item.height) setLibCardAspect(card, item.width / item.height);
+      if (window.MediaKind.isOnlineVideo(item)) window.MotionBadge.sync(card, window.MotionBadge.fromVideo(item), t);
       LIB.queryScope = null;
       renderLibRailTags();
     }
@@ -328,6 +366,9 @@ if (!window.api) {
       return { config: mock, restored };
     },
     libraryHiddenList: async () => ({ images: [] }),
+    libraryChecksState: async () => ({ enabled: true, running: false, checked: true, copies: 0, groups: 0, fresh: 0 }),
+    libraryChecksAck: async () => ({ enabled: true, running: false, checked: true, copies: 0, groups: 0, fresh: 0 }),
+    libraryDuplicates: async () => ({ groups: [] }),
     libraryRestore: async () => ({ config: mock, restored: 0 }),
     libraryDeleteForever: async () => ({ config: mock, deleted: 0, failed: 0, error: null }),
     libraryRefresh: async () => ({ config: mock, removed: 0 }),
@@ -377,6 +418,7 @@ if (!window.api) {
     itemReveal: async () => true,
     itemOpenSource: async () => true,
     itemCopyPath: async () => true,
+    detailsCopyTag: async () => true,
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
     cloudAdd: async (item) => { const iid = 'cl' + item.id; mock.library[iid] = { id: iid, type: 'image', path: 'C:/fake/' + item.id + '.jpg', source: 'lumina:' + item.id }; return { config: mock, id: iid, error: null }; },
@@ -465,6 +507,7 @@ if (!window.api) {
     onWallpaperTheme: () => {},
     onConfig: () => {},
     onLiveFoldersChanged: () => {},
+    onLibraryChecks: () => {},
     onMonitors: () => {},
     onUpdate: () => {},
   };
@@ -659,6 +702,14 @@ async function undoLastRemoval(token) {
   else renderLibrary();
   renderPreviews();
   renderHome();
+  if (res.failed > 0) {
+    const msg = res.restored > 0
+      ? [t('library.restoredToast', { n: res.restored }), t('library.undoFailed')].join(' · ')
+      : t('library.undoFailed');
+    if (token) toastAction(msg, t('library.undo'), () => undoLastRemoval(token), { deadline: true });
+    else toast(msg);
+    return;
+  }
   toast(t('library.undoneToast'));
 }
 
@@ -977,8 +1028,19 @@ function thumbWithMotion(path, w, h) {
     ? window.api.thumbInfo(path, w, h)
     : window.api.thumb(path, w, h).then((url) => ({ url }));
   return Promise.resolve(request)
-    .then((info) => ({ url: (info && info.url) || '', motion: (info && info.motion) || null }))
-    .catch(() => ({ url: '', motion: null }));
+    .then((info) => ({
+      url: (info && info.url) || '', motion: (info && info.motion) || null, video: (info && info.video) || null,
+    }))
+    .catch(() => ({ url: '', motion: null, video: null }));
+}
+
+// MEDIA-002. The chip a local card wears: ▶ and the length for a video, GIF for a picture
+// that moves, nothing otherwise. `moving` is separate on purpose — only a moving PICTURE
+// plays on hover; a video waits for MEDIA-003's player.
+function localCardMedia(info) {
+  const video = window.MotionBadge.fromVideo(info && info.video);
+  const moving = video ? null : window.MotionBadge.fromLocal(info && info.motion);
+  return { chip: video || moving, moving };
 }
 
 function renderStrip(theme) {
@@ -1279,6 +1341,8 @@ async function renderConfig() {
   setSwitch($('#swSingle'), !!config.singleWallpaper);
   setSwitch($('#swTelemetry'), !!config.telemetry);
   setSwitch($('#swGameMode'), !!config.gameModeBlock);
+  const swDuplicates = $('#swDuplicateCheck');
+  if (swDuplicates) setSwitch(swDuplicates, !config.libraryChecks || config.libraryChecks.duplicates !== false);
   setSwitch($('#swNotifyFail'), config.notifyOnFailure !== false);
   $('#selStyle').value = config.style || 'fill';
   const selVb = $('#selViewerBackground');
@@ -1323,6 +1387,117 @@ const LIB = {
 // Every "is this allowed here" check asks this one question, so a new view or a new
 // card type cannot quietly grow an action the trash is not supposed to have.
 function inRemovedView() { return LIB.filter === 'removed'; }
+// LIB-030. Identical files, opened from the notification or from Settings — never from the
+// rail (the owner did not want a permanent place for it in the Library). The cards are
+// ordinary library cards; only the list and its order are this view's own.
+function inDuplicatesView() { return LIB.filter === 'duplicates'; }
+
+// MEDIA-004. The Library's "Filters": which kinds of file show (photo, GIF, video). The
+// choice lives in the window only and is everything again after a restart (owner
+// 2026-11-07: a filter forgotten across a restart reads as "my photos are gone"; keeping
+// it is LIB-033). It applies in "All", "Favorites" and inside an opened folder — the
+// views of single files — and narrows the list in libNarrow, beside the search and tags,
+// before the one shared grid sees it.
+const KIND = {
+  on: window.LibraryKind.KINDS.slice(),
+  moving: new Map(),   // path key -> true (moves) / false (still) / null (unreadable for now)
+  asking: new Set(),   // path keys whose answer is on its way
+  queue: [],
+  pumping: false,
+  version: 0,          // bumped as answers arrive, so a tab switch back rebuilds
+};
+function kindFilterApplies() {
+  return LIB.filter === 'all' || LIB.filter === 'favorite' || (LIB.filter === 'folder' && !!LIB.folderPath);
+}
+function kindFilterActive() {
+  return kindFilterApplies() && window.LibraryKind.isNarrowed(KIND.on);
+}
+function entryKind(entry, itemOf) {
+  const item = itemOf(entry);
+  return window.LibraryKind.kindOf({
+    path: entry.path,
+    // A cloud favourite is a site card: no file here, its kind is what the site said.
+    local: !(entry.kind && entry.kind !== 'local'),
+    item,
+    folder: !!(item && item.type === 'folder'),
+  }, (p) => {
+    // Unreadable for now counts as a photo until the next change of the ticks asks again.
+    const moving = KIND.moving.get(normPathKey(p));
+    return moving === null ? false : moving;
+  });
+}
+// A file main could not read (a drive that was away, a locked file, a failed call) is asked
+// about again when the ticks change, so it does not stay a "photo" until a restart.
+function retryUnreadKinds() {
+  for (const [key, moving] of KIND.moving) if (moving === null) KIND.moving.delete(key);
+}
+// Ask main about the files whose kind is still unknown, a few hundred at a time, and
+// redraw after each answer: the grid fills in as the check goes (owner 2026-11-07).
+function scheduleKindCheck(list, itemOf) {
+  if (!window.LibraryKind.needsMotion(KIND.on)) return;
+  for (const entry of list) {
+    if (entryKind(entry, itemOf) !== null) continue;
+    const key = normPathKey(entry.path);
+    if (!key || KIND.asking.has(key)) continue;
+    KIND.asking.add(key);
+    KIND.queue.push(entry.path);
+  }
+  if (!KIND.pumping && KIND.queue.length) pumpKindCheck();
+}
+async function pumpKindCheck() {
+  KIND.pumping = true;
+  try {
+    while (KIND.queue.length) {
+      const chunk = KIND.queue.splice(0, 400);
+      let answers = [];
+      try { answers = await window.api.mediaMotionMany(chunk); } catch { answers = []; }
+      chunk.forEach((p, i) => {
+        const key = normPathKey(p);
+        KIND.asking.delete(key);
+        const answer = Array.isArray(answers) ? answers[i] : null;
+        KIND.moving.set(key, typeof answer === 'boolean' ? answer : null);
+      });
+      KIND.version += 1;
+      if (activePage === 'library' && kindFilterActive()) renderLibrary();
+    }
+  } finally {
+    KIND.pumping = false;
+  }
+}
+function renderLibFilterButton() {
+  const button = $('#libFilterToggle');
+  if (!button) return;
+  const applies = kindFilterApplies();
+  button.hidden = !applies;
+  const popover = $('#libFilterPopover');
+  if (!applies && popover && popover.matches(':popover-open')) popover.hidePopover();
+  const badge = $('#libFilterCount');
+  if (badge) badge.hidden = !window.LibraryKind.isNarrowed(KIND.on);
+  const on = new Set(KIND.on);
+  document.querySelectorAll('#libKindOptions input[data-kind]').forEach((input) => {
+    input.checked = on.has(input.dataset.kind);
+    // The last tick cannot be cleared, as with Online's sources.
+    input.disabled = input.checked && on.size === 1;
+  });
+}
+// One tick changed in "Filters": new choice, unreadable files asked again, selection cleared.
+function setKindTick(kind, checked) {
+  KIND.on = window.LibraryKind.toggle(KIND.on, kind, checked);
+  retryUnreadKinds();
+  clearSelection();
+  syncSelectionUI();
+  renderLibrary();
+}
+function initLibraryFilterMenu() {
+  const popover = $('#libFilterPopover');
+  if (!popover) return;
+  bindAnchoredPopover(popover, () => $('#libFilterToggle'));
+  $('#libKindOptions')?.addEventListener('change', (event) => {
+    const kind = event.target && event.target.dataset.kind;
+    if (kind) setKindTick(kind, event.target.checked);
+  });
+  renderLibFilterButton();
+}
 let libraryBatchAssignPending = false;
 let libraryBatchRemovePending = false;
 const folderInfoCache = new Map(); // path key -> shared promise for virtualized folder cards
@@ -1358,7 +1533,7 @@ let pendingLibraryScroll = null;
 // What counts as "the same list". The Online feed's own sub-view is part of it: search
 // results and cloud favourites are two lists behind one rail button.
 function libViewKey() {
-  const parts = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LibrarySearch.tagKey(LIB.tags)];
+  const parts = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LibrarySearch.tagKey(LIB.tags), KIND.on.join(',')];
   if (LIB.filter === 'online') parts.push(ONLINE.view || 'search');
   return parts.join('|');
 }
@@ -1440,7 +1615,7 @@ const LIB_RESIZE_SETTLE_MS = 120;
 // deliberately NOT persisted and NOT remembered past a real search. So the front page
 // always comes back curated on the next visit; the ordering the user keeps is the one
 // that applies to their searches.
-const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: false, nsfw: false }, resume: null, nsfwAvailable: false, searched: false, statusFetched: false, sortTouched: false, providerNames: {},
+const INTERNET = { q: '', kinds: window.LibraryKind.KINDS.slice(), sort: 'date_added', purity: { sfw: true, sketchy: false, nsfw: false }, resume: null, nsfwAvailable: false, searched: false, statusFetched: false, sortTouched: false, providerNames: {},
   // ONL-004. How many each site found for the current search, and whether the screen filter
   // ran (then no number is honest). Filled from main's reply, shown beside each site in Sources.
   totals: {}, sizeFiltered: false,
@@ -1528,7 +1703,7 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
       || rememberedAnchor
       || captureLibraryScrollAnchor(grid);
     const previousWidth = Number(grid.__virtual.layoutWidth) || 0;
-    const shrinking = previousWidth > 0 && grid.clientWidth < previousWidth - 0.5;
+    const shrinking = previousWidth > 0 && window.UnifiedGrid.measureWidth(grid) <= previousWidth - window.UnifiedGrid.WIDTH_EPSILON;
     const relayout = grid.__virtual.relayout({
       // Expand keeps the established c23e257 path. Shrink gets a bounded one-pass
       // plan from the logical anchor so it never materializes the false viewport
@@ -1541,7 +1716,7 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
     }
     return;
   }
-  const width = grid.clientWidth;
+  const width = window.UnifiedGrid.measureWidth(grid);
   if (width < 40) return;
   const cards = Array.from(grid.children).filter((el) => el.classList.contains('lib-card'));
   if (!cards.length) return;
@@ -1644,7 +1819,7 @@ function librarySignature() {
 // query + sort + content). When this is unchanged, a tab switch back to Library can
 // reuse the existing DOM (and its loaded thumbnails) instead of rebuilding/flashing.
 function libRenderKey() {
-  return [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LibrarySearch.tagKey(LIB.tags), librarySignature()].join('');
+  return [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', LibrarySearch.tagKey(LIB.tags), KIND.on.join(','), KIND.version, librarySignature()].join('');
 }
 
 
@@ -1750,6 +1925,12 @@ function libMatchesTag(item) {
 // has none yet: it has no tags, so only its name can match. The trash passes `withTag: false`
 // — it has no tag panel, so a tag chosen elsewhere must not empty it.
 function libNarrow(list, itemOf, options) {
+  // MEDIA-004. The kind of file first, so tag suggestions count only what can show.
+  if (!(options && options.withTag === false) && kindFilterActive()) {
+    scheduleKindCheck(list, itemOf);
+    const matches = options?.kindMatches || ((entry, readItem) => window.LibraryKind.matches(KIND.on, entryKind(entry, readItem)));
+    list = list.filter((entry) => matches(entry, itemOf));
+  }
   if (!(options && options.withTag === false)) {
     // Keep the actual section before narrowing, including photos expanded from folders.
     // Candidate counts must describe adding a tag to this result, not the global pool.
@@ -1767,7 +1948,7 @@ function libNarrow(list, itemOf, options) {
 }
 
 function setLibraryTag(tag, action = 'single') {
-  if (LIB.filter === 'online' || inRemovedView()) return;
+  if (LIB.filter === 'online' || inRemovedView() || inDuplicatesView()) return;
   const next = LibrarySearch.changeTags(LIB.tags, tag, action);
   if (LibrarySearch.tagKey(next) === LibrarySearch.tagKey(LIB.tags)) return;
   LIB.tags = next;
@@ -1786,7 +1967,7 @@ const LIB_SECTION_EMPTY = { favorite: 'library.emptyFavorites', folder: 'library
 // images here" over thousands of photos reads like they are gone. `unfiltered` is the
 // view's count before the search and the tag, and only views that apply them pass it.
 function libEmptyKey(emptyKey, unfiltered) {
-  const narrowed = LibrarySearch.parse(LIB.q).length > 0 || LIB.tags.length > 0;
+  const narrowed = LibrarySearch.parse(LIB.q).length > 0 || LIB.tags.length > 0 || kindFilterActive();
   return narrowed && unfiltered > 0 ? 'library.noMatches' : emptyKey;
 }
 
@@ -1867,10 +2048,10 @@ function renderLibQueryChips() {
     old.delete(tag);
   });
   old.forEach((button) => button.remove());
-  group.hidden = !LIB.tags.length || inRemovedView();
+  group.hidden = !LIB.tags.length || inRemovedView() || inDuplicatesView();
   group.setAttribute('aria-label', t('library.tags'));
   const clear = $('#libQueryClear');
-  if (clear) clear.hidden = !LIB.q && (!LIB.tags.length || inRemovedView());
+  if (clear) clear.hidden = !LIB.q && (!LIB.tags.length || inRemovedView() || inDuplicatesView());
   const search = $('#libSearch');
   if (search && search.value !== LIB.q) search.value = LIB.q;
 }
@@ -1887,7 +2068,7 @@ function renderLibRailTags() {
   const panel = $('#libTagsPanel');
   if (!box || !section || !empty || !panel) return;
   renderLibQueryChips();
-  const unsupported = LIB.filter === 'online' || inRemovedView();
+  const unsupported = LIB.filter === 'online' || inRemovedView() || inDuplicatesView();
   const search = $('#libSearch');
   const candidates = unsupported ? [] : LibrarySearch.tagCandidates(libQueryItems(), LIB.tags, LIB.q, search?.selectionStart);
   const counts = new Map(candidates.map(({ tag, count }) => [tag, count]));
@@ -2027,6 +2208,7 @@ function renderLibraryCore() {
   if (addFolder) {
     addFolder.hidden = !showAddFolder;
   }
+  renderLibFilterButton();
   if (LIB.filter === 'online') {
     allViewToken += 1; // invalidate any pending local folder/All response
     resetLibObservers($('#libGrid'));
@@ -2075,6 +2257,7 @@ function renderLibraryCore() {
   if (LIB.folderPath) { renderFolderView(tok); return; }
   if (LIB.filter === 'all') { renderAllView(tok); return; }
   if (inRemovedView()) { renderRemovedView(tok); return; }
+  if (inDuplicatesView()) { renderDuplicatesView(tok); return; }
   if (LIB.filter === 'favorite') { renderUnifiedFavorites(tok); return; }
 
   // "Папки" / favorite → plain pool-items grid (folders are entities here)
@@ -2237,7 +2420,8 @@ function renderBreadcrumbs() {
   if (!bar) return;
   // The trash is reached from the settings, not from the rail, so nothing in the rail
   // is highlighted while you are in it. Say where you are and offer the way out.
-  if (inRemovedView()) {
+  // Identical files (LIB-030) are reached the same way and say so the same way.
+  if (inRemovedView() || inDuplicatesView()) {
     bar.hidden = false;
     bar.innerHTML = '';
     const back = document.createElement('button');
@@ -2253,7 +2437,7 @@ function renderBreadcrumbs() {
     bar.appendChild(sep);
     const here = document.createElement('button');
     here.className = 'lib-crumb current';
-    here.textContent = t('library.removedTitle');
+    here.textContent = inDuplicatesView() ? t('libraryChecks.duplicatesTitle') : t('library.removedTitle');
     bar.appendChild(here);
     return;
   }
@@ -2446,7 +2630,7 @@ function scheduleLibraryResizeFinish(grid) {
         return;
       }
       const virtual = grid.__virtual;
-      if (virtual && Math.abs(grid.clientWidth - virtual.layoutWidth) >= 0.5) {
+      if (virtual && Math.abs(window.UnifiedGrid.measureWidth(grid) - virtual.layoutWidth) >= window.UnifiedGrid.WIDTH_EPSILON) {
         touchLibraryResizeAnchor();
         layoutLibGrid(grid, pending.anchor);
         scheduleLibraryResizeFinish(grid);
@@ -2532,12 +2716,13 @@ function rememberThumbUrl(key, info) {
 function applyThumbInfo(card, p, info) {
   card.dataset.thumbLoaded = 'true';
   card.classList.remove('missing');
-  card.style.backgroundImage = `url("${info.url}")`;
+  // MEDIA-002: a video Windows has no codec for has no frame; the card stays plain, with ▶.
+  card.style.backgroundImage = info.url ? `url("${info.url}")` : '';
   // BUG-035. The thumbnail is a still frame; the chip says the picture itself moves.
-  const moving = window.MotionBadge.fromLocal(info.motion);
-  window.MotionBadge.sync(card, moving, t);
+  const media = localCardMedia(info);
+  window.MotionBadge.sync(card, media.chip, t);
   // LIB-017. ...and it plays while the pointer rests on the card.
-  window.MotionHover.mark(card, p, !!moving);
+  window.MotionHover.mark(card, p, !!media.moving);
   if (info.width > 0 && info.height > 0) {
     const aspect = info.width / info.height;
     LIB.aspectCache.set(normPathKey(p), aspect);
@@ -2557,7 +2742,7 @@ function loadThumbInto(card) {
   const p = card.dataset.thumbPath;
   if (!p) return;
   const cached = cachedThumbUrl(normPathKey(p));
-  if (cached && cached.url) { applyThumbInfo(card, p, cached); return; }
+  if (cached && (cached.url || cached.video)) { applyThumbInfo(card, p, cached); return; }
   card.dataset.thumbLoading = 'true';
   const w = +card.dataset.thumbW || 320;
   const h = +card.dataset.thumbH || 200;
@@ -2566,9 +2751,10 @@ function loadThumbInto(card) {
     : window.api.thumb(p, w, h).then((url) => ({ url, width: 0, height: 0 }));
   request.then((info) => {
     const u = info && info.url;
-    if (!u) { card.classList.add('missing'); return; }
+    const video = (info && info.video) || null;
+    if (!u && !video) { card.classList.add('missing'); return; }
     rememberThumbUrl(normPathKey(p), {
-      url: u, width: info.width || 0, height: info.height || 0, motion: info.motion || null,
+      url: u || '', width: info.width || 0, height: info.height || 0, motion: info.motion || null, video,
     });
     applyThumbInfo(card, p, info);
   }).finally(() => { delete card.dataset.thumbLoading; });
@@ -2771,6 +2957,99 @@ async function renderRemovedView(tok) {
   if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText(libEmptyKey('library.removedEmpty', unfiltered)); }
   setLibViewHeader(entries.length);
   renderEntriesLazily(grid, entries, assignedIds(), tok);
+}
+
+// LIB-030. Identical files: every copy of one picture next to the others, the biggest
+// files first. The order IS the view — the copies of one picture have to stay side by
+// side — so the sort menu does not reorder it, and a search keeps or drops a whole group.
+// The cards are the ordinary ones, with the menu they have in "All": what to do with a
+// copy is the user's call, and this first version adds no action of its own.
+async function renderDuplicatesView(tok) {
+  const grid = $('#libGrid');
+  const empty = $('#libEmpty');
+  if (!grid) return;
+  let groups = [];
+  try { const res = await window.api.libraryDuplicates(); groups = (res && res.groups) || []; }
+  catch { groups = []; }
+  if (tok !== allViewToken || !inDuplicatesView()) return; // stale
+  const pooled = config.library || {};
+  const perGroup = groups.map((group) => (group.files || []).map((f) => {
+    const item = pooled[f.id] && pooled[f.id].type === 'image' ? pooled[f.id] : null;
+    return item
+      ? { path: f.path, item, id: item.id }
+      : { path: f.path, item: null, id: f.id, addedAt: f.addedAt, modifiedAt: f.modifiedAt, aspect: f.aspect };
+  }));
+  const unfiltered = perGroup.reduce((n, list) => n + list.length, 0);
+  // Name search only, like the trash: tags would split a group into what matches and
+  // what does not, and a copy shown without its twin is no longer a copy on screen.
+  const matched = new Set(libNarrow(perGroup.flat(), (en) => en.item, { withTag: false }));
+  const entries = perGroup.filter((list) => list.some((en) => matched.has(en))).flat();
+  if (empty) {
+    empty.hidden = entries.length > 0;
+    if (!entries.length) setLibEmptyText(libEmptyKey('libraryChecks.duplicatesEmpty', unfiltered));
+  }
+  setLibViewHeader(entries.length);
+  renderEntriesLazily(grid, entries, assignedIds(), tok);
+}
+
+function openDuplicatesView() {
+  LIB.filter = 'duplicates';
+  LIB.tags = []; LIB.tagMenu = ''; LIB.availableTags = null;
+  LIB.folderPath = '';
+  LIB.q = '';
+  const search = $('#libSearch');
+  if (search) search.value = '';
+  showPage('library');
+  renderLibrary();
+}
+
+// LIB-030. The background check, as the window shows it: a row in Settings that is always
+// there, and a notification that appears when — and only when — new copies were found.
+// Nothing about it stays on screen in the Library (owner, 2026-11-02).
+let libraryChecksSummary = null;
+let duplicatesNoticeTimer = null;
+
+function renderLibraryChecksRow(summary) {
+  const row = $('#duplicatesRow');
+  const text = $('#duplicatesSummary');
+  const open = $('#btnOpenDuplicates');
+  if (!row || !text || !open) return;
+  const s = summary || {};
+  row.hidden = s.enabled === false;
+  if (!s.checked) text.textContent = t('libraryChecks.checking');
+  else if (s.copies > 0) text.textContent = t('libraryChecks.copiesCount', { n: s.copies });
+  else text.textContent = t('libraryChecks.noneFound');
+  open.disabled = !(s.copies > 0);
+}
+
+// Shown once per new find. The window has a single notification slot (see toastAction),
+// so a notice never pushes out an Undo that is on screen: it waits for the slot. And it is
+// only counted as shown when someone could see it — a find made while Znada sat in the
+// tray is announced when the window comes back. `windowShown` comes from main, which knows
+// for certain whether the window is on screen; the page's own visibility is a second check,
+// not the only one.
+function announceDuplicates() {
+  if (duplicatesNoticeTimer) { clearTimeout(duplicatesNoticeTimer); duplicatesNoticeTimer = null; }
+  const s = libraryChecksSummary;
+  if (!s || !s.enabled || !(s.fresh > 0) || s.windowShown === false || document.hidden) return;
+  if ($('#toast')?.classList.contains('show')) {
+    duplicatesNoticeTimer = setTimeout(announceDuplicates, 3000);
+    return;
+  }
+  toastAction(t('libraryChecks.foundToast', { n: s.fresh }), t('libraryChecks.show'), async () => openDuplicatesView());
+  window.api.libraryChecksAck()
+    .then((next) => { if (next) applyLibraryChecks(next, { announce: false }); })
+    .catch(() => {});
+}
+
+function applyLibraryChecks(summary, { announce = true } = {}) {
+  const before = libraryChecksSummary;
+  libraryChecksSummary = summary || null;
+  renderLibraryChecksRow(libraryChecksSummary);
+  // A finished pass changes what the open view should list.
+  const finished = before && before.running && summary && !summary.running;
+  if (finished && inDuplicatesView() && !$('#viewLibrary').hidden && !document.hidden) renderLibrary();
+  if (announce) announceDuplicates();
 }
 
 // The only action that touches the user's files. Main asks for confirmation in a
@@ -3082,7 +3361,7 @@ function galleryItemFromLibrary(it) {
     kind: 'library',
     key: `library:${it.id}`,
     title: (window.CardCaption && window.CardCaption.text(it)) || baseName(it.path),
-    subtitle: t('viewer.local'),
+    subtitle: t(window.MediaKind.isVideoPath(it.path) ? 'video.local' : 'viewer.local'),
     path: it.path,
     raw: it,
   };
@@ -3093,7 +3372,7 @@ function galleryItemFromPath(p) {
     kind: 'path',
     key: `path:${normPathKey(p)}`,
     title: baseName(p),
-    subtitle: t('viewer.localFolder'),
+    subtitle: t(window.MediaKind.isVideoPath(p) ? 'video.localFolder' : 'viewer.localFolder'),
     path: p,
     raw: { path: p },
   };
@@ -3166,8 +3445,12 @@ function openGalleryFromCard(card, fallbackItem) {
 }
 
 function openGalleryViewer(items, index = 0) {
-  const list = (items || []).filter(Boolean);
+  const all = (items || []).filter(Boolean);
+  // MEDIA-003. Preserve mixed photo/GIF/video order and the clicked item's index.
+  const clicked = all[index];
+  const list = all;
   if (!list.length) return;
+  index = Math.max(0, list.indexOf(clicked));
   closeLibPopup();
   hideOnlineTagSuggest();
   // Окно берётся ДО поиска записей в пуле, а не после. Ограничение в 500 элементов
@@ -3194,7 +3477,7 @@ function openGalleryViewer(items, index = 0) {
 function galleryPoolRecord(entry, pooledByPath = null) {
   if (!entry || !entry.raw) return null;
   if (entry.kind === 'cloud' || entry.kind === 'internet') {
-    return OnlineAdd.pooledItem((config && config.library) || {}, entry.kind, entry.raw);
+    return OnlineAdd.pooledItem((config && config.library) || {}, entry.kind, entry.raw, ONLINE_HAVE);
   }
   // A local picture is not a different kind of thing because the viewer is showing it.
   // Without this every local entry crossed the window boundary as added:false/pooled:null
@@ -3670,6 +3953,7 @@ async function assignLibraryRecords(records, monitorId, th) {
     ok: !!(res && res.ok),
     assigned: Number(res && res.assigned) || 0,
     failed: Number(res && res.failed) || 0,
+    videos: Number(res && res.videos) || 0, // MEDIA-002: skipped, never assigned
     error: (res && res.error) || null,
     warning: (res && res.warning) || null,
   };
@@ -3767,14 +4051,15 @@ function openMassAssignMenu(anchor) {
     // transient path is harmless; materialization starts only after this slot pick.
     try {
       const result = await assignLibraryRecords(records, monitorId, th);
-      const { assigned, failed } = result;
+      const { assigned, failed, videos } = result;
       if (pop.isConnected && $('#libPopup') === pop) closeLibPopup();
       if (!failed && assigned === records.length) removeSelectionSnapshot(records);
       syncSelectionUI();
       refreshAssignedHighlights(); // in place — don't rebuild the grid / reset scroll
       renderPreviews();
       renderHome();
-      toast(failed ? t(assigned ? 'library.assignPartialToast' : 'library.assignMissingToast') : t('library.assignedToast'));
+      if (videos && !failed) toast(t(assigned ? 'video.skippedOnAssign' : 'video.notWallpaper'));
+      else toast(failed ? t(assigned ? 'library.assignPartialToast' : 'library.assignMissingToast') : t('library.assignedToast'));
     } finally {
       libraryBatchAssignPending = false;
       pop.removeAttribute('aria-busy');
@@ -4435,9 +4720,17 @@ async function openCardDetails(subject, record = null) {
       const chips = document.createElement('div');
       chips.className = 'details-tags';
       for (const tag of row.values) {
-        const chip = document.createElement('span');
+        // META-005. The chip copies this tag and nothing else: no search, no edit.
+        // A button is what the keyboard already knows how to press (Enter and Space).
+        const chip = document.createElement('button');
+        chip.type = 'button';
         chip.className = 'details-tag';
         chip.textContent = tag;
+        chip.setAttribute('aria-label', t('details.copyTag', { tag }));
+        chip.addEventListener('click', (event) => {
+          event.stopPropagation();
+          copyDetailsTag(chip, tag);
+        });
         chips.appendChild(chip);
       }
       if (row.hidden > 0) {
@@ -4506,9 +4799,27 @@ async function openCardDetails(subject, record = null) {
     }
     const moving = window.MotionBadge.fromLocal(meta.motion);
     if (moving) fill('type', window.MotionBadge.describe(t, moving));
+    // MEDIA-002. A video's length, or no row at all when Windows could not say.
+    if (pendingRows.duration) {
+      const length = meta.video ? window.MotionBadge.formatDuration(meta.video.durationMs) : '';
+      if (length) fill('duration', length);
+      else pendingRows.duration.remove();
+    }
     fill('size', formatFileSize(meta.size));
     fill('modified', formatDetailsDate(meta.modifiedAt));
   } catch { /* metadata is optional; the sheet stays usable without it */ }
+}
+
+// META-005. The chip keeps its text. A failed write says so; a second click copies again.
+// The button is not disabled: disabling the focused control would drop the keyboard
+// out of the sheet.
+function copyDetailsTag(chip, tag) {
+  Promise.resolve(window.api.detailsCopyTag(tag)).then((ok) => {
+    if (!chip.isConnected) return;
+    toast(t(ok ? 'details.tagCopied' : 'details.tagCopyFailed'));
+  }).catch(() => {
+    if (chip.isConnected) toast(t('details.tagCopyFailed'));
+  });
 }
 
 // ONL-009. One menu for every card in this window, and the same one the fullscreen
@@ -4582,7 +4893,7 @@ async function addCardToLibrary(descriptor) {
   if (!descriptor || descriptor.kind === 'local') return null;
   return addOnlineItem(descriptor.kind, descriptor.item, () => (descriptor.kind === 'cloud'
     ? window.api.cloudAdd(descriptor.item)
-    : window.api.internetAdd(descriptor.item, INTERNET.q)));
+    : downloadInternetCard(descriptor.item, INTERNET.q)));
 }
 
 function openCardMenu(subject, card, point = null) {
@@ -4604,6 +4915,16 @@ function openCardMenu(subject, card, point = null) {
       if (subject.kind === 'local') {
         openAssignMenu(current, card, () => ensurePoolItemForRecord(record), {
           assign: true, tags: false, remove: false, assignmentRecord: record,
+        });
+        return;
+      }
+      // LIB-031. The user already has this picture — downloaded earlier, or the same
+      // file in one of their folders. It is that photo, so it is assigned like one: from
+      // the file on their disk, with no download.
+      if (subject.inLibrary && subject.path) {
+        const own = localSelectionRecord(subject.path, 'image', subject.id || null);
+        openAssignMenu(poolItemForRecord(own), card, () => ensurePoolItemForRecord(own), {
+          assign: true, tags: false, remove: false, assignmentRecord: own,
         });
         return;
       }
@@ -4639,7 +4960,9 @@ function openCardMenu(subject, card, point = null) {
         // folder's current photo can have no removable placement of its own.
         confirm: groups.some((group) => group.some((action) => action.id === 'removeFromSlot')),
       })
-      : removeOnlineFromLibrary(config.library ? config.library[subject.id] : null)),
+      // LIB-031. A photo found in the user's folder has a path and maybe no record yet;
+      // the removal line takes either, as it does for the same photo in the Library.
+      : removeOnlineFromLibrary({ id: subject.id, path: subject.path, type: 'image' })),
     restore: () => restorePaths([subject.path]),
     deleteForever: () => deleteForever([subject.path]),
     saveAs: () => runCardTransfer('saveAs', descriptor),
@@ -4680,7 +5003,7 @@ function bindLocalCardContextMenu(card, record) {
 // two link actions: there is no page, and the link it does have expires.
 function bindOnlineCardContextMenu(card, kind, item) {
   CardMenu.bind(card, async (point) => {
-    const pooled = OnlineAdd.pooledItem((config && config.library) || {}, kind, item);
+    const pooled = OnlineAdd.pooledItem((config && config.library) || {}, kind, item, ONLINE_HAVE);
     const subject = kind === 'cloud'
       ? CardActions.cloudSubject(item, pooled)
       : CardActions.internetSubject(item, pooled);
@@ -5111,6 +5434,7 @@ function initLibrary() {
   // menu, with quick buttons for them under the search.
   bindSizeFilterControls();
   initOnlineFilterMenu();
+  initLibraryFilterMenu();
 
   document.querySelectorAll('.wh-purity-cb').forEach(cb => {
     cb.addEventListener('change', () => {
@@ -5127,6 +5451,7 @@ function initLibrary() {
         INTERNET.purity[p] = true;
         return;
       }
+      contentBlur.reset();
       renderOnlineQuickFilters();
       persistOnlineParams();
       if (ONLINE.loaded) doOnlineSearch(true);
@@ -5286,6 +5611,16 @@ function initOnlineFilterMenu() {
       placeAnchoredPopover(popover, button);
     });
   });
+  $('#onlineKindOptions')?.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!input.dataset.kind) return;
+    const next = window.LibraryKind.toggle(INTERNET.kinds, input.dataset.kind, input.checked);
+    input.checked = next.includes(input.dataset.kind);
+    if (next.join() === INTERNET.kinds.join()) return;
+    INTERNET.kinds = next;
+    renderOnlineQuickFilters();
+    void doOnlineSearch(true);
+  });
   $('#onlineQuickScreen')?.addEventListener('click', () => saveSizeFilter({ enabled: !sizeFilterState().enabled }));
   $('#onlineQuickPins')?.addEventListener('change', (event) => {
     const key = event.target.dataset.pin;
@@ -5344,7 +5679,8 @@ function fitOnlineQuickFilters(active = OnlineQuickFilters.activeKeys(onlineQuic
     shown = pinned.slice(0, fit);
     pinned.slice(fit).forEach((button) => { button.hidden = true; });
   }
-  const count = OnlineQuickFilters.hiddenActiveCount(active, shown.map((button) => button.dataset.quick));
+  const count = OnlineQuickFilters.hiddenActiveCount(active, shown.map((button) => button.dataset.quick))
+    + Number(window.LibraryKind.isNarrowed(INTERNET.kinds));
   const badge = $('#onlineFilterCount');
   if (badge) { badge.hidden = !count; badge.textContent = String(count); }
   const toggle = $('#whFilterToggle');
@@ -5653,32 +5989,47 @@ function applyOnlineSourceUI(sources) {
 // words on screen). The checkbox is not touched: the user's choice of sites stays.
 const ONLINE_PAUSE_MARK = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">'
   + '<rect x="4" y="3" width="2.6" height="10" rx="1"/><rect x="9.4" y="3" width="2.6" height="10" rx="1"/></svg>';
+// BUG-070. The same place for a site that did not answer: a small warning sign, the reason on hover.
+const ONLINE_FAIL_MARK = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">'
+  + '<path d="M8 1.5a1 1 0 0 1 .87.5l6 10.5A1 1 0 0 1 14 14H2a1 1 0 0 1-.87-1.5l6-10.5A1 1 0 0 1 8 1.5Zm0 4a.8.8 0 0 0-.8.8v3a.8.8 0 0 0 1.6 0v-3A.8.8 0 0 0 8 5.5Zm0 6a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8Z"/></svg>';
 function renderOnlineSourceCounts() {
   const host = $('#onlineSourceOptions');
   if (!host) return;
   const searching = LIB.filter === 'online' && ONLINE.view === 'search';
+  let anyFailed = false;
   host.querySelectorAll('.online-source-count').forEach((el) => {
     const state = searching ? OnlineFound.sourceState({
       totals: INTERNET.totals, paused: INTERNET.paused, id: el.dataset.countFor,
       sizeFiltered: INTERNET.sizeFiltered, locale: detailsLocale(),
     }) : null;
     const paused = !!(state && state.paused);
+    // BUG-070. A paused site was not asked, so it cannot also have failed.
+    const failed = searching && !paused && !!(INTERNET.failed && INTERNET.failed[el.dataset.countFor]);
+    if (failed) anyFailed = true;
     // Two texts: two tags and "Top" are not "too many tags" — the sort is the extra word.
-    const why = paused ? t(state.sortHelps ? 'online.sourcePausedSort' : 'online.sourcePaused') : '';
+    const why = paused ? t(state.sortHelps ? 'online.sourcePausedSort' : 'online.sourcePaused')
+      : (failed ? t('online.sourceFailed') : '');
     if (paused) el.innerHTML = ONLINE_PAUSE_MARK;
+    else if (failed) el.innerHTML = ONLINE_FAIL_MARK;
     else el.textContent = state ? state.text : '';
-    el.title = paused ? why : (state ? state.exact : '');
+    el.title = why || (state ? state.exact : '');
     if (typeof el.setAttribute === 'function') {
-      if (paused) { el.setAttribute('role', 'img'); el.setAttribute('aria-label', why); }
+      if (why) { el.setAttribute('role', 'img'); el.setAttribute('aria-label', why); }
       else { el.removeAttribute('role'); el.removeAttribute('aria-label'); }
     }
     const row = typeof el.closest === 'function' ? el.closest('.online-source-option') : null;
     if (row) {
       row.classList.toggle('paused', paused);
+      row.classList.toggle('failed', failed);
       const name = row.querySelector('.online-source-name');
       if (name) name.title = why;
     }
   });
+  // BUG-070. A dot on the button that opens Sources, so the mark is findable with the menu
+  // closed. On the row, not on one button: CSS puts it on "Sources" while that button is
+  // shown, and on "Filters" when the user has taken "Sources" off the row.
+  const bar = $('#whFilterToggle');
+  if (bar && bar.parentElement) bar.parentElement.classList.toggle('online-sources-failed', anyFailed);
 }
 
 // A rail section's title is never cut. Measured first as it would normally sit — one line,
@@ -6210,8 +6561,11 @@ function attachOnlineAddButton(card, kind, item, addFn) {
   undoGlyph.textContent = '−';
   btn.append(glyph, undoGlyph);
 
+  // LIB-031. Asked once per drawn card, in one batch with its neighbours.
+  const video = kind === 'internet' && window.MediaKind.isOnlineVideo(item);
+  if (!video) ONLINE_HAVE.want(kind, item);
   const sync = (pool) => {
-    const state = OnlineAdd.buttonState(pool || (config && config.library) || {}, kind, item, ONLINE_ADDING);
+    const state = OnlineAdd.buttonState(pool || (config && config.library) || {}, kind, item, ONLINE_ADDING, ONLINE_HAVE);
     glyph.textContent = state.glyph;
     btn.classList.toggle('added', state.added);
     btn.classList.toggle('adding', state.adding);
@@ -6219,6 +6573,7 @@ function attachOnlineAddButton(card, kind, item, addFn) {
     btn.title = t(state.titleKey);
     btn.setAttribute('aria-label', btn.title);
     btn.setAttribute('aria-pressed', state.added ? 'true' : 'false');
+    if (kind === 'internet' && window.MediaKind.isOnlineVideo(item)) internetVideoDownloads?.sync(card, item);
     return state;
   };
   // Re-derivable from the pool at any moment. An Undo, or a second card showing the same
@@ -6251,6 +6606,22 @@ function attachOnlineAddButton(card, kind, item, addFn) {
 // picture and not per button: the grid redraws its cards as it scrolls, and a card drawn
 // in the middle of a download has to show the same spinner as the one that started it.
 const ONLINE_ADDING = new Map();
+let internetVideoDownloads;
+
+function downloadInternetCard(item, query) {
+  if (!window.MediaKind.isOnlineVideo(item)) return window.api.internetAdd(item, query);
+  internetVideoDownloads ||= window.createOnlineVideoDownloads(window.api, t);
+  return internetVideoDownloads.download(item, query, refreshOnlineAddedState);
+}
+
+// LIB-031. Which online cards are photos the user already has as a file, wherever it came
+// from (renderer/online-have.js). The button and the menu read it through
+// OnlineAdd.pooledItem, so such a card looks and acts exactly like a downloaded one.
+const ONLINE_HAVE = OnlineHave.create({
+  ask: (cards) => (window.api && typeof window.api.onlineHaveMany === 'function'
+    ? window.api.onlineHaveMany(cards) : Promise.resolve({})),
+  onChange: () => refreshOnlineAddedState(),
+});
 
 // Every online add in this window goes through here: the "+", the menu's "Add" and the
 // download behind "Assign". A second request for a picture already on its way gets the
@@ -6279,6 +6650,7 @@ async function addOnlineToLibrary(download) {
   let res;
   try { res = await download(); } catch { res = { error: 'download' }; }
   if (res && res.config) config = res.config;
+  if (res?.error === 'cancelled') return null;
   if (!res || res.error) { toast(CardTransfer.errorMessage(t, res && res.error)); return null; }
   toast(t('online.added'));
   refreshPoolDependentChrome();
@@ -6296,6 +6668,8 @@ async function removeOnlineFromLibrary(pooled) {
   config = res.config || config;
   refreshPoolDependentChrome();
   toastRemoved(res.affected, res.undo && res.undo.token, res.evicted);
+  // LIB-031. A photo found in a folder is no longer "already yours" once removed.
+  ONLINE_HAVE.refresh();
   return true;
 }
 
@@ -6311,12 +6685,10 @@ function refreshPoolDependentChrome() {
 // Every mounted online card re-asks the pool. One index for the whole pass: otherwise
 // each card would walk the entire library.
 function refreshOnlineAddedState() {
-  const grid = $('#whGrid');
-  if (!grid) return;
   const index = OnlineAdd.sourceIndex((config && config.library) || {});
-  grid.querySelectorAll('.lib-card').forEach((card) => {
-    if (typeof card.__syncOnlineAdd === 'function') card.__syncOnlineAdd(index);
-  });
+  for (const grid of [$('#whGrid'), $('#libGrid')]) {
+    grid?.querySelectorAll('.lib-card').forEach((card) => card.__syncOnlineAdd?.(index));
+  }
 }
 
 function buildCloudCard(item) {
@@ -6436,6 +6808,10 @@ async function doOnlineSearch(reset) {
   const generation = ++ONLINE.generation;
   ONLINE.view = 'search';
   INTERNET.searchError = '';
+  // BUG-070. Which sites did not answer this search. Shown as a mark beside the site in
+  // Sources, not as a line over the feed; a newer page or search starts clean, as the line did.
+  INTERNET.failed = {};
+  INTERNET.searchErrorQuiet = false;
   applyFavToggleUI();
   const qEl = $('#whQuery'); INTERNET.q = (qEl && qEl.value || '').trim();
   INTERNET.sortTouched = OnlineBrowse.sortTouchedAfterSearch(INTERNET.q, INTERNET.sortTouched);
@@ -6491,7 +6867,7 @@ async function doOnlineSearch(reset) {
 async function loadInternetResults(generation) {
   let res;
   const browse = OnlineBrowse.isBrowse(INTERNET);
-  try { res = await window.api.internetSearch({ q: INTERNET.q, sort: INTERNET.sort, purity: INTERNET.purity, resume: INTERNET.resume, browse }); }
+  try { res = await window.api.internetSearch({ q: INTERNET.q, sort: INTERNET.sort, purity: INTERNET.purity, resume: INTERNET.resume, browse, kinds: INTERNET.kinds }); }
   catch { res = { error: 'network' }; }
   if (!onlineSearchIsCurrent(generation)) return [];
   INTERNET.searched = true;
@@ -6501,8 +6877,15 @@ async function loadInternetResults(generation) {
   if (failedSources.length) {
     const names = INTERNET.providerNames || {};
     INTERNET.searchError = t('online.sourcesFailed', { sources: failedSources.map((id) => names[id] || id).join(', ') });
+    // BUG-070. Named per site, so the feed can stay quiet while it has cards: the mark in
+    // Sources says who is missing. The line itself is kept for an empty feed.
+    INTERNET.failed = { ...(INTERNET.failed || {}) };
+    failedSources.forEach((id) => { INTERNET.failed[id] = true; });
+    INTERNET.searchErrorQuiet = true;
   } else if (!res || res.error) {
     INTERNET.searchError = t('online.error', { e: 'network' });
+    // A failure no site can be blamed for has no mark to show, so it keeps the line.
+    INTERNET.searchErrorQuiet = false;
   }
   if (res && typeof res.nsfwAvailable !== 'undefined') { INTERNET.nsfwAvailable = !!res.nsfwAvailable; updatePurityToggle(); }
   // Main records one strike per failed provider even when the merged round is an error.
@@ -6555,7 +6938,11 @@ function finalizeOnlineFeed() {
   // LIB-014 stage 3. Empty because every chosen site sat the search out is not "nothing found":
   // the feed says why and what to do. A real failure still wins, as it did.
   const empty = INTERNET.allPaused ? t('online.allSourcesPaused') : t('online.noResults');
-  if (note) note.textContent = INTERNET.searchError || (n ? '' : empty);
+  // BUG-070 (owner, 2026-11-07: "Да, так"). With cards on screen a site that did not answer
+  // is shown by its mark in Sources, and the feed does not move for it (DESIGN-010m). An empty
+  // feed still says why it is empty.
+  const loud = INTERNET.searchError && !(n && INTERNET.searchErrorQuiet);
+  if (note) note.textContent = loud ? INTERNET.searchError : (n ? '' : empty);
   if ($('#onlineSourceOptions')) renderOnlineSourceCounts();
   const hasMore = !!INTERNET.resume;
   // ONL-003. The button is now the FALLBACK, not the way. It stays out of sight while
@@ -6678,11 +7065,12 @@ function buildInternetCard(item) {
   card.__galleryItem = galleryItemFromInternet(item);
   contentBlur.bind(card, { item });
   setInternetCardThumbnail(card, item);
-  // BUG-035. The same chip as a local card, from what the site says about the file.
-  window.MotionBadge.sync(card, window.MotionBadge.fromSite(item), t);
+  // Use the Library's chip for both animations and videos.
+  const motion = window.MediaKind.isOnlineVideo(item) ? window.MotionBadge.fromVideo(item) : window.MotionBadge.fromSite(item);
+  window.MotionBadge.sync(card, motion, t);
   const label = [(window.CardCaption && window.CardCaption.text(item)), item.category].filter(Boolean).join(' · ');
   card.setAttribute('aria-label', label || t('online.source'));
-  attachOnlineAddButton(card, 'internet', item, () => window.api.internetAdd(item, INTERNET.q));
+  attachOnlineAddButton(card, 'internet', item, () => downloadInternetCard(item, INTERNET.q));
   bindOnlineCardContextMenu(card, 'internet', item);
   attachBookmarkStar(card, 'internet', item);
   card.addEventListener('mouseenter', () => setLibStatus(label || t('online.source')));
@@ -6746,12 +7134,16 @@ function showPage(name) {
 // read out of the config, because the answer includes whether that place is reachable
 // right now — a folder on a drive that is not plugged in is a different state from a
 // folder that is simply the default one.
+let mediaFolderRowRevision = 0;
 async function renderMediaFolderRow(known = null) {
   const row = $('#mediaFolderPath');
   if (!row) return;
+  const revision = ++mediaFolderRowRevision;
   let state = known;
   if (!state) {
     try { state = await window.api.mediaFolderState(); } catch { state = null; }
+    // A newer render may already have received the move result from the dialog.
+    if (revision !== mediaFolderRowRevision) return;
   }
   const label = MediaFolder.pathLabel(state);
   row.textContent = label.key ? t(label.key) : label.text;
@@ -7277,7 +7669,9 @@ function renderHomeRecentItems(items, version) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'home-recent-card';
-    card.title = t('home.recentAssignHint');
+    // MEDIA-003: a video here cannot be assigned, so its click opens it in the shared viewer.
+    const isVideo = window.MediaKind.isVideoPath(item.path);
+    card.title = isVideo ? t('video.openHint') : t('home.recentAssignHint');
     card.dataset.pathKey = normPathKey(item.path);
     card.style.setProperty('--ar', '1.6'); // real aspect fills in from thumbAspects below
 
@@ -7294,6 +7688,7 @@ function renderHomeRecentItems(items, version) {
     card.appendChild(preview);
     contentBlur.bind(card, { path: item.path }, preview, true);
     card.addEventListener('click', () => {
+      if (isVideo) { openGalleryViewer([galleryItemFromPath(item.path)]); return; }
       // Open the assign menu on the existing card; an ephemeral folder image is
       // materialized into the pool only when the user commits an action in the menu
       // (so merely opening it no longer reorders "recently added" or leaves strays).
@@ -7308,12 +7703,12 @@ function renderHomeRecentItems(items, version) {
     grid.appendChild(card);
 
     thumbWithMotion(item.path, 360, 220).then((info) => {
-      if (version !== homeRecentRenderVersion || !card.isConnected || !info.url) return;
-      preview.style.backgroundImage = `url("${info.url}")`;
+      if (version !== homeRecentRenderVersion || !card.isConnected || (!info.url && !info.video)) return;
+      if (info.url) preview.style.backgroundImage = `url("${info.url}")`;
       preview.classList.add('loaded');
-      const moving = window.MotionBadge.fromLocal(info.motion);
-      window.MotionBadge.sync(preview, moving, t);
-      window.MotionHover.mark(preview, item.path, !!moving); // LIB-017
+      const media = localCardMedia(info); // MEDIA-002
+      window.MotionBadge.sync(preview, media.chip, t);
+      window.MotionHover.mark(preview, item.path, !!media.moving); // LIB-017
     });
   });
 
@@ -7576,6 +7971,25 @@ async function init() {
     showPage('library');
     renderLibrary();
   });
+
+  // ---- settings: library check (LIB-030) ----
+  const swDuplicateCheck = $('#swDuplicateCheck');
+  if (swDuplicateCheck) swDuplicateCheck.addEventListener('click', async () => {
+    const on = swDuplicateCheck.getAttribute('aria-checked') !== 'true';
+    setSwitch(swDuplicateCheck, on);
+    config = await window.api.setConfig({ libraryChecks: { duplicates: on } });
+    renderConfig();
+  });
+  const btnOpenDuplicates = $('#btnOpenDuplicates');
+  if (btnOpenDuplicates) btnOpenDuplicates.addEventListener('click', () => openDuplicatesView());
+  if (window.api.onLibraryChecks) window.api.onLibraryChecks((summary) => applyLibraryChecks(summary));
+  // LIB-031. What the library holds changed (a pass learned more, a photo came or went).
+  if (window.api.onLibraryHaveChanged) window.api.onLibraryHaveChanged(() => ONLINE_HAVE.refresh());
+  if (window.api.libraryChecksState) {
+    window.api.libraryChecksState().then((summary) => applyLibraryChecks(summary)).catch(() => {});
+  }
+  // A find made while the window was in the tray is announced when it comes back.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) announceDuplicates(); });
 
   // ---- settings: the folder Znada keeps its own copies in (DATA-006) ----
   // The row shows where they are now; the button runs the whole flow — pick, ask, move,
@@ -7975,7 +8389,7 @@ async function init() {
     const grid = activeLibraryGrid();
     beginLibraryResizeAnchor(grid);
     const liveVirtual = grid && grid.__virtual;
-    if (liveVirtual && grid.clientWidth < liveVirtual.layoutWidth - 0.5) {
+    if (liveVirtual && window.UnifiedGrid.measureWidth(grid) <= liveVirtual.layoutWidth - window.UnifiedGrid.WIDTH_EPSILON) {
       // Shrink is asymmetric: old full-width flex rows no longer fit, so deferring
       // canonical sizes lets Chromium paint an automatic wrap first. A window
       // resize event runs before paint; commit only shrink here. Expand and
@@ -7987,7 +8401,7 @@ async function init() {
       const endSpan = diagSpan('renderer', 'resize-relayout'); // budget span #12
       layoutMonitors();
       const virtual = grid && grid.__virtual;
-      if (!virtual || Math.abs(grid.clientWidth - virtual.layoutWidth) >= 0.5) layoutLibGrid(grid);
+      if (!virtual || Math.abs(window.UnifiedGrid.measureWidth(grid) - virtual.layoutWidth) >= window.UnifiedGrid.WIDTH_EPSILON) layoutLibGrid(grid);
       if (libraryResizeActive) scheduleLibraryResizeFinish(grid);
       else if (!libraryViewAnchor) libraryViewAnchor = captureLibraryScrollAnchor(grid);
       if (libLazyKick) libLazyKick();
@@ -8206,6 +8620,9 @@ function initDragDrop() {
         if (theme === currentTheme) {
           window.api.applyNow(theme).then((r) => toastApplyError(r)).catch(() => {});
         }
+      } else if (res && res.videos > 0) {
+        // MEDIA-002: only video was dropped on the monitor; say why nothing happened.
+        toast(t('video.notWallpaper'));
       }
     });
   });

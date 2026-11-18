@@ -114,7 +114,7 @@ class FakeGrid extends FakeNode {
   }
 
   getBoundingClientRect() {
-    return { top: -this.scrollRoot.scrollTop, width: this.clientWidth };
+    return { top: -this.scrollRoot.scrollTop, width: this.exactWidth ?? this.clientWidth };
   }
 }
 
@@ -369,6 +369,35 @@ function items(count, aspect = 1.6) {
       && !env.grid.classList.contains('is-virtualized'));
   env.state.destroy();
   ok('destroy is idempotent and calls its hook once', destroyed === 1);
+}
+
+// Chromium rounds clientWidth to an integer. A row fitted to that value can be
+// wider than the flex container, and subpixel changes must invalidate old rows.
+{
+  const env = fixture(items(80), { width: 682 });
+  env.grid.exactWidth = 681.625;
+  env.state.relayout();
+  ok('layout uses fractional container width instead of rounded clientWidth',
+    env.state.layoutWidth === 681.625);
+  env.frames.flush();
+  env.grid.exactWidth = 681.375;
+  FakeResizeObserver.instances.at(-1).fire();
+  env.frames.flush();
+  ok('observer catches subpixel width changes with unchanged clientWidth',
+    env.state.layoutWidth === 681.375);
+  env.grid.exactWidth = 681.125;
+  ok('subpixel shrink is committed before flexbox can wrap an old row',
+    env.state.handleViewportResize() && env.state.layoutWidth === 681.125);
+  env.grid.exactWidth = 681.25;
+  env.windowTarget.dispatch('resize');
+  env.frames.flush();
+  ok('window resize catches a fractional expansion', env.state.layoutWidth === 681.25);
+  const cards = Array.from(env.state.cards.values());
+  env.windowTarget.dispatch('resize');
+  env.frames.flush();
+  ok('unchanged geometry preserves the existing cards',
+    cards.every((card, i) => card === Array.from(env.state.cards.values())[i]));
+  env.state.destroy();
 }
 
 console.log('\nAll ' + passed + ' unified-grid tests passed.');

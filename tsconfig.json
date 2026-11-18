@@ -60,10 +60,14 @@
     "src/provider-access.js",
     "src/online-search.js",
     "src/metadata-lookup-service.js",
+    "src/metadata-hash.js",
+    "src/metadata-work-queue.js",
     "src/library-freeze.js",
     "src/cloud/session.js",
     "src/config-store.js",
     "src/managed-folder.js",
-    "src/library-service.js"
+    "src/library-service.js",
+    "src/library-removal.js",
+    "src/live-folder-index.js"
   ]
 }

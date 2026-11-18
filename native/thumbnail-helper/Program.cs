@@ -55,6 +55,17 @@ namespace Znada.ThumbnailHelper
                         Protocol.WriteSuccess(id, new Dictionary<string, object> { { "shuttingDown", true } });
                         return 0;
                     }
+                    if (String.Equals(op, "media-info", StringComparison.Ordinal))
+                    {
+                        MediaInfo info = MediaInfoReader.Read(Protocol.StringValue(request, "path"));
+                        Protocol.WriteSuccess(id, new Dictionary<string, object>
+                        {
+                            { "durationMs", info.DurationMs },
+                            { "width", info.Width },
+                            { "height", info.Height }
+                        });
+                        continue;
+                    }
                     if (!String.Equals(op, "thumbnail", StringComparison.Ordinal))
                         throw new HelperFailure("bad_request", "Operation is unknown", false);
 

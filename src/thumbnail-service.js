@@ -2,13 +2,15 @@
 
 // CODE-001 1.5. Each instance owns the thumbnail LRU, in-flight requests and queue.
 // Main supplies authority and metadata writers; no Electron or captured config here.
+const fs = require('fs');
 const path = require('path');
+const mediaType = require('./media-type');
 const { createTaskQueue } = require('./task-queue');
 
 /**
  * @typedef {{ url: string, width: number, height: number }} ThumbnailData
  * @param {{
- *   thumbnailHost: { thumbnail: (path: string, width: number, quality: number) => Promise<{ mime?: string, dataBase64?: string, width?: number, height?: number, encodedBytes?: number, windowsCache?: string }> },
+ *   thumbnailHost: { thumbnail: (path: string, width: number, quality: number) => Promise<{ mime?: string, dataBase64?: string, width?: number, height?: number, encodedBytes?: number, windowsCache?: string }>, mediaInfo: (path: string) => Promise<{ durationMs: number, width: number, height: number }> },
  *   isAuthorizedMediaPath: (path: string) => boolean,
  *   queueLiveFolderAspect: (path: string, aspect: number) => void,
  *   setAspect: (id: string, path: string, aspect: number) => boolean,
@@ -142,7 +144,28 @@ function createThumbnailService({ thumbnailHost, isAuthorizedMediaPath, queueLiv
     return result;
   }
 
-  return { thumbnailData, aspects, attempts: () => attempts };
+  // MEDIA-002. Length and frame size of a video, for its card badge and "Details". Same
+  // authority as a thumbnail. Remembered by path + size + modified time so a grid scroll
+  // asks the helper once per file; a failure is not remembered.
+  const videoCache = new Map();
+  const VIDEO_CAP = 4000;
+  async function videoInfo(p) {
+    if (!p || typeof p !== 'string' || p.includes('\0') || !path.isAbsolute(p)) return null;
+    if (!mediaType.isVideoPath(p) || !isAuthorizedMediaPath(p)) return null;
+    let stats;
+    try { stats = await fs.promises.stat(p); } catch { return null; }
+    if (!stats.isFile()) return null;
+    const key = `${p}|${stats.size}|${stats.mtimeMs}`;
+    if (videoCache.has(key)) return videoCache.get(key);
+    let info;
+    try { info = await thumbnailHost.mediaInfo(p); } catch { return null; }
+    const result = { durationMs: info.durationMs, width: info.width, height: info.height };
+    videoCache.set(key, result);
+    if (videoCache.size > VIDEO_CAP) videoCache.delete(videoCache.keys().next().value);
+    return result;
+  }
+
+  return { thumbnailData, aspects, videoInfo, attempts: () => attempts };
 }
 
 module.exports = { createThumbnailService };

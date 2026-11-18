@@ -232,7 +232,7 @@
     "addFolder": "添加文件夹…",
     "empty": "媒体库为空 — 请拖放图片到此处或点击“添加图片…”",
     "emptyFolder": "该文件夹中没有图片。",
-    "noMatches": "没有与搜索或标签匹配的内容。清除后即可查看全部。",
+    "noMatches": "这里没有结果。清除搜索词、标签或筛选条件即可查看全部内容。",
     "emptyFavorites": "还没有收藏：给照片点上星标，它就会出现在这里。",
     "emptyFolders": "还没有文件夹：点击“添加文件夹…”添加。",
     "back": "‹ 所有文件夹",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} 张",
     "photosCount_few": "{n} 张",
     "photosCount_many": "{n} 张",
-    "photosCount_other": "{n} 张"
+    "photosCount_other": "{n} 张",
+    "kindPhoto": "照片",
+    "kindVideo": "视频",
+    "dialogFilterMedia": "图片和视频"
   },
   "details": {
     "type": "文件类型",
@@ -321,7 +324,12 @@
     "ratingGeneral": "常规",
     "ratingSensitive": "敏感",
     "ratingQuestionable": "疑似",
-    "ratingExplicit": "限制级"
+    "ratingExplicit": "限制级",
+    "copyTag": "复制标签 {tag}",
+    "tagCopied": "已复制标签",
+    "tagCopyFailed": "无法复制标签",
+    "typeVideo": "视频",
+    "duration": "时长"
   },
   "motion": {
     "format": "动画 · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "{n} 项收藏超出账号容量 — 已保留在此电脑上",
     "syncHeldToast_few": "{n} 项收藏超出账号容量 — 已保留在此电脑上",
     "syncHeldToast_many": "{n} 项收藏超出账号容量 — 已保留在此电脑上",
-    "syncHeldToast_other": "{n} 项收藏超出账号容量 — 已保留在此电脑上"
+    "syncHeldToast_other": "{n} 项收藏超出账号容量 — 已保留在此电脑上",
+    "sourceFailed": "该网站未响应"
   },
   "theme": {
     "group": "Windows 主题",
@@ -486,7 +495,10 @@
     "libraryStore": "媒体库文件",
     "configStore": "配置文件",
     "wallpaperSource": "已配置的壁纸来源",
-    "poolConsistency": "已在保存中断后修复壁纸分配"
+    "poolConsistency": "已在保存中断后修复壁纸分配",
+    "configRestored": "设置文件已损坏，已从 {date} 的副本恢复",
+    "libraryRestored": "媒体库文件已损坏，已从 {date} 的副本恢复",
+    "folderStateRestored": "文件夹信息文件已损坏，已从 {date} 的副本恢复"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada 无法更换壁纸",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada 找不到您的壁纸",
     "wallpaperSourceMissingBody": "原先设置的图片已不存在。如果驱动器或文件夹被移动，请将其恢复，壁纸将在下次更换时重新加载。",
     "poolConsistencyTitle": "Znada 修复了一项壁纸设置",
-    "poolConsistencyBody": "保存过程意外中断（可能是断电或强制关机），导致显示器关联到未完成保存的图片。该设置已清除。您的图片文件未受任何影响。"
+    "poolConsistencyBody": "保存过程意外中断（可能是断电或强制关机），导致显示器关联到未完成保存的图片。该设置已清除。您的图片文件未受任何影响。",
+    "configRestoredTitle": "设置文件已损坏，Znada 已将其恢复",
+    "libraryRestoredTitle": "媒体库文件已损坏，Znada 已将其恢复",
+    "folderStateRestoredTitle": "文件夹信息文件已损坏，Znada 已将其恢复",
+    "configRestoredBody": "Znada 无法读取设置文件，该文件可能因断电或程序崩溃而损坏。已从备份（{date}）恢复设置，之后的更改可能会丢失。",
+    "libraryRestoredBody": "Znada 无法读取媒体库文件，该文件可能因断电或程序崩溃而损坏。已从备份（{date}）恢复媒体库，之后的收藏、标签和壁纸分配可能会丢失。图片文件未改动。",
+    "folderStateRestoredBody": "Znada 无法读取已连接文件夹的信息文件，该文件可能因断电或程序崩溃而损坏。已从备份（{date}）恢复该文件，之后从这些文件夹中移除的照片可能会重新出现。"
   },
   "toast": {
     "applied": "已成功应用壁纸",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "无法准备查找所需的预览图。",
     "lookupChanged": "图片已更改或不再可用。请重新查找。",
     "lookupResponseFailed": "无法确认网站返回的信息。数据未更改。",
-    "lookupHttpError": "网站返回错误 {n}。请稍后重试。"
+    "lookupHttpError": "网站返回错误 {n}。请稍后重试。",
+    "lookupDismissed": "已关闭对比。数据未改动。"
   },
   "whatsNew": {
     "button": "更新内容",
@@ -656,5 +675,38 @@
     "unavailable": "不可用",
     "retry": "无法加载图片。请重试。",
     "writeFailed": "无法保存收藏。原有收藏标记已保留。"
+  },
+  "libraryChecks": {
+    "title": "检查媒体库",
+    "duplicatesSwitch": "查找相同文件",
+    "duplicatesTitle": "相同文件",
+    "show": "显示",
+    "checking": "正在检查…",
+    "copiesCount": "多余副本：{n}",
+    "noneFound": "未找到",
+    "foundToast": "找到相同文件：{n}",
+    "duplicatesEmpty": "没有相同文件。"
+  },
+  "video": {
+    "badge": "视频",
+    "badgeLength": "视频 · {length}",
+    "openHint": "在视频播放器中打开",
+    "openFailed": "无法打开此视频",
+    "notWallpaper": "暂不支持将视频设为壁纸",
+    "skippedOnAssign": "已分配照片，暂不支持将视频设为壁纸",
+    "play": "播放",
+    "pause": "暂停",
+    "seek": "调整播放进度",
+    "volume": "音量",
+    "mute": "静音",
+    "unmute": "取消静音",
+    "playback": "视频播放",
+    "controls": "视频控件",
+    "playbackFailed": "无法播放此视频。",
+    "openExternal": "在其他播放器中打开",
+    "loading": "正在打开视频…",
+    "downloading": "正在下载视频…",
+    "local": "媒体库中的视频",
+    "localFolder": "文件夹中的视频"
   }
 }

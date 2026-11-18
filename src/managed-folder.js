@@ -12,6 +12,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Transform } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { isDirectChildPath } = require('./path-key');
 const mediaRoot = require('./media-root');
 const photoImport = require('./photo-import');
@@ -34,6 +36,34 @@ const mediaFormats = require('./media-type');
  * }} ManagedFolderDeps
  */
 
+// BUG-087. Staging files live inside wallpapersDir() for the whole read/download
+// (BUG-076), where nothing references them — so the orphan sweeper has to recognise them
+// itself. One name format, written by downloadStagingPath and read by stagingInFlight.
+const STAGING_PREFIX = '.download-';
+const STAGING_RE = /^\.download-(\d+)-[0-9a-f]+\.tmp$/i;
+// A leftover of another process (a crashed run: the single-instance lock means no second
+// live process writes into this profile) is swept only after it has stopped changing for
+// this long. The pid alone is not trusted — Windows reuses them.
+const STALE_STAGING_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Must the orphan sweeper leave `name` alone as a staging file still being written?
+ * Every staging file of this process is in flight, however old (a stalled download is
+ * still ours). Another process's one counts as in flight until it has been untouched for
+ * STALE_STAGING_MS; after that it is an ordinary orphan, which the sweeper moves to
+ * .trash — never deletes. Names that are not staging files get `false`, so the normal
+ * keep-set rules apply to them.
+ * @param {string} name
+ * @param {number} mtimeMs
+ * @param {{ now?: number, pid?: number }} [opts]
+ */
+function stagingInFlight(name, mtimeMs, { now = Date.now(), pid = process.pid } = {}) {
+  const m = STAGING_RE.exec(String(name || ''));
+  if (!m) return false;
+  if (Number(m[1]) === pid) return true;
+  return !(now - Number(mtimeMs) >= STALE_STAGING_MS);
+}
+
 /**
  * @param {ManagedFolderDeps} deps
  */
@@ -48,7 +78,8 @@ function createManagedFolder({
   fetchImpl: defaultFetch,
   log = console,
 }) {
-  const imgExts = new Set(mediaFormats.fileExtensions());
+  // MEDIA-002: a video inside a watched folder is shown by that folder, like a picture.
+  const imgExts = new Set(mediaFormats.libraryExtensions());
 
   // DATA-006. Where Znada's own copies live is a SETTING, so it cannot be a constant
   // resolved while the module loads — at that moment config.json has not been read yet.
@@ -157,22 +188,39 @@ function createManagedFolder({
     if (!ready()) throw unavailableError();
     const dir = wallpapersDir();
     await fs.promises.mkdir(dir, { recursive: true });
-    const buf = await fs.promises.readFile(srcPath); // async: не блокируем main-поток на больших файлах
-    const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, photoImport.HASH_LENGTH);
-    const ext = photoImport.copyExtension(srcPath);
-    for (const name of photoImport.existingCopies(await fs.promises.readdir(dir), hash, ext)) {
-      const found = path.join(dir, name);
-      try {
-        const stats = await fs.promises.stat(found);
-        if (stats.isFile() && stats.size === buf.length) return found;
-      } catch {}
+    // MEDIA-002. Streamed, never read whole: a video can be gigabytes, and a Buffer of
+    // that size either fails outright (over 2 GB) or holds the whole file in memory.
+    const staging = downloadStagingPath(dir);
+    const output = await fs.promises.open(staging, 'wx');
+    try {
+      // Hash the bytes on their way to the staging file. The source can change or
+      // disappear once this read ends; publication uses only the captured bytes.
+      const digest = crypto.createHash('md5');
+      let size = 0;
+      const count = new Transform({ transform(chunk, _encoding, next) {
+        size += chunk.length;
+        digest.update(chunk);
+        next(null, chunk);
+      } });
+      await pipeline(fs.createReadStream(srcPath), count, output.createWriteStream());
+      const hash = digest.digest('hex').slice(0, photoImport.HASH_LENGTH);
+      const ext = photoImport.copyExtension(srcPath);
+      for (const name of photoImport.existingCopies(await fs.promises.readdir(dir), hash, ext)) {
+        const found = path.join(dir, name);
+        try {
+          const stats = await fs.promises.stat(found);
+          if (stats.isFile() && stats.size === size) return found;
+        } catch {}
+      }
+      const dest = path.join(dir, photoImport.copyFileName(srcPath, hash));
+      // An existing file of a different size at this name is a collision. Do not
+      // overwrite it or hand it back as if it were the user's chosen file.
+      await fs.promises.copyFile(staging, dest, fs.constants.COPYFILE_EXCL);
+      return dest;
+    } finally {
+      try { await output.close(); } catch {}
+      try { await fs.promises.unlink(staging); } catch (err) { log.error('import staging cleanup:', err); }
     }
-    const dest = path.join(dir, photoImport.copyFileName(srcPath, hash));
-    // `wx`: never write over a file that is already there. The search above found nothing
-    // of this size, so a file under this exact name is not this picture — it is refused
-    // rather than either overwritten or handed back as if it were the photo just added.
-    await fs.promises.writeFile(dest, buf, { flag: 'wx' });
-    return dest;
   }
 
   /**
@@ -241,8 +289,7 @@ function createManagedFolder({
     try { const e = path.extname(new URL(url).pathname).toLowerCase(); if (/^\.[a-z0-9]{2,5}$/.test(e)) ext = e; } catch {}
     const dest = path.join(dir, `wp-${hash}${ext}`);
     if (fs.existsSync(dest)) return { path: dest, stagingPath: '' };
-    const stagingPath = path.join(dir,
-      `.download-${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`);
+    const stagingPath = downloadStagingPath(dir);
     try {
       await fs.promises.writeFile(stagingPath, buf, { flag: 'wx' });
     } catch (err) {
@@ -250,6 +297,34 @@ function createManagedFolder({
       throw err;
     }
     return { path: dest, stagingPath };
+  }
+
+  function downloadStagingPath(dir) {
+    return path.join(dir, `${STAGING_PREFIX}${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`);
+  }
+
+  /** Stream and hash in one pass, with no file-size-dependent memory growth. */
+  async function stageDownloadVideo(dir, format, { body, contentLength }, { signal, onProgress }) {
+    await fs.promises.mkdir(dir, { recursive: true });
+    const stagingPath = downloadStagingPath(dir);
+    const hash = crypto.createHash('md5');
+    const total = Number(contentLength) || 0;
+    let received = 0;
+    const count = new Transform({ transform(chunk, _encoding, next) {
+      hash.update(chunk);
+      received += chunk.length;
+      onProgress(received, total);
+      next(null, chunk);
+    } });
+    try {
+      await pipeline(body, count, fs.createWriteStream(stagingPath, { flags: 'wx' }), { signal });
+      if (!received || (total && received !== total)) throw new Error('Incomplete video download');
+      const dest = path.join(dir, `wp-${hash.digest('hex').slice(0, 16)}.${format}`);
+      return { path: dest, stagingPath };
+    } catch (err) {
+      await fs.promises.rm(stagingPath, { force: true });
+      throw err;
+    }
   }
 
   // Synchronous after the await-heavy body download. A session cannot change between a
@@ -350,6 +425,7 @@ function createManagedFolder({
     watchedFolderShowing,
     photoForPool,
     stageDownloadImage,
+    stageDownloadVideo,
     commitDownloadArtifact,
     discardDownloadArtifact,
     downloadImageArtifactTo,
@@ -358,4 +434,4 @@ function createManagedFolder({
   });
 }
 
-module.exports = { createManagedFolder };
+module.exports = { createManagedFolder, stagingInFlight, STALE_STAGING_MS };

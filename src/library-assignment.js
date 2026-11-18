@@ -4,14 +4,24 @@
 // stays in main.js and must set allowCreate only after the path/type is confirmed.
 // Therefore every failure returned here leaves both config.library and slots intact.
 //
-// Creating a pool entry goes through `options.addToPool` when main supplies it, so
-// this shares main's single entry point instead of being a second door: a photo added
+// Creating a pool entry goes through `options.addToPool` when the pool owner supplies it, so
+// this shares the pool owner's single entry point instead of being a second door: a photo added
 // here has to shed its removed state exactly like one added anywhere else, or it ends
 // up active in a slot while still marked removed (BUG-011).
 
 const library = require('./library');
+const mediaType = require('./media-type');
 
-// Use main's funnel when it is provided; fall back to the plain add for tests that
+// MEDIA-002. Video is a Library card, never a wallpaper. Refused here, before any pool
+// record is created, so every route into a slot answers the same and a refusal leaves
+// nothing behind. `resolveSlot` drops video as well; this check exists so the window
+// gets a reason it can explain instead of an assignment that silently does nothing.
+function isVideoRecord(record, item) {
+  if (item && item.type !== 'folder') return mediaType.isVideoPath(item.path);
+  return !!record && record.type !== 'folder' && mediaType.isVideoPath(record.path);
+}
+
+// Use the pool owner's funnel when it is provided; fall back to the plain add for tests that
 // exercise this module on its own.
 function addPooled(config, type, p, options) {
   if (typeof options.addToPool === 'function') return options.addToPool(type, p, options.extra);
@@ -46,6 +56,7 @@ function assignRecord(config, record, monitorId, which, options = {}) {
   if (!item && typeof record.path === 'string' && record.path) {
     item = library.getItem(config.library, library.idFor(record.path));
   }
+  if (isVideoRecord(record, item)) return assignmentError(config, 'video');
 
   let created = false;
   if (!item) {
@@ -85,6 +96,7 @@ function assignRecords(config, preparedRecords, monitorId, which) {
   const createdIds = [];
   const items = [];
   let failed = 0;
+  let videos = 0;
   for (const prepared of preparedRecords) {
     const record = prepared && prepared.record;
     const options = (prepared && prepared.options) || {};
@@ -93,6 +105,7 @@ function assignRecords(config, preparedRecords, monitorId, which) {
     if (!item && typeof record.path === 'string' && record.path) {
       item = library.getItem(config.library, library.idFor(record.path));
     }
+    if (isVideoRecord(record, item)) { videos += 1; continue; }
     if (!item && options.allowCreate && typeof record.path === 'string' && record.path) {
       const type = record.type === 'folder' ? 'folder' : 'image';
       const id = addPooled(config, type, record.path, options);
@@ -125,9 +138,12 @@ function assignRecords(config, preparedRecords, monitorId, which) {
   return {
     config,
     ok: ids.length > 0,
-    error: ids.length ? null : 'missing_item',
+    // Only video in the selection is its own answer; a mix assigns the pictures and
+    // reports the skipped videos beside them.
+    error: ids.length ? null : (videos && !failed ? 'video' : 'missing_item'),
     assigned: ids.length,
     failed,
+    videos,
     ids,
     createdIds,
     items,

@@ -14,17 +14,15 @@
     return Math.min(max, Math.max(min, value));
   }
 
-  // Card dimensions are serialized to two CSS decimals by renderer.js. Rounding every
-  // item independently can make a mathematically exact row 0.01px wider than its
-  // container, which makes flex-wrap push the last card onto the next line. Quantize
-  // inside the layout and give the final item the remaining width so the row geometry
-  // used by virtualization always matches the browser's physical rows.
+  // Chromium lays out in 1/64 CSS px. Account for that second rounding after our
+  // two-decimal serialization, otherwise even an exact decimal sum can flex-wrap
+  // the last card (BUG-054). Give it the space left by the browser-rounded widths.
   function roundCssPx(value) {
     return Math.round(value * 100) / 100;
   }
 
   function floorCssPx(value) {
-    return Math.floor(value * 100 + 1e-7) / 100;
+    return roundCssPx(Math.floor(value * 64 + 1e-7) / 64);
   }
 
   function normalizeAspect(value, minAspect = 0.5, maxAspect = 3) {
@@ -58,7 +56,7 @@
       const fittedHeight = available / rowSum;
       const height = fill ? fittedHeight : Math.min(targetHeight, fittedHeight);
       const cssHeight = roundCssPx(height);
-      const cssAvailable = floorCssPx(available);
+      const cssAvailable = Math.floor(available * 64 + 1e-7) / 64;
       let usedWidth = 0;
       for (let i = rowStart; i < end; i++) {
         const isLast = i === end - 1;
@@ -67,7 +65,7 @@
           ? floorCssPx(cssAvailable - usedWidth)
           : floorCssPx(rawWidth);
         boxes[i] = { width: Math.max(0.01, cssWidth), height: cssHeight };
-        usedWidth += boxes[i].width;
+        usedWidth += Math.round(boxes[i].width * 64) / 64;
       }
       rows.push({ start: rowStart, end, top: 0, height: cssHeight });
       rowStart = end;

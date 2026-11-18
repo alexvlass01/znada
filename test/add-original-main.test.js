@@ -15,6 +15,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const H = require('./helpers/main-harness');
+const { MAX_TAGS } = require('../src/metadata-lookup');
+const gelbooruProvider = require('../src/gelbooru');
+const danbooruProvider = require('../src/danbooru');
 
 let passed = 0;
 const failures = [];
@@ -73,6 +76,11 @@ const danbooru = (full = DAN_FULL) => ({
   provider: 'danbooru', id: '7', format: 'jpg', full, sample: DAN_SAMPLE,
   page: 'https://danbooru.donmai.us/posts/7', width: 1920, height: 1080, tags: ['sky'],
 });
+const GEL_FULL = 'https://img3.gelbooru.com/images/aa/bb/aabbcc.jpg';
+const gelbooru = () => ({
+  provider: 'gelbooru', id: 'gelbooru:7', format: 'jpg', full: GEL_FULL,
+  page: 'https://gelbooru.com/index.php?page=post&s=view&id=7', tags: ['card_tag'],
+});
 const WH_FULL = 'https://w.wallhaven.cc/full/ab/wallhaven-abc123.jpg';
 const wallhaven = () => ({
   provider: 'wallhaven', id: 'abc123', format: 'jpg', full: WH_FULL,
@@ -115,6 +123,110 @@ function recordFor(m, source) {
 console.log('\nPERF-010: adding what main already has\n');
 
 (async () => {
+  const longTag = 'x'.repeat(80);
+  const names = Array.from({ length: MAX_TAGS + 10 }, (_, i) => 'post_tag_' + i);
+  const tags = ['Artist_Name', 'ARTIST_NAME', longTag + 'one', longTag + 'two', 'META_TAG', ...names];
+  const expected = ['artist_name', longTag, 'meta_tag', ...names].slice(0, MAX_TAGS);
+  for (const [provider, makeCard] of [['gelbooru', gelbooru], ['danbooru', danbooru]]) {
+    const outcomes = provider === 'gelbooru' ? ['success', 'post error', 'wrong id', 'type error']
+      : ['success', 'post error', 'wrong id'];
+    for (const outcome of outcomes) {
+      await test(`BUG-071: ${provider} ${outcome} saves the expected tags through internet-add`, async (m, dir) => {
+        const card = { ...makeCard(), id: provider + ':7', tags: ['card_only'] };
+        const calls = [];
+        const fallback = outcome === 'post error' || outcome === 'wrong id';
+        let typeQuery;
+        globalThis.fetch = async (url) => {
+          const parsed = new URL(String(url));
+          if (parsed.href === card.full) return image(JPEG)();
+          const isTypes = parsed.searchParams.get('s') === 'tag';
+          calls.push(isTypes ? 'types' : 'post');
+          if (isTypes) {
+            typeQuery = parsed.searchParams.get('names');
+            if (outcome === 'type error') throw new Error('types unavailable');
+            return Response.json({ tag: [{ name: fallback ? 'card_only' : 'artist_name', type: 1 }] });
+          }
+          assert.strictEqual(provider === 'gelbooru' ? parsed.searchParams.get('id') : parsed.searchParams.get('tags'),
+            provider === 'gelbooru' ? '7' : 'id:7');
+          if (outcome === 'post error') return new Response(null, { status: 503 });
+          const id = outcome === 'wrong id' ? 8 : 7;
+          return provider === 'gelbooru'
+            ? Response.json({ post: [{ id, tags: tags.join(' ') }] })
+            : Response.json([{ id, tag_string_artist: tags.slice(0, 2).join(' '),
+              tag_string_general: tags.slice(2, 4).join(' '), tag_string_meta: tags[4],
+              tag_string: names.join(' ') }]);
+        };
+        const result = await m.invoke('internet-add', card, '');
+        assert.strictEqual(result.error, null);
+        const saved = JSON.parse(fs.readFileSync(path.join(dir, 'config.library.json'), 'utf8'));
+        const record = saved.library[result.id];
+        assert.deepStrictEqual(record.tags, fallback ? ['card_only'] : expected);
+        if (provider === 'gelbooru') {
+          assert.strictEqual(record.author || '', fallback ? 'card only' : outcome === 'success' ? 'artist name' : '');
+          if (fallback) assert.strictEqual(typeQuery, 'card_only');
+        }
+        assert.deepStrictEqual(calls, provider === 'gelbooru' ? ['post', 'types'] : ['post']);
+      });
+    }
+  }
+
+  await test('BUG-071: two posts with the same original share the bytes and verify both IDs', async (m) => {
+    const card = danbooru();
+    const calls = [];
+    globalThis.fetch = async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.href === card.full) {
+        calls.push('download');
+        return image(JPEG)();
+      }
+      const id = parsed.searchParams.get('tags')?.split(':')[1];
+      calls.push(id);
+      return Response.json([{ id, tag_string: 'post_' + id }]);
+    };
+    const results = await Promise.all([
+      m.invoke('internet-add', card, ''),
+      m.invoke('internet-add', { ...card, id: 'danbooru:8', page: card.page.replace('/7', '/8') }, ''),
+    ]);
+    assert.deepStrictEqual(results.map((result) => result.error), [null, null]);
+    assert.strictEqual(results[0].id, results[1].id);
+    assert.deepStrictEqual([...m.__test.getConfig().library[results[0].id].tags].sort(), ['post_7', 'post_8']);
+    assert.deepStrictEqual(calls.sort(), ['7', '8', 'download']);
+  });
+
+  await test('BUG-071: both search adapters still cap card tags at 24', () => {
+    assert.strictEqual(gelbooruProvider.compactTags({ tags: names.join(' ') }).length, 24);
+    assert.strictEqual(danbooruProvider.compactTags({ tag_string_general: names.join(' ') }).length, 24);
+  });
+
+  await test('an add of the same post joins while only metadata is still loading', async (m, dir) => {
+    let releasePost;
+    const postPending = new Promise((resolve) => { releasePost = resolve; });
+    const net = network({
+      [DAN_FULL]: image(JPEG),
+      'https://danbooru.donmai.us/posts.json': async () => {
+        await postPending;
+        return Response.json([{ id: 7, tag_string: 'sky' }]);
+      },
+    });
+    const first = m.invokeAs('main', 'internet-add', danbooru(), '');
+    let second;
+    try {
+      const savedPath = path.join(dir, 'wallpapers', md5name(JPEG, 'jpg'));
+      await settle(() => fs.existsSync(savedPath), 2000);
+      assert.ok(fs.existsSync(savedPath), 'the original finished before post metadata');
+      await tick();
+      second = m.invokeAs('viewer', 'internet-add', danbooru(), '');
+      await tick();
+    } finally {
+      releasePost();
+      await Promise.all([first, second]);
+    }
+    assert.strictEqual((await first).error, null);
+    assert.strictEqual((await second).error, null);
+    assert.strictEqual(net.count(DAN_FULL), 1);
+    assert.strictEqual(net.count('https://danbooru.donmai.us/posts.json'), 1);
+  });
+
   await test('an original the viewer got through the proxy is added without a second download', async (m, dir) => {
     const net = network({ [DAN_FULL]: image(JPEG) });
     const shown = await viewerLoads(m, 'danbooru', 'full', DAN_FULL);
@@ -191,17 +303,19 @@ console.log('\nPERF-010: adding what main already has\n');
   });
 
   await test('an original over the size limit is cut off and not kept', async (m) => {
+    // BUG-065: the original's cap is read from the module (100 MB since then), not assumed.
+    const capMb = require('../src/media-proxy').FULL_MAX_BYTES / (1024 * 1024);
     const megabyte = new Uint8Array(1024 * 1024);
     let sent = 0;
     network({
       [DAN_FULL]: () => new Response(new ReadableStream({
-        pull(controller) { sent += 1; controller.enqueue(megabyte); if (sent > 40) controller.close(); },
+        pull(controller) { sent += 1; controller.enqueue(megabyte); if (sent > capMb + 10) controller.close(); },
       }), { status: 200, headers: { 'content-type': 'image/jpeg' } }),
     });
     const handle = m.protocol.handlers.get('znada-media');
     const res = await handle({ url: proxyUrl('danbooru', 'full', DAN_FULL) });
     await assert.rejects(res.arrayBuffer(), 'the window must see the cut, as before');
-    assert.ok(sent <= 32, 'reading stopped at the limit, not at the end');
+    assert.ok(sent <= capMb + 2, 'reading stopped at the limit, not at the end');
     assert.deepStrictEqual(m.__test.recentOriginals.stats(), { entries: 0, bytes: 0, pending: 0 });
   });
 
@@ -327,7 +441,7 @@ console.log('\nPERF-010: adding what main already has\n');
     await starWallhaven(m);
     const copied = await m.invoke('card-copy-file', keyOnly());
     assert.strictEqual(copied.ok, false);
-    assert.ok(copied.error, 'a gone post must not look like a success');
+    assert.strictEqual(copied.error, '404', 'the original lookup error must reach the caller');
   });
 
   await test('a key that is not a stored bookmark is not fetched', async (m) => {

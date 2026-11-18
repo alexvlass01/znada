@@ -155,13 +155,19 @@ const names = (entries) => Array.from(entries, (entry) => (entry.item ? entry.it
   // --- the real renderer views --------------------------------------------------------------
   const empty = {};
   const reply = { expand: [], folder: { folders: [], images: [] }, removed: [] };
+  const motion = { asked: [], answers: {} };
   const ctx = {
     FAVORITES: { entries: [] },
     LIB: { filter: 'all', tags: [], q: '', sort: 'name', folderPath: null, crumbs: [], shuffleRank: {} },
     config: { library: {} },
     allViewToken: 1,
     LibrarySearch,
-    $: (selector) => ({ '#libGrid': {}, '#libEmpty': empty })[selector],
+    $: (selector) => ({
+      '#libGrid': {}, '#libEmpty': empty, '#libFilterPopover': {},
+      '#libKindOptions': { addEventListener: (type, fn) => { if (type === 'change') ctx.kindListener = fn; } },
+    })[selector],
+    bindAnchoredPopover: () => {},
+    renderLibFilterButton: () => {},
     normPathKey: pathKey,
     updateLibAvailableTags() {},
     assignedIds: () => new Set(), entrySize: () => 0, scheduleSizeReorder() {},
@@ -169,7 +175,21 @@ const names = (entries) => Array.from(entries, (entry) => (entry.item ? entry.it
     setLibViewHeader: (count) => { ctx.count = count; },
     renderEntriesLazily: (_grid, entries) => { ctx.shown = entries; },
     inRemovedView: () => ctx.LIB.filter === 'removed',
-    window: { api: {
+    // MEDIA-004: the real kind code below, with main's answers faked.
+    KIND: { on: ['photo', 'gif', 'video'], moving: new Map(), asking: new Set(), queue: [], pumping: false, version: 0 },
+    activePage: 'library',
+    kindRenders: 0,
+    selectionCleared: 0,
+    clearSelection: () => { ctx.selectionCleared++; },
+    selectionSynced: 0,
+    syncSelectionUI: () => { ctx.selectionSynced++; },
+    renderLibrary: () => { ctx.kindRenders++; },
+    window: { LibraryKind: require('../renderer/library-kind'), api: {
+      mediaMotionMany: async (paths) => {
+        motion.asked.push(...paths);
+        if (motion.fail) throw new Error('main went away');
+        return paths.map((p) => (p in motion.answers ? motion.answers[p] : false));
+      },
       expandFolders: async () => ({ images: reply.expand }),
       folderEntries: async () => reply.folder,
       libraryHiddenList: async () => ({ images: reply.removed }),
@@ -180,8 +200,11 @@ const names = (entries) => Array.from(entries, (entry) => (entry.item ? entry.it
     'libList', 'libEmptyKey', 'libraryContentSig', 'libSearchMembershipChanged']) {
     vm.runInContext(functionSource(renderer, name), ctx);
   }
-  for (const name of ['renderAllView', 'renderFolderView', 'renderRemovedView']) {
+  for (const name of ['renderAllView', 'renderFolderView', 'renderRemovedView', 'pumpKindCheck']) {
     vm.runInContext('async ' + functionSource(renderer, name), ctx);
+  }
+  for (const name of ['kindFilterApplies', 'kindFilterActive', 'entryKind', 'scheduleKindCheck', 'retryUnreadKinds', 'setKindTick', 'initLibraryFilterMenu']) {
+    vm.runInContext(functionSource(renderer, name), ctx);
   }
 
   const img = (id, where, tags = [], extra = {}) => ({ id, type: 'image', path: where, tags, addedAt: 1, ...extra });
@@ -236,6 +259,93 @@ const names = (entries) => Array.from(entries, (entry) => (entry.item ? entry.it
     await inFolder('sky'), ['2024', 'IMG_0042.png', 'skyline.jpg']);
   same('Folder: a photo without a record is found by its name only', await inFolder('beach'), ['2024', 'beach.jpg']);
   same('Folder: the side-panel tag still narrows the photos', await inFolder('', 'clear_sky'), ['2024', 'IMG_0042.png']);
+
+  // MEDIA-004. The ticks in "Filters" narrow the same lists, through the same libNarrow.
+  // A video is known by its name; a .gif/.png/.webp only once main has said whether it
+  // moves, so until then it shows only when "Photo" and "GIF" are both ticked.
+  const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => { setImmediate(r); }); };
+  const kinds = async (on, q = '') => {
+    ctx.KIND.on = on;
+    Object.assign(ctx.LIB, { filter: 'all', q, tags: [], folderPath: null });
+    ctx.config.library = {
+      p: img('p', 'C:/lib/photo.jpg', ['sea']), v: img('v', 'C:/lib/clip.mp4', ['sea']),
+      m: img('m', 'C:/lib/moving.gif'), s: img('s', 'C:/lib/still.gif'), w: img('w', 'C:/lib/anim.webp'),
+    };
+    reply.expand = [{ id: 'x3', path: 'C:/watched/trip.MOV' }];
+    ctx.shown = null;
+    ctx.emptyKey = undefined;
+    await ctx.renderAllView(ctx.allViewToken);
+    return names(ctx.shown);
+  };
+  motion.answers = { 'C:/lib/moving.gif': true, 'C:/lib/anim.webp': true };
+  same('Kind: everything ticked shows everything and asks main nothing',
+    [(await kinds(['photo', 'gif', 'video'])).length, motion.asked.length], [6, 0]);
+  same('Kind: video only — from the pool and from a watched folder, asked about nothing',
+    [await kinds(['video']), motion.asked.length], [['clip.mp4', 'trip.MOV'], 0]);
+  same('Kind: photo + video at first leaves out the pictures not yet checked',
+    await kinds(['photo', 'video']), ['clip.mp4', 'photo.jpg', 'trip.MOV']);
+  await settle();
+  same('Kind: … and main is asked about those three once, then the grid is redrawn',
+    [motion.asked.slice().sort(), ctx.kindRenders > 0], [['C:/lib/anim.webp', 'C:/lib/moving.gif', 'C:/lib/still.gif'], true]);
+  same('Kind: after the answer a one-frame GIF is a photo; moving GIF and WebP are not',
+    await kinds(['photo', 'video']), ['clip.mp4', 'photo.jpg', 'still.gif', 'trip.MOV']);
+  same('Kind: GIF only is every moving picture, without asking again',
+    [await kinds(['gif']), motion.asked.length], [['anim.webp', 'moving.gif'], 3]);
+  same('Kind: the ticks and the search both apply', await kinds(['video'], 'sea'), ['clip.mp4']);
+  // Main cannot answer (the call fails, or a file is unreadable for now): those pictures are
+  // photos, never GIFs, and the next change of the ticks asks about them again.
+  ctx.KIND.moving.clear();
+  motion.asked.length = 0;
+  motion.fail = true;
+  await kinds(['photo', 'video']);
+  await settle();
+  same('Kind: when main cannot answer, the unchecked pictures are photos, not GIFs',
+    [await kinds(['photo', 'video']), await kinds(['gif']), ctx.KIND.pumping, motion.asked.length],
+    [['anim.webp', 'clip.mp4', 'moving.gif', 'photo.jpg', 'still.gif', 'trip.MOV'], [], false, 3]);
+  motion.fail = false;
+  motion.answers['C:/lib/still.gif'] = null;
+  // A tick change: from photo + video to photo + video + GIF, then GIF alone.
+  // The ticks are changed through the real "change" listener of the Filters menu.
+  ctx.initLibraryFilterMenu();
+  const tick = (kind, checked) => ctx.kindListener({ target: { dataset: { kind }, checked } });
+  const [cleared, synced, renders] = [ctx.selectionCleared, ctx.selectionSynced, ctx.kindRenders];
+  tick('gif', true);
+  tick('photo', false);
+  tick('video', false);
+  same('Kind: each change of the ticks clears the selection, updates its bar, redraws at once',
+    [ctx.KIND.on.slice().sort(), ctx.selectionCleared - cleared, ctx.selectionSynced - synced, ctx.kindRenders - renders],
+    [['gif'], 3, 3, 3]);
+  await kinds(['gif']);
+  await settle();
+  same('Kind: the next change of the ticks asks again, and the GIFs come back',
+    [await kinds(['gif']), motion.asked.length], [['anim.webp', 'moving.gif'], 6]);
+  tick('photo', true);
+  await kinds(['photo']);
+  await settle();
+  same('Kind: a file still unreadable is asked again on the next change, the others are not',
+    [await kinds(['photo']), motion.asked.slice(6)], [['photo.jpg', 'still.gif'], ['C:/lib/still.gif']]);
+  delete motion.answers['C:/lib/still.gif'];
+  ctx.KIND.on = ['video'];
+  Object.assign(ctx.LIB, { filter: 'all', q: '', tags: [], folderPath: null });
+  ctx.config.library = { p: img('p', 'C:/lib/photo.jpg') };
+  reply.expand = [];
+  await ctx.renderAllView(ctx.allViewToken);
+  same('Kind: nothing of the ticked kind says "nothing found here"', [names(ctx.shown), ctx.emptyKey], [[], 'library.noMatches']);
+  ctx.KIND.on = ['video'];
+  Object.assign(ctx.LIB, { filter: 'folder', q: '', tags: [], folderPath: 'C:/watched' });
+  reply.folder = { folders: [{ path: 'C:/watched/2024', name: '2024' }], images: [{ path: 'C:/watched/a.jpg' }, { path: 'C:/watched/b.mkv' }] };
+  await ctx.renderFolderView(ctx.allViewToken);
+  same('Kind: in an open folder the subfolder stays and only the video shows', names(ctx.shown), ['2024', 'b.mkv']);
+  same('Kind: where the filter lives', ['all', 'favorite', 'folder', 'online', 'removed'].map((filter) => {
+    Object.assign(ctx.LIB, { filter, folderPath: null });
+    return ctx.kindFilterApplies();
+  }).concat((Object.assign(ctx.LIB, { filter: 'folder', folderPath: 'C:/watched' }), ctx.kindFilterApplies())),
+  [true, true, false, false, false, true]);
+  Object.assign(ctx.LIB, { filter: 'removed', q: '', tags: [], folderPath: null });
+  reply.removed = [{ path: 'C:/old/a.jpg' }];
+  await ctx.renderRemovedView(ctx.allViewToken);
+  same('Kind: the ticks do not reach the trash', names(ctx.shown), ['a.jpg']);
+  ctx.KIND.on = ['photo', 'gif', 'video'];
 
   // The trash lists paths, not records: names only, and a tag chosen before cannot empty it.
   const trash = async (q, tag = '') => {

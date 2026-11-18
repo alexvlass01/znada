@@ -291,6 +291,22 @@ check('a still picture or a still extension never costs a full read', async () =
   assert.strictEqual(reads, 1);
 });
 
+check('many files at once: one answer per path, in order, unreadable is null, bounded width', async () => {
+  let running = 0;
+  let peak = 0;
+  const answers = { 'a.gif': { animated: true }, 'b.png': { animated: false }, 'c.webp': null };
+  const out = await motion.motionOfMany(['a.gif', 'b.png', 'c.webp', 'd.gif'], async (p) => {
+    running += 1; peak = Math.max(peak, running);
+    await new Promise((r) => { setTimeout(r, 5); });
+    running -= 1;
+    if (p === 'd.gif') throw new Error('locked');
+    return answers[p];
+  }, { concurrency: 2 });
+  assert.deepStrictEqual(out, [true, false, null, null]);
+  assert.ok(peak <= 2, 'never more reads at once than asked: ' + peak);
+  assert.deepStrictEqual(await motion.motionOfMany('nope', async () => ({ animated: true })), []);
+});
+
 (async () => {
   try {
     for (const run of pending) await run();

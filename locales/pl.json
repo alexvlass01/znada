@@ -232,7 +232,7 @@
     "addFolder": "Dodaj folder…",
     "empty": "Twoja biblioteka jest pusta — przeciągnij obrazy tutaj lub kliknij „Dodaj zdjęcia…”.",
     "emptyFolder": "Ten folder nie zawiera obrazów.",
-    "noMatches": "Nic nie pasuje do wyszukiwania lub tagu. Wyczyść je, aby zobaczyć wszystko.",
+    "noMatches": "Nic tu nie znaleziono. Wyczyść wyszukiwanie, tagi lub filtry, aby zobaczyć wszystko.",
     "emptyFavorites": "Na razie brak ulubionych — oznacz zdjęcie gwiazdką, a pojawi się tutaj.",
     "emptyFolders": "Na razie brak folderów — dodaj folder przyciskiem „Dodaj folder…”.",
     "back": "‹ Wszystkie foldery",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} zdjęcie",
     "photosCount_few": "{n} zdjęcia",
     "photosCount_many": "{n} zdjęć",
-    "photosCount_other": "{n} zdjęcia"
+    "photosCount_other": "{n} zdjęcia",
+    "kindPhoto": "Zdjęcia",
+    "kindVideo": "Filmy",
+    "dialogFilterMedia": "Obrazy i filmy"
   },
   "details": {
     "type": "Typ",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Ogólne",
     "ratingSensitive": "Wrażliwe",
     "ratingQuestionable": "Dwuznaczne",
-    "ratingExplicit": "Dla dorosłych"
+    "ratingExplicit": "Dla dorosłych",
+    "copyTag": "Kopiuj tag {tag}",
+    "tagCopied": "Skopiowano tag",
+    "tagCopyFailed": "Nie udało się skopiować tagu",
+    "typeVideo": "Film",
+    "duration": "Czas trwania"
   },
   "motion": {
     "format": "Animacja · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "{n} zakładka nie zmieściła się na koncie — pozostała na tym komputerze",
     "syncHeldToast_few": "{n} zakładki nie zmieściły się na koncie — pozostały na tym komputerze",
     "syncHeldToast_many": "{n} zakładek nie zmieściło się na koncie — pozostało na tym komputerze",
-    "syncHeldToast_other": "{n} zakładki nie zmieściło się na koncie — pozostało na tym komputerze"
+    "syncHeldToast_other": "{n} zakładki nie zmieściło się na koncie — pozostało na tym komputerze",
+    "sourceFailed": "Witryna nie odpowiedziała"
   },
   "theme": {
     "group": "Motyw Windows",
@@ -486,7 +495,10 @@
     "libraryStore": "Plik biblioteki",
     "configStore": "Plik ustawień",
     "wallpaperSource": "Źródło skonfigurowanej tapety",
-    "poolConsistency": "Przypisanie tapety naprawione po przerwanym zapisie"
+    "poolConsistency": "Przypisanie tapety naprawione po przerwanym zapisie",
+    "configRestored": "Plik ustawień był uszkodzony i został przywrócony z kopii z {date}",
+    "libraryRestored": "Plik biblioteki był uszkodzony i został przywrócony z kopii z {date}",
+    "folderStateRestored": "Plik informacji o folderach był uszkodzony i został przywrócony z kopii z {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada nie mogła zmienić tapety",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada nie mogła znaleźć Twojej tapety",
     "wallpaperSourceMissingBody": "Ustawionego obrazu nie ma już w tym miejscu. Jeśli dysk lub folder został przeniesiony, przywróć go, a tapeta powróci przy następnej zmianie.",
     "poolConsistencyTitle": "Znada naprawiła ustawienie tapety",
-    "poolConsistencyBody": "Zapis został przerwany (prawdopodobnie przez brak zasilania lub wymuszone zamknięcie) i monitor wskazywał na obraz, którego zapisywanie nie dobiegło końca. Ustawienie zostało wyczyszczone. Twoje zdjęcia nie zostały naruszone."
+    "poolConsistencyBody": "Zapis został przerwany (prawdopodobnie przez brak zasilania lub wymuszone zamknięcie) i monitor wskazywał na obraz, którego zapisywanie nie dobiegło końca. Ustawienie zostało wyczyszczone. Twoje zdjęcia nie zostały naruszone.",
+    "configRestoredTitle": "Plik ustawień był uszkodzony — Znada go przywróciła",
+    "libraryRestoredTitle": "Plik biblioteki był uszkodzony — Znada go przywróciła",
+    "folderStateRestoredTitle": "Plik informacji o folderach był uszkodzony — Znada go przywróciła",
+    "configRestoredBody": "Znada nie mogła odczytać pliku ustawień. Mógł ulec uszkodzeniu wskutek przerwy w zasilaniu lub awarii. Ustawienia przywrócono z kopii zapasowej ({date}). Późniejsze zmiany mogą nie być dostępne.",
+    "libraryRestoredBody": "Znada nie mogła odczytać pliku biblioteki. Mógł ulec uszkodzeniu wskutek przerwy w zasilaniu lub awarii. Bibliotekę przywrócono z kopii zapasowej ({date}). Może brakować późniejszych ulubionych, tagów i przypisań. Obrazy pozostały bez zmian.",
+    "folderStateRestoredBody": "Znada nie mogła odczytać pliku informacji o podłączonych folderach. Mógł ulec uszkodzeniu wskutek przerwy w zasilaniu lub awarii. Plik przywrócono z kopii zapasowej ({date}). Zdjęcia usunięte później z tych folderów mogą pojawić się ponownie."
   },
   "toast": {
     "applied": "Zastosowano tapetę",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Nie udało się przygotować podglądu do wyszukiwania.",
     "lookupChanged": "Obraz zmienił się lub jest już niedostępny. Rozpocznij nowe wyszukiwanie.",
     "lookupResponseFailed": "Nie udało się potwierdzić informacji z odpowiedzi strony. Dane nie zostały zmienione.",
-    "lookupHttpError": "Strona zwróciła błąd {n}. Spróbuj ponownie później."
+    "lookupHttpError": "Strona zwróciła błąd {n}. Spróbuj ponownie później.",
+    "lookupDismissed": "Porównanie zamknięte. Dane nie zostały zmienione."
   },
   "whatsNew": {
     "button": "Co nowego",
@@ -656,5 +675,38 @@
     "unavailable": "Niedostępne",
     "retry": "Nie udało się wczytać obrazu. Spróbuj ponownie.",
     "writeFailed": "Nie udało się zapisać ulubionych. Poprzednie oznaczenia zostały zachowane."
+  },
+  "libraryChecks": {
+    "title": "Sprawdzanie biblioteki",
+    "duplicatesSwitch": "Szukaj identycznych plików",
+    "duplicatesTitle": "Identyczne pliki",
+    "show": "Pokaż",
+    "checking": "Sprawdzanie…",
+    "copiesCount": "Nadmiarowe kopie: {n}",
+    "noneFound": "Nic nie znaleziono",
+    "foundToast": "Znaleziono identyczne pliki: {n}",
+    "duplicatesEmpty": "Brak identycznych plików."
+  },
+  "video": {
+    "badge": "Film",
+    "badgeLength": "Film · {length}",
+    "openHint": "Otwórz w odtwarzaczu wideo",
+    "openFailed": "Nie udało się otworzyć tego filmu",
+    "notWallpaper": "Filmów nie można jeszcze ustawiać jako tapety",
+    "skippedOnAssign": "Przypisano zdjęcia. Filmów nie można jeszcze ustawiać jako tapety",
+    "play": "Odtwórz",
+    "pause": "Wstrzymaj",
+    "seek": "Pozycja odtwarzania",
+    "volume": "Głośność",
+    "mute": "Wycisz",
+    "unmute": "Włącz dźwięk",
+    "playback": "Odtwarzanie filmu",
+    "controls": "Sterowanie odtwarzaniem",
+    "playbackFailed": "Nie udało się odtworzyć tego filmu.",
+    "openExternal": "Otwórz w innym odtwarzaczu",
+    "loading": "Otwieranie filmu…",
+    "downloading": "Pobieranie filmu…",
+    "local": "Film z biblioteki",
+    "localFolder": "Film z folderu"
   }
 }

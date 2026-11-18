@@ -33,13 +33,18 @@ const PRIVATE_SENTINELS = Object.freeze([
   'Znada-DIAG.bat',
   'Znada-Review.bat',
   'Znada-Check.bat',
+  'Znada-Random.bat',
   path.join('scripts', 'migrate-profile.js'),
+  path.join('scripts', 'random-task.js'),
 ]);
 
 // These patterns are relative to the source directory, as required by
 // @electron/packager. Keep this list explicit: it is also inspected by the
 // package-boundary regression test.
 const ALWAYS_IGNORED = Object.freeze([
+  // Koffi's bundled loader references every platform addon. Keep that closed dependency
+  // set intact; documentation templates and native build sources are not runtime inputs.
+  '^/node_modules/koffi/(?:doc|lib|src|vendor)(?:/|$)',
   '^/\\.git(?:/|$)',
   '^/dist(?:/|$)',
   '^/diagnostics(?:/|$)',
@@ -252,6 +257,7 @@ function buildPackagerArgs({ root = ROOT, official = false } = {}) {
     '--overwrite',
     '--app-copyright=Copyright (c) 2026 alexv. All rights reserved.',
     '--extra-resource=.build/thumbnail-helper',
+    '--extra-resource=.build/libmpv',
   ];
   // DESIGN-012. Дата выхода — только у официальной сборки: обычная не знает, выпуск ли это.
   if (official) args.push(`--extra-resource=.build/${STAMP_FILE}`);

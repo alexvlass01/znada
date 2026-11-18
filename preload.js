@@ -96,6 +96,10 @@ contextBridge.exposeInMainWorld('api', {
   libraryRestore: (paths) => ipcRenderer.invoke('library-restore', paths),
   libraryDeleteForever: (paths) => ipcRenderer.invoke('library-delete-forever', paths),
   libraryRefresh: () => ipcRenderer.invoke('library-refresh'),
+  // LIB-030. The background library check: its state, "the notice was shown", the groups.
+  libraryChecksState: () => ipcRenderer.invoke('library-checks-state'),
+  libraryChecksAck: () => ipcRenderer.invoke('library-checks-ack'),
+  libraryDuplicates: () => ipcRenderer.invoke('library-duplicates'),
 
   // DATA-006. The folder Znada keeps its own copies in, and moving everything into a
   // new one. `plan` only counts and checks — nothing is written until `move`.
@@ -128,6 +132,8 @@ contextBridge.exposeInMainWorld('api', {
   itemReveal: (p) => ipcRenderer.invoke('item-reveal', p),
   itemOpenSource: (id) => ipcRenderer.invoke('item-open-source', id),
   itemCopyPath: (p) => ipcRenderer.invoke('item-copy-path', p),
+  // META-005. One tag from the Details sheet. Not a general copy-text channel.
+  detailsCopyTag: (tag) => ipcRenderer.invoke('details-copy-tag', tag),
   // META-001: ask an online catalogue what it knows about this exact file.
   itemLookupMetadata: (id) => invokeMetadataLookup(id),
   itemLookupVisualMetadata: (id) => invokeMetadataLookup(id, { action: 'visual' }),
@@ -150,7 +156,9 @@ contextBridge.exposeInMainWorld('api', {
   internetStatus: () => ipcRenderer.invoke('internet-status'),
   internetSearch: (opts) => ipcRenderer.invoke('internet-search', opts),
   internetTagSuggest: (opts) => ipcRenderer.invoke('internet-tag-suggest', opts),
-  internetAdd: (item, query) => ipcRenderer.invoke('internet-add', item, query),
+  internetAdd: (item, query, requestId) => ipcRenderer.invoke('internet-add', item, query, requestId),
+  cancelInternetVideo: (requestId) => ipcRenderer.invoke('internet-cancel-video', requestId),
+  onInternetVideoProgress: (cb) => { ipcRenderer.on('internet-video-progress', (_event, progress) => cb(progress)); },
   openGalleryViewer: (payload) => ipcRenderer.invoke('gallery-open', payload),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),
@@ -166,6 +174,11 @@ contextBridge.exposeInMainWorld('api', {
   thumb: (p, w, h) => ipcRenderer.invoke('thumb', p, w, h),
   thumbInfo: (p, w, h, priority) => ipcRenderer.invoke('thumb-info', p, w, h, priority),
   mediaMotion: (p) => ipcRenderer.invoke('media-motion', p),
+  mediaMotionMany: (paths) => ipcRenderer.invoke('media-motion-many', paths),
+  // LIB-031: which Online cards are photos the user already has.
+  onlineHaveMany: (cards) => ipcRenderer.invoke('online-have-many', cards),
+  // MEDIA-002: a video card opens in the Windows player until our viewer plays video.
+  openVideo: (p) => ipcRenderer.invoke('open-video', p),
   thumbAspects: (entries, w, h) => ipcRenderer.invoke('thumb-aspects', entries, w, h),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   createShortcuts: (which) => ipcRenderer.invoke('create-shortcuts', which),
@@ -186,6 +199,8 @@ contextBridge.exposeInMainWorld('api', {
   onWallpaperTheme: (cb) => ipcRenderer.on('wallpaper-theme-changed', (_e, t) => cb(t)),
   onConfig: (cb) => ipcRenderer.on('config-changed', (_e, c) => cb(c)),
   onLiveFoldersChanged: (cb) => ipcRenderer.on('live-folders-changed', (_e, change) => cb(change)),
+  onLibraryChecks: (cb) => ipcRenderer.on('library-checks-changed', (_e, summary) => cb(summary)),
+  onLibraryHaveChanged: (cb) => ipcRenderer.on('library-have-changed', () => cb()),
   onMonitors: (cb) => ipcRenderer.on('monitors-changed', (_e, d) => cb(d)),
   onNextChange: (cb) => ipcRenderer.on('next-change', (_e, s) => cb(s)),
   onUpdate: (cb) => ipcRenderer.on('update-status', (_e, st) => cb(st)),

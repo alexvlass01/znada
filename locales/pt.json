@@ -232,7 +232,7 @@
     "addFolder": "Adicionar pasta…",
     "empty": "A sua biblioteca está vazia: arraste imagens para aqui ou clique em «Adicionar fotos…».",
     "emptyFolder": "Esta pasta não contém imagens.",
-    "noMatches": "Nada corresponde à pesquisa ou à etiqueta. Limpe-as para ver tudo.",
+    "noMatches": "Nada encontrado aqui. Limpe a busca, as tags ou os filtros para ver tudo.",
     "emptyFavorites": "Ainda não há favoritos — marque uma foto com a estrela e ela aparece aqui.",
     "emptyFolders": "Ainda não há pastas — adicione uma com “Adicionar pasta…”.",
     "back": "‹ Todas as pastas",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} foto",
     "photosCount_few": "{n} fotos",
     "photosCount_many": "{n} fotos",
-    "photosCount_other": "{n} fotos"
+    "photosCount_other": "{n} fotos",
+    "kindPhoto": "Fotos",
+    "kindVideo": "Vídeos",
+    "dialogFilterMedia": "Imagens e vídeos"
   },
   "details": {
     "type": "Tipo",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Livre",
     "ratingSensitive": "Sensível",
     "ratingQuestionable": "Questionável",
-    "ratingExplicit": "Explícito"
+    "ratingExplicit": "Explícito",
+    "copyTag": "Copiar tag {tag}",
+    "tagCopied": "Tag copiada",
+    "tagCopyFailed": "Não foi possível copiar a tag",
+    "typeVideo": "Vídeo",
+    "duration": "Duração"
   },
   "motion": {
     "format": "Animação · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "{n} favorito não coube na conta — ficou neste computador",
     "syncHeldToast_few": "{n} favoritos não couberam na conta — ficaram neste computador",
     "syncHeldToast_many": "{n} favoritos não couberam na conta — ficaram neste computador",
-    "syncHeldToast_other": "{n} favoritos não couberam na conta — ficaram neste computador"
+    "syncHeldToast_other": "{n} favoritos não couberam na conta — ficaram neste computador",
+    "sourceFailed": "Este site não respondeu"
   },
   "theme": {
     "group": "Tema do Windows",
@@ -486,7 +495,10 @@
     "libraryStore": "Arquivo da biblioteca",
     "configStore": "Arquivo de configurações",
     "wallpaperSource": "Origem do papel de parede configurado",
-    "poolConsistency": "Atribuição de papel de parede reparada após gravação interrompida"
+    "poolConsistency": "Atribuição de papel de parede reparada após gravação interrompida",
+    "configRestored": "O arquivo de configurações estava corrompido e foi restaurado a partir da cópia de {date}",
+    "libraryRestored": "O arquivo da biblioteca estava corrompido e foi restaurado a partir da cópia de {date}",
+    "folderStateRestored": "O arquivo de informações das pastas estava corrompido e foi restaurado a partir da cópia de {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "O Znada não conseguiu alterar o papel de parede",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "O Znada não encontrou o seu papel de parede",
     "wallpaperSourceMissingBody": "A imagem configurada já não se encontra no local. Se o disco ou pasta foi movido, reponha-o e o papel de parede regressará na próxima alteração.",
     "poolConsistencyTitle": "O Znada reparou uma definição de papel de parede",
-    "poolConsistencyBody": "Um processo de gravação foi interrompido (provavelmente devido a quebra de energia ou encerramento forçado) e um monitor ficou associado a uma imagem que não terminou de ser guardada. A definição foi limpa. As suas fotografias não foram afetadas."
+    "poolConsistencyBody": "Um processo de gravação foi interrompido (provavelmente devido a quebra de energia ou encerramento forçado) e um monitor ficou associado a uma imagem que não terminou de ser guardada. A definição foi limpa. As suas fotografias não foram afetadas.",
+    "configRestoredTitle": "Arquivo de configurações corrompido: Znada o restaurou",
+    "libraryRestoredTitle": "Arquivo da biblioteca corrompido: Znada o restaurou",
+    "folderStateRestoredTitle": "Arquivo de informações das pastas corrompido: Znada o restaurou",
+    "configRestoredBody": "Znada não conseguiu ler o arquivo de configurações. Ele pode ter sido corrompido por uma queda de energia ou uma falha. As configurações foram restauradas a partir de uma cópia de segurança ({date}). Alterações posteriores podem ter sido perdidas.",
+    "libraryRestoredBody": "Znada não conseguiu ler o arquivo da biblioteca. Ele pode ter sido corrompido por uma queda de energia ou uma falha. A biblioteca foi restaurada a partir de uma cópia de segurança ({date}). Favoritos, tags e atribuições posteriores podem ter sido perdidos. Suas imagens não foram alteradas.",
+    "folderStateRestoredBody": "Znada não conseguiu ler o arquivo de informações das pastas conectadas. Ele pode ter sido corrompido por uma queda de energia ou uma falha. O arquivo foi restaurado a partir de uma cópia de segurança ({date}). Fotos retiradas dessas pastas depois dessa data podem voltar a aparecer."
   },
   "toast": {
     "applied": "Papel de parede aplicado",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Não foi possível preparar a pré-visualização para a pesquisa.",
     "lookupChanged": "A imagem foi alterada ou já não está disponível. Inicie uma nova pesquisa.",
     "lookupResponseFailed": "Não foi possível confirmar as informações na resposta do site. Nenhum dado foi alterado.",
-    "lookupHttpError": "O site devolveu o erro {n}. Tente novamente mais tarde."
+    "lookupHttpError": "O site devolveu o erro {n}. Tente novamente mais tarde.",
+    "lookupDismissed": "Comparação fechada. Nenhum dado foi alterado."
   },
   "whatsNew": {
     "button": "Novidades",
@@ -656,5 +675,38 @@
     "unavailable": "Indisponível",
     "retry": "Não foi possível carregar a imagem. Tente novamente.",
     "writeFailed": "Não foi possível guardar os favoritos. As marcações anteriores foram mantidas."
+  },
+  "libraryChecks": {
+    "title": "Verificação da biblioteca",
+    "duplicatesSwitch": "Procurar arquivos idênticos",
+    "duplicatesTitle": "Arquivos idênticos",
+    "show": "Mostrar",
+    "checking": "Verificando…",
+    "copiesCount": "Cópias extras: {n}",
+    "noneFound": "Nenhum arquivo encontrado",
+    "foundToast": "Arquivos idênticos encontrados: {n}",
+    "duplicatesEmpty": "Não há arquivos idênticos."
+  },
+  "video": {
+    "badge": "Vídeo",
+    "badgeLength": "Vídeo · {length}",
+    "openHint": "Abrir no reprodutor de vídeo",
+    "openFailed": "Não foi possível abrir este vídeo",
+    "notWallpaper": "Ainda não é possível usar vídeos como papel de parede",
+    "skippedOnAssign": "Fotos atribuídas. Ainda não é possível usar vídeos como papel de parede",
+    "play": "Reproduzir",
+    "pause": "Pausar",
+    "seek": "Posição da reprodução",
+    "volume": "Volume",
+    "mute": "Silenciar",
+    "unmute": "Ativar som",
+    "playback": "Reprodução de vídeo",
+    "controls": "Controles de vídeo",
+    "playbackFailed": "Não foi possível reproduzir este vídeo.",
+    "openExternal": "Abrir em outro reprodutor",
+    "loading": "Abrindo vídeo…",
+    "downloading": "Baixando vídeo…",
+    "local": "Vídeo da biblioteca",
+    "localFolder": "Vídeo de uma pasta"
   }
 }

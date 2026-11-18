@@ -308,6 +308,29 @@ function createMotionReader(options = {}) {
   };
 }
 
+// MEDIA-004. The Library's "Filters" tell a moving picture from a still one for many files
+// at once. A few at a time, so a large library does not queue thousands of reads on the
+// disk. Every path gets an answer: true (moves), false (still) or null (could not be read
+// now: a locked file, a drive that is away). The window shows a null among the photos and
+// asks again on the next change of the ticks, not on every redraw.
+async function motionOfMany(paths, motionOf, { concurrency = 4 } = {}) {
+  const list = Array.isArray(paths) ? paths : [];
+  const out = new Array(list.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const i = next;
+      next += 1;
+      let value = null;
+      try { value = await motionOf(list[i]); } catch { value = null; }
+      out[i] = value && typeof value.animated === 'boolean' ? value.animated : null;
+    }
+  };
+  const width = Math.max(1, Math.min(Math.trunc(Number(concurrency)) || 1, list.length));
+  await Promise.all(Array.from({ length: width }, worker));
+  return out;
+}
+
 module.exports = {
   PROBE_BYTES,
   READ_CHUNK,
@@ -321,4 +344,5 @@ module.exports = {
   headerSize,
   readMotion,
   createMotionReader,
+  motionOfMany,
 };

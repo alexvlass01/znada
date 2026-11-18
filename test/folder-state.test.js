@@ -15,6 +15,54 @@ const a = path.join(root, 'a.jpg');
 const b = path.join(root, 'b.jpg');
 const c = path.join(root, 'nested', 'c.png');
 
+// BUG-069: enabling another media family is not the arrival of all its old files.
+{
+  const L = require('../src/library');
+  const video = path.join(root, 'old.MP4');
+  const later = path.join(root, 'later.mkv');
+  const legacy = { version: 4, folders: { upgrade: {
+    rootPath: root, baselineComplete: true, hiddenDirs: { private: 'private' },
+    files: { 'a.jpg': { relativePath: 'a.jpg', firstSeenAt: 500, modifiedAt: 20 } },
+  } } };
+  const scan = (state, entries, status = 'complete', now = 10000) => F.reconcileFolder(state, {
+    folderId: 'upgrade', rootPath: root, folderAddedAt: 100, now, status, entries,
+  });
+  let upgraded = scan(legacy, [a, { path: video, modifiedAt: 9999 }], 'partial');
+  ok('video upgrade baseline does not promote an old video', upgraded.images.find(x => x.path === video).addedAt === 100);
+  ok('video upgrade preserves photograph date and hidden directories',
+    upgraded.images.find(x => x.path === a).addedAt === 500
+    && upgraded.state.folders.upgrade.hiddenDirs.private === 'private');
+  ok('partial video bootstrap remains open', upgraded.state.folders.upgrade.videoBaselineComplete === false);
+  // The open video pass backdates only videos: a photograph that arrives in the same pass is
+  // a genuinely new file and must sort as one (review of PR #306).
+  const withNewPhoto = scan(legacy, [a, b, { path: video, modifiedAt: 9999 }], 'partial', 10500);
+  ok('new photograph during open video bootstrap keeps its discovery time',
+    withNewPhoto.images.find(x => x.path === b).addedAt === 10500
+    && withNewPhoto.images.find(x => x.path === video).addedAt === 100);
+  upgraded = scan(JSON.parse(JSON.stringify(upgraded.state)), [a, video, later], 'complete', 11000);
+  ok('video bootstrap survives restart between batches', upgraded.images.find(x => x.path === later).addedAt === 100);
+  ok('only complete scan closes video bootstrap', upgraded.state.folders.upgrade.videoBaselineComplete === true);
+  const fresh = path.join(root, 'fresh.webm');
+  upgraded = scan(upgraded.state, [a, video, later, fresh], 'complete', 20000);
+  ok('subsequent video keeps normal new-file sorting date', upgraded.images.find(x => x.path === fresh).addedAt === 20000);
+  const recent = L.recentImages({}, upgraded.images, 10);
+  ok('unchanged newest-first comparator orders new video, photograph, old video',
+    recent[0].path === fresh && recent.findIndex(x => x.path === a) < recent.findIndex(x => x.path === video));
+  const empty = scan(legacy, [a]);
+  ok('empty first video scan also establishes coverage', scan(empty.state, [a, video], 'complete', 30000).images.find(x => x.path === video).addedAt === 30000);
+  const priorVideo = JSON.parse(JSON.stringify(legacy));
+  priorVideo.folders.upgrade.files['old.mp4'] = { relativePath: 'old.MP4', firstSeenAt: 800, modifiedAt: 70, size: 50, hidden: true };
+  const existing = scan(priorVideo, [a, video, fresh]);
+  ok('existing video history and hidden decision are never rewritten', existing.state.folders.upgrade.files['old.mp4'].firstSeenAt === 800
+    && existing.state.folders.upgrade.files['old.mp4'].hidden === true
+    && existing.images.find(x => x.path === fresh).addedAt === 10000);
+  const renamed = path.join(root, 'renamed.mp4');
+  const moved = scan(priorVideo, [a, { path: renamed, modifiedAt: 70, size: 50 }]);
+  ok('legacy video rename still pairs and retains date and removal', moved.moved.length === 1
+    && moved.state.folders.upgrade.files['renamed.mp4'].firstSeenAt === 800
+    && moved.state.folders.upgrade.files['renamed.mp4'].hidden === true);
+}
+
 let result = F.reconcileFolder(F.emptyState(), {
   folderId: 'folder-1', rootPath: root, folderAddedAt: 1000, now: 9000, status: 'complete',
   entries: [{ path: a, modifiedAt: 100 }, { path: b, modifiedAt: 200 }],
@@ -181,10 +229,14 @@ async function testScanner() {
       const accepted = ['a.JPG', 'b.JpEg', 'c.PNG', 'd.BmP', 'e.WeBp', 'f.GIF'];
       accepted.forEach((name) => fs.writeFileSync(path.join(formatTree, name), 'x'));
       fs.writeFileSync(path.join(formatTree, 'moving.WEBM'), 'x');
+      fs.writeFileSync(path.join(formatTree, 'note.TXT'), 'x');
       const formats = await F.scanFolderTree(formatTree);
-      ok('folder-state scans the same six formats case-insensitively and no moving picture',
+      // MEDIA-002: the index is what the Library shows, so video is in it; the slideshow
+      // never reads the index (test/playlist.test.js holds that side).
+      ok('folder-state scans the six picture formats and video case-insensitively, and nothing else',
         formats.status === 'complete'
-        && formats.entries.map((entry) => path.basename(entry.path)).sort().join() === accepted.sort().join());
+        && formats.entries.map((entry) => path.basename(entry.path)).sort().join()
+          === accepted.concat('moving.WEBM').sort().join());
     } finally {
       fs.rmSync(formatTree, { recursive: true, force: true });
     }

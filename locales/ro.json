@@ -232,7 +232,7 @@
     "addFolder": "Adaugă folder…",
     "empty": "Biblioteca este goală — trage imagini aici sau apasă pe „Adaugă”.",
     "emptyFolder": "Acest folder nu are imagini.",
-    "noMatches": "Nimic nu se potrivește căutării sau etichetei. Șterge-le ca să vezi tot.",
+    "noMatches": "Nu s-a găsit nimic aici. Șterge căutarea, etichetele sau filtrele pentru a vedea totul.",
     "emptyFavorites": "Încă nu ai favorite — marchează o fotografie cu steaua și va apărea aici.",
     "emptyFolders": "Încă nu există foldere — adaugă unul cu „Adaugă folder…”.",
     "back": "‹ Toate folderele",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} fotografie",
     "photosCount_few": "{n} fotografii",
     "photosCount_many": "{n} de fotografii",
-    "photosCount_other": "{n} de fotografii"
+    "photosCount_other": "{n} de fotografii",
+    "kindPhoto": "Fotografii",
+    "kindVideo": "Videoclipuri",
+    "dialogFilterMedia": "Imagini și videoclipuri"
   },
   "details": {
     "type": "Tip",
@@ -321,7 +324,12 @@
     "ratingGeneral": "General",
     "ratingSensitive": "Sensibil",
     "ratingQuestionable": "Discutabil",
-    "ratingExplicit": "Explicit"
+    "ratingExplicit": "Explicit",
+    "copyTag": "Copiază eticheta {tag}",
+    "tagCopied": "Etichetă copiată",
+    "tagCopyFailed": "Eticheta nu a putut fi copiată",
+    "typeVideo": "Videoclip",
+    "duration": "Durată"
   },
   "motion": {
     "format": "Animație · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "Favorite care nu au încăput în cont și au rămas pe acest computer: {n}",
     "syncHeldToast_few": "Favorite care nu au încăput în cont și au rămas pe acest computer: {n}",
     "syncHeldToast_many": "Favorite care nu au încăput în cont și au rămas pe acest computer: {n}",
-    "syncHeldToast_other": "Favorite care nu au încăput în cont și au rămas pe acest computer: {n}"
+    "syncHeldToast_other": "Favorite care nu au încăput în cont și au rămas pe acest computer: {n}",
+    "sourceFailed": "Site-ul nu a răspuns"
   },
   "theme": {
     "group": "Temă Windows",
@@ -486,7 +495,10 @@
     "libraryStore": "Fișierul bibliotecii",
     "configStore": "Fișier de setări",
     "wallpaperSource": "Sursa fundalului configurat",
-    "poolConsistency": "Atribuirea fundalului a fost reparată după o salvare întreruptă"
+    "poolConsistency": "Atribuirea fundalului a fost reparată după o salvare întreruptă",
+    "configRestored": "Fișierul de setări era deteriorat și a fost restaurat din copia din {date}",
+    "libraryRestored": "Fișierul bibliotecii era deteriorat și a fost restaurat din copia din {date}",
+    "folderStateRestored": "Fișierul cu informații despre dosare era deteriorat și a fost restaurat din copia din {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada nu a putut schimba imaginea de fundal",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada nu a găsit imaginea de fundal",
     "wallpaperSourceMissingBody": "Imaginea setată nu mai este disponibilă. Dacă unitatea sau folderul a fost mutat, pune-l la loc și fundalul va reveni la următoarea schimbare.",
     "poolConsistencyTitle": "Znada a reparat o setare de fundal",
-    "poolConsistencyBody": "O salvare a fost întreruptă (probabil o pană de curent sau o închidere forțată) și un monitor a rămas asociat unei imagini care nu s-a salvat complet. Setarea a fost ștearsă. Fotografiile tale nu au fost afectate."
+    "poolConsistencyBody": "O salvare a fost întreruptă (probabil o pană de curent sau o închidere forțată) și un monitor a rămas asociat unei imagini care nu s-a salvat complet. Setarea a fost ștearsă. Fotografiile tale nu au fost afectate.",
+    "configRestoredTitle": "Fișierul de setări era deteriorat — Znada l-a restaurat",
+    "libraryRestoredTitle": "Fișierul bibliotecii era deteriorat — Znada l-a restaurat",
+    "folderStateRestoredTitle": "Fișierul cu informații despre dosare era deteriorat — Znada l-a restaurat",
+    "configRestoredBody": "Znada nu a putut citi fișierul de setări. Este posibil să fi fost deteriorat de o pană de curent sau de o eroare. Setările au fost restaurate dintr-o copie de rezervă ({date}). Modificările ulterioare pot lipsi.",
+    "libraryRestoredBody": "Znada nu a putut citi fișierul bibliotecii. Este posibil să fi fost deteriorat de o pană de curent sau de o eroare. Biblioteca a fost restaurată dintr-o copie de rezervă ({date}). Favoritele, etichetele și atribuirile ulterioare pot lipsi. Imaginile nu au fost modificate.",
+    "folderStateRestoredBody": "Znada nu a putut citi fișierul cu informații despre dosarele conectate. Este posibil să fi fost deteriorat de o pană de curent sau de o eroare. Fișierul a fost restaurat dintr-o copie de rezervă ({date}). Fotografiile eliminate ulterior din aceste dosare pot reapărea."
   },
   "toast": {
     "applied": "Imagine de fundal aplicată",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Nu s-a putut pregăti previzualizarea pentru căutare.",
     "lookupChanged": "Imaginea s-a schimbat sau nu mai este disponibilă. Porniți o nouă căutare.",
     "lookupResponseFailed": "Nu s-a putut verifica răspunsul sursei. Datele nu au fost modificate.",
-    "lookupHttpError": "Site-ul a returnat eroarea {n}. Încercați mai târziu."
+    "lookupHttpError": "Site-ul a returnat eroarea {n}. Încercați mai târziu.",
+    "lookupDismissed": "Comparația a fost închisă. Datele nu au fost modificate."
   },
   "whatsNew": {
     "button": "Noutăți",
@@ -656,5 +675,38 @@
     "unavailable": "Indisponibil",
     "retry": "Nu s-a putut încărca imaginea. Încercați din nou.",
     "writeFailed": "Nu s-au putut salva favoritele. Favoritele anterioare sunt neschimbate."
+  },
+  "libraryChecks": {
+    "title": "Verificarea bibliotecii",
+    "duplicatesSwitch": "Caută fișiere identice",
+    "duplicatesTitle": "Fișiere identice",
+    "show": "Afișează",
+    "checking": "Se verifică…",
+    "copiesCount": "Copii suplimentare: {n}",
+    "noneFound": "Nu s-a găsit niciun fișier",
+    "foundToast": "Fișiere identice găsite: {n}",
+    "duplicatesEmpty": "Nu există fișiere identice."
+  },
+  "video": {
+    "badge": "Videoclip",
+    "badgeLength": "Videoclip · {length}",
+    "openHint": "Deschide în playerul video",
+    "openFailed": "Videoclipul nu a putut fi deschis",
+    "notWallpaper": "Videoclipurile nu pot fi încă folosite ca fundal",
+    "skippedOnAssign": "Fotografiile au fost atribuite. Videoclipurile nu pot fi încă folosite ca fundal",
+    "play": "Redă",
+    "pause": "Pauză",
+    "seek": "Poziție de redare",
+    "volume": "Volum",
+    "mute": "Oprește sunetul",
+    "unmute": "Pornește sunetul",
+    "playback": "Redare video",
+    "controls": "Comenzi video",
+    "playbackFailed": "Videoclipul nu a putut fi redat.",
+    "openExternal": "Deschide în alt player",
+    "loading": "Se deschide videoclipul…",
+    "downloading": "Se descarcă videoclipul…",
+    "local": "Videoclip din bibliotecă",
+    "localFolder": "Videoclip dintr-un dosar"
   }
 }

@@ -232,7 +232,7 @@
     "addFolder": "Legg til mappe…",
     "empty": "Biblioteket ditt er tomt — slipp bilder her eller klikk på \"Legg til\".",
     "emptyFolder": "Denne mappen har ingen bilder.",
-    "noMatches": "Ingenting passer med søket eller merket. Tøm dem for å se alt.",
+    "noMatches": "Fant ingenting her. Tøm søket, emneknaggene eller filtrene for å se alt.",
     "emptyFavorites": "Ingen favoritter ennå — merk et bilde med stjernen, så vises det her.",
     "emptyFolders": "Ingen mapper ennå — legg til en med «Legg til mappe…».",
     "back": "‹ Alle mapper",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} bilde",
     "photosCount_few": "{n} bilder",
     "photosCount_many": "{n} bilder",
-    "photosCount_other": "{n} bilder"
+    "photosCount_other": "{n} bilder",
+    "kindPhoto": "Bilder",
+    "kindVideo": "Videoer",
+    "dialogFilterMedia": "Bilder og videoer"
   },
   "details": {
     "type": "Type",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Generell",
     "ratingSensitive": "Sensitiv",
     "ratingQuestionable": "Tilsynelatende",
-    "ratingExplicit": "Eksplisitt"
+    "ratingExplicit": "Eksplisitt",
+    "copyTag": "Kopier emneknaggen {tag}",
+    "tagCopied": "Emneknaggen ble kopiert",
+    "tagCopyFailed": "Kunne ikke kopiere emneknaggen",
+    "typeVideo": "Video",
+    "duration": "Varighet"
   },
   "motion": {
     "format": "Animasjon · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "Favoritter som ikke fikk plass på kontoen og ble igjen på denne datamaskinen: {n}",
     "syncHeldToast_few": "Favoritter som ikke fikk plass på kontoen og ble igjen på denne datamaskinen: {n}",
     "syncHeldToast_many": "Favoritter som ikke fikk plass på kontoen og ble igjen på denne datamaskinen: {n}",
-    "syncHeldToast_other": "Favoritter som ikke fikk plass på kontoen og ble igjen på denne datamaskinen: {n}"
+    "syncHeldToast_other": "Favoritter som ikke fikk plass på kontoen og ble igjen på denne datamaskinen: {n}",
+    "sourceFailed": "Nettstedet svarte ikke"
   },
   "theme": {
     "group": "Windows-tema",
@@ -486,7 +495,10 @@
     "libraryStore": "Biblioteksfil",
     "configStore": "Innstillingsfil",
     "wallpaperSource": "Kilde for konfigurert bakgrunn",
-    "poolConsistency": "Bakgrunnstilordning reparert etter avbrutt lagring"
+    "poolConsistency": "Bakgrunnstilordning reparert etter avbrutt lagring",
+    "configRestored": "Innstillingsfilen var skadet og ble gjenopprettet fra kopien fra {date}",
+    "libraryRestored": "Bibliotekfilen var skadet og ble gjenopprettet fra kopien fra {date}",
+    "folderStateRestored": "Filen med mappeinformasjon var skadet og ble gjenopprettet fra kopien fra {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada kunne ikke endre bakgrunnen",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada fant ikke bakgrunnen din",
     "wallpaperSourceMissingBody": "Det valgte bildet er ikke lenger tilgjengelig. Hvis stasjonen eller mappen ble flyttet, legg den tilbake og bakgrunnen gjenopprettes ved neste endring.",
     "poolConsistencyTitle": "Znada reparerte en bakgrunnsinnstilling",
-    "poolConsistencyBody": "En lagring ble avbrutt (sannsynligvis på grunn av strømbrudd eller tvungen avslutning), og en skjerm ble koblet til et bilde som ikke ble ferdig lagret. Innstillingen er tilbakestilt. Bildene dine ble ikke påvirket."
+    "poolConsistencyBody": "En lagring ble avbrutt (sannsynligvis på grunn av strømbrudd eller tvungen avslutning), og en skjerm ble koblet til et bilde som ikke ble ferdig lagret. Innstillingen er tilbakestilt. Bildene dine ble ikke påvirket.",
+    "configRestoredTitle": "Innstillingsfilen var skadet — Znada gjenopprettet den",
+    "libraryRestoredTitle": "Bibliotekfilen var skadet — Znada gjenopprettet den",
+    "folderStateRestoredTitle": "Filen med mappeinformasjon var skadet — Znada gjenopprettet den",
+    "configRestoredBody": "Znada kunne ikke lese innstillingsfilen. Den kan ha blitt skadet ved strømbrudd eller krasj. Innstillingene ble gjenopprettet fra en sikkerhetskopi ({date}). Senere endringer kan mangle.",
+    "libraryRestoredBody": "Znada kunne ikke lese bibliotekfilen. Den kan ha blitt skadet ved strømbrudd eller krasj. Biblioteket ble gjenopprettet fra en sikkerhetskopi ({date}). Senere favoritter, emneknagger og tilordninger kan mangle. Bildene dine ble ikke endret.",
+    "folderStateRestoredBody": "Znada kunne ikke lese filen med informasjon om tilkoblede mapper. Den kan ha blitt skadet ved strømbrudd eller krasj. Filen ble gjenopprettet fra en sikkerhetskopi ({date}). Bilder som du har fjernet fra mappene etter dette, kan dukke opp igjen."
   },
   "toast": {
     "applied": "Bakgrunn brukt",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Kunne ikke klargjøre forhåndsvisningen til søket.",
     "lookupChanged": "Bildet er endret eller ikke lenger tilgjengelig. Start et nytt søk.",
     "lookupResponseFailed": "Kunne ikke bekrefte svaret fra kilden. Ingen data er endret.",
-    "lookupHttpError": "Nettstedet returnerte feil {n}. Prøv igjen senere."
+    "lookupHttpError": "Nettstedet returnerte feil {n}. Prøv igjen senere.",
+    "lookupDismissed": "Sammenligningen ble lukket. Ingen data ble endret."
   },
   "whatsNew": {
     "button": "Hva er nytt",
@@ -656,5 +675,38 @@
     "unavailable": "Utilgjengelig",
     "retry": "Kunne ikke laste bildet. Prøv igjen.",
     "writeFailed": "Kunne ikke lagre favoritter. De tidligere favorittene er uendret."
+  },
+  "libraryChecks": {
+    "title": "Bibliotekkontroll",
+    "duplicatesSwitch": "Finn identiske filer",
+    "duplicatesTitle": "Identiske filer",
+    "show": "Vis",
+    "checking": "Kontrollerer…",
+    "copiesCount": "Ekstra kopier: {n}",
+    "noneFound": "Ingen funnet",
+    "foundToast": "Identiske filer funnet: {n}",
+    "duplicatesEmpty": "Ingen identiske filer."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Åpne i videospilleren",
+    "openFailed": "Kunne ikke åpne denne videoen",
+    "notWallpaper": "Videoer kan ennå ikke brukes som skrivebordsbakgrunn",
+    "skippedOnAssign": "Bilder ble tilordnet. Videoer kan ennå ikke brukes som skrivebordsbakgrunn",
+    "play": "Spill av",
+    "pause": "Sett på pause",
+    "seek": "Avspillingsposisjon",
+    "volume": "Lydstyrke",
+    "mute": "Demp",
+    "unmute": "Slå på lyden",
+    "playback": "Videoavspilling",
+    "controls": "Videokontroller",
+    "playbackFailed": "Kunne ikke spille av denne videoen.",
+    "openExternal": "Åpne i en annen spiller",
+    "loading": "Åpner video…",
+    "downloading": "Laster ned video…",
+    "local": "Video fra biblioteket",
+    "localFolder": "Video fra en mappe"
   }
 }

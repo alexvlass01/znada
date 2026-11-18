@@ -200,6 +200,38 @@ function assertNotActiveAndRemoved(m) {
     assert.strictEqual(after.addedAt, before.addedAt, 'with the date it was first found, not "now"');
   });
 
+  await test('a single scan follows active and removed names, preserving unknown metadata after restart', async (dir) => {
+    const { m, root, beach, city, beachId, cityId } = await setup(dir);
+    cfg(m).library[beachId].futureMetadata = { label: 'путь с пробелами', nested: [1, 'keep'] };
+    cfg(m).library[beachId].rev = 41;
+    cfg(m).darkWallpaper = beach;
+    const removed = await m.invoke('library-remove-many', [{ id: cityId, path: city }]);
+    assert.ok(removed.undo.token);
+    const activePath = path.join(root, 'новое имя.png');
+    const removedPath = path.join(root, 'убранное имя.png');
+    fs.renameSync(beach, activePath);
+    fs.renameSync(city, removedPath);
+    await m.invoke('library-refresh');
+    const newId = library.idFor(activePath);
+    assert.ok(cfg(m).library[newId].rev >= 41);
+    assert.deepStrictEqual(cfg(m).library[newId].futureMetadata, { label: 'путь с пробелами', nested: [1, 'keep'] });
+    assert.deepStrictEqual(cfg(m).monitors.M1.dark.itemIds, [newId]);
+    assert.strictEqual(pathKey(cfg(m).darkWallpaper), pathKey(activePath));
+    assert.ok(m.__test.hiddenPathSet().has(pathKey(removedPath)));
+    assert.ok(cfg(m).libraryTrash.some(row => row.item.path === removedPath));
+    assertNotActiveAndRemoved(m);
+    m.__test.flushLibraryWriter();
+    H.unloadMain();
+    const again = H.loadMain(dir); again.__test.loadConfig(); again.__test.loadLiveFolderState();
+    const next = again.__test.getConfig();
+    assert.deepStrictEqual(next.library[newId].futureMetadata, { label: 'путь с пробелами', nested: [1, 'keep'] });
+    assert.ok(again.__test.hiddenPathSet().has(pathKey(removedPath)), 'removed marker was persisted before returning');
+    const restored = await again.invoke('library-restore', [removedPath]);
+    assert.strictEqual(restored.restored, 1);
+    assert.ok(next.library[library.idFor(removedPath)]);
+    assertNotActiveAndRemoved(again);
+  });
+
   // --- what is left exactly as it was ---------------------------------------------
 
   await test('a deleted photo still goes the way it always went', async (dir) => {

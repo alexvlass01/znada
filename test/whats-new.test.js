@@ -101,6 +101,10 @@ ok('package verification demands the stamp in official mode and forbids it other
     const helper = path.join(resources, 'thumbnail-helper');
     fs.mkdirSync(helper, { recursive: true });
     fs.writeFileSync(path.join(resources, 'app.asar'), 'fixture');
+    const video = path.join(resources, 'libmpv'); fs.mkdirSync(video);
+    for (const name of require('../src/video-runtime').FILES) fs.writeFileSync(path.join(video, name), 'fixture');
+    const addon = path.join(resources, 'app.asar.unpacked', 'node_modules', 'koffi', 'build', 'koffi', 'win32_x64');
+    fs.mkdirSync(addon, { recursive: true }); fs.writeFileSync(path.join(addon, 'koffi.node'), 'fixture');
     fs.writeFileSync(path.join(helper, 'Znada.ThumbnailHelper.exe'), 'fixture');
     fs.writeFileSync(path.join(helper, 'source.sha256'), `${'a'.repeat(64)}\n`);
     const stamp = path.join(resources, whatsNew.STAMP_FILE);

@@ -7,7 +7,7 @@
 // handler still asks it inside the stream. This file drives the REAL handler that main.js
 // registers and a fake upstream that sends more than it promised.
 //
-// For each tier with its own cap (`thumb` 2 MB, `full` 30 MB):
+// For each tier with its own cap (`thumb` 2 MB, `sample` 30 MB, `full` 100 MB):
 //   - a lying `content-length` and a missing one: not one byte above the cap reaches the
 //     window, the stream ends with an error, and the upstream read is cancelled early;
 //   - an honest `content-length` above the cap: 413 before the body is read at all;
@@ -105,6 +105,7 @@ async function check(name, fn) {
 
 const TIERS = [
   { tier: 'thumb', cap: mediaProxy.THUMB_MAX_BYTES, url: 'https://cdn.donmai.us/preview/aa/bb/aabbcc' },
+  { tier: 'sample', cap: mediaProxy.SAMPLE_MAX_BYTES, url: 'https://cdn.donmai.us/sample/aa/bb/aabbcc' },
   { tier: 'full', cap: mediaProxy.FULL_MAX_BYTES, url: 'https://cdn.donmai.us/original/aa/bb/aabbcc' },
 ];
 
@@ -162,6 +163,33 @@ const TIERS = [
         assert.strictEqual(sent.cancelled, false);
       });
     }
+
+    // BUG-065. The case caught in the real viewer 2026-11-07: a 32.1 MB GIF original
+    // (Gelbooru post 15123710) with an honest content-length was refused before its body
+    // was read, and the viewer stayed on a still frame every time it was opened.
+    await check('full: a 32 MB GIF original with an honest content-length passes whole', async () => {
+      const total = 33660000;
+      const sent = upstream({ total, contentLength: total });
+      const url = 'https://cdn.donmai.us/original/aa/bb/big-gif.gif';
+      const res = await handle({ url: mediaUrl('full', url) });
+      assert.strictEqual(res.status, 200, 'a 32 MB original must not be refused up front');
+      const { received, error } = await drain(res);
+      assert.strictEqual(error, null, `the stream failed: ${error && error.message}`);
+      assert.strictEqual(received, total);
+      assert.strictEqual(sent.cancelled, false);
+    });
+
+    await check('full: an original above what the store keeps still streams whole and is not kept', async () => {
+      const total = 70 * 1024 * 1024;
+      upstream({ total, contentLength: total });
+      const url = 'https://cdn.donmai.us/original/aa/bb/bigger.gif';
+      const res = await handle({ url: mediaUrl('full', url) });
+      const { received, error } = await drain(res);
+      assert.strictEqual(error, null);
+      assert.strictEqual(received, total);
+      const kept = await main.__test.recentOriginals.get(url, { waitMs: 0 });
+      assert.strictEqual(kept, null, 'above the store limit the original is not kept');
+    });
   } finally {
     globalThis.fetch = realFetch;
     try { H.unloadMain(); } catch {}

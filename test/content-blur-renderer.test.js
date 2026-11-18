@@ -29,7 +29,7 @@ const globals = { document: doc, contentBlur: blur, config: cfg, selectedMonitor
   cloudThumbUrl: () => 'data:image/png;base64,fixture', galleryItemFromCloud: it => ({ raw: it }),
   galleryItemFromInternet: it => ({ raw: it }), attachOnlineAddButton: no, bindOnlineCardContextMenu: no,
   cloudSignedIn: () => false, setLibCardAspect: no, setInternetCardThumbnail: no,
-  window: { api: {}, MotionBadge: { sync: no, fromSite: () => null },
+  window: { api: {}, MediaKind: require('../renderer/media-kind'), MotionBadge: { sync: no, fromSite: () => null },
     CardCaption: { text: () => '' } },
 };
 let checks = 0;
@@ -72,8 +72,9 @@ async function clicks(host, preview = host) {
   const localGlobals = { ...globals, $: selector => elements[selector.slice(1)],
     normPathKey: pathKey, homeRecentRenderVersion: 1, layoutHomeRecentRow: no,
     thumbWithMotion: async () => ({ url: 'data:fixture' }), slotItems: () => [item], bindSlotCardContextMenu: no,
+    localCardMedia: () => ({ chip: null, moving: null }),
     window: { ...globals.window, MotionHover: { mark: no },
-      MotionBadge: { sync: no, fromLocal: () => null }, api: {} },
+      MotionBadge: { sync: no, fromLocal: () => null }, MediaKind: require('../renderer/media-kind'), api: {} },
   };
   load('renderHomeRecentItems', localGlobals)([item], 1);
   const recent = elements.homeRecentGrid.children[0];

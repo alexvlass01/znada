@@ -232,7 +232,7 @@
     "addFolder": "Tambahkan folder…",
     "empty": "Pustaka Anda kosong — jatuhkan gambar di sini atau klik \"Tambahkan\".",
     "emptyFolder": "Folder ini tidak memiliki gambar.",
-    "noMatches": "Tidak ada yang cocok dengan pencarian atau label. Hapus keduanya untuk melihat semuanya.",
+    "noMatches": "Tidak ada hasil di sini. Hapus pencarian, tag, atau filter untuk menampilkan semuanya.",
     "emptyFavorites": "Belum ada favorit — tandai foto dengan bintang dan foto itu akan muncul di sini.",
     "emptyFolders": "Belum ada folder — tambahkan satu dengan “Tambahkan folder…”.",
     "back": "‹ Semua folder",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} foto",
     "photosCount_few": "{n} foto",
     "photosCount_many": "{n} foto",
-    "photosCount_other": "{n} foto"
+    "photosCount_other": "{n} foto",
+    "kindPhoto": "Foto",
+    "kindVideo": "Video",
+    "dialogFilterMedia": "Gambar dan video"
   },
   "details": {
     "type": "Jenis",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Umum",
     "ratingSensitive": "Sensitif",
     "ratingQuestionable": "Dipertanyakan",
-    "ratingExplicit": "Dewasa"
+    "ratingExplicit": "Dewasa",
+    "copyTag": "Salin tag {tag}",
+    "tagCopied": "Tag disalin",
+    "tagCopyFailed": "Tag tidak dapat disalin",
+    "typeVideo": "Video",
+    "duration": "Durasi"
   },
   "motion": {
     "format": "Animasi · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "Favorit yang tidak muat di akun dan tetap di komputer ini: {n}",
     "syncHeldToast_few": "Favorit yang tidak muat di akun dan tetap di komputer ini: {n}",
     "syncHeldToast_many": "Favorit yang tidak muat di akun dan tetap di komputer ini: {n}",
-    "syncHeldToast_other": "Favorit yang tidak muat di akun dan tetap di komputer ini: {n}"
+    "syncHeldToast_other": "Favorit yang tidak muat di akun dan tetap di komputer ini: {n}",
+    "sourceFailed": "Situs ini tidak merespons"
   },
   "theme": {
     "group": "Tema Windows",
@@ -486,7 +495,10 @@
     "libraryStore": "File pustaka",
     "configStore": "Berkas pengaturan",
     "wallpaperSource": "Sumber wallpaper yang dikonfigurasi",
-    "poolConsistency": "Penetapan wallpaper dipulihkan setelah penyimpanan terputus"
+    "poolConsistency": "Penetapan wallpaper dipulihkan setelah penyimpanan terputus",
+    "configRestored": "Berkas pengaturan rusak dan telah dipulihkan dari salinan tanggal {date}",
+    "libraryRestored": "Berkas pustaka rusak dan telah dipulihkan dari salinan tanggal {date}",
+    "folderStateRestored": "Berkas informasi folder rusak dan telah dipulihkan dari salinan tanggal {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada tidak dapat mengubah wallpaper",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada tidak dapat menemukan wallpaper Anda",
     "wallpaperSourceMissingBody": "Gambar yang ditetapkan tidak lagi tersedia. Jika drive atau folder dipindahkan, kembalikan ke tempat semula dan wallpaper akan dipasang pada pergantian berikutnya.",
     "poolConsistencyTitle": "Znada memulihkan pengaturan wallpaper",
-    "poolConsistencyBody": "Penyimpanan terhenti (mungkin karena listrik mati atau pematian paksa) dan monitor tetap terhubung ke gambar yang belum selesai disimpan. Pengaturan telah dibersihkan. Foto Anda tidak terpengaruh."
+    "poolConsistencyBody": "Penyimpanan terhenti (mungkin karena listrik mati atau pematian paksa) dan monitor tetap terhubung ke gambar yang belum selesai disimpan. Pengaturan telah dibersihkan. Foto Anda tidak terpengaruh.",
+    "configRestoredTitle": "Berkas pengaturan rusak — Znada telah memulihkannya",
+    "libraryRestoredTitle": "Berkas pustaka rusak — Znada telah memulihkannya",
+    "folderStateRestoredTitle": "Berkas informasi folder rusak — Znada telah memulihkannya",
+    "configRestoredBody": "Znada tidak dapat membaca berkas pengaturan. Berkas mungkin rusak karena listrik padam atau aplikasi berhenti mendadak. Pengaturan dipulihkan dari cadangan ({date}). Perubahan setelah tanggal tersebut mungkin hilang.",
+    "libraryRestoredBody": "Znada tidak dapat membaca berkas pustaka. Berkas mungkin rusak karena listrik padam atau aplikasi berhenti mendadak. Pustaka dipulihkan dari cadangan ({date}). Favorit, tag, dan penetapan setelah tanggal tersebut mungkin hilang. Gambar Anda tidak diubah.",
+    "folderStateRestoredBody": "Znada tidak dapat membaca berkas informasi folder yang terhubung. Berkas mungkin rusak karena listrik padam atau aplikasi berhenti mendadak. Berkas dipulihkan dari cadangan ({date}). Foto yang dikeluarkan dari folder itu setelah tanggal tersebut mungkin muncul kembali."
   },
   "toast": {
     "applied": "Wallpaper diterapkan",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Tidak dapat menyiapkan pratinjau pencarian.",
     "lookupChanged": "Gambar berubah atau tidak lagi tersedia. Mulai pencarian baru.",
     "lookupResponseFailed": "Tidak dapat memverifikasi respons sumber. Data tidak diubah.",
-    "lookupHttpError": "Situs mengembalikan kesalahan {n}. Coba lagi nanti."
+    "lookupHttpError": "Situs mengembalikan kesalahan {n}. Coba lagi nanti.",
+    "lookupDismissed": "Perbandingan ditutup. Tidak ada data yang berubah."
   },
   "whatsNew": {
     "button": "Yang baru",
@@ -656,5 +675,38 @@
     "unavailable": "Tidak tersedia",
     "retry": "Tidak dapat memuat gambar. Coba lagi.",
     "writeFailed": "Tidak dapat menyimpan favorit. Favorit sebelumnya tidak berubah."
+  },
+  "libraryChecks": {
+    "title": "Pemeriksaan pustaka",
+    "duplicatesSwitch": "Cari berkas yang sama persis",
+    "duplicatesTitle": "Berkas yang sama persis",
+    "show": "Tampilkan",
+    "checking": "Memeriksa…",
+    "copiesCount": "Salinan berlebih: {n}",
+    "noneFound": "Tidak ada yang ditemukan",
+    "foundToast": "Berkas yang sama persis ditemukan: {n}",
+    "duplicatesEmpty": "Tidak ada berkas yang sama persis."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Buka di pemutar video",
+    "openFailed": "Video ini tidak dapat dibuka",
+    "notWallpaper": "Video belum dapat dijadikan wallpaper",
+    "skippedOnAssign": "Foto ditetapkan. Video belum dapat dijadikan wallpaper",
+    "play": "Putar",
+    "pause": "Jeda",
+    "seek": "Posisi pemutaran",
+    "volume": "Volume",
+    "mute": "Bisukan",
+    "unmute": "Nyalakan suara",
+    "playback": "Pemutaran video",
+    "controls": "Kontrol video",
+    "playbackFailed": "Video ini tidak dapat diputar.",
+    "openExternal": "Buka di pemutar lain",
+    "loading": "Membuka video…",
+    "downloading": "Mengunduh video…",
+    "local": "Video dari pustaka",
+    "localFolder": "Video dari folder"
   }
 }

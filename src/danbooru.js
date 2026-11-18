@@ -176,6 +176,8 @@ function mapItem(post) {
   // describe the bytes it will actually download, or the strict boundary correctly
   // rejects a useful fallback as contradictory input.
   const format = formatFromUrl(full) || media.normalizeFormat(post.file_ext);
+  const video = media.ONLINE_VIDEO_FORMATS.includes(format);
+  const duration = Number(post.media_asset?.duration);
   const width = Number(post.image_width) || 0;
   const height = Number(post.image_height) || 0;
   const artist = String(post.tag_string_artist || '').split(/\s+/).find(Boolean) || '';
@@ -188,14 +190,15 @@ function mapItem(post) {
     page: `${POST_BASE}/${post.id}`,
     full,
     sample,
-    thumb: post.preview_file_url || post.large_file_url || full,
+    thumb: post.preview_file_url || (video ? '' : post.large_file_url || full),
     resolution: width > 0 && height > 0 ? `${width}x${height}` : '',
     width,
     height,
     // ONL-016. This site reports the size in bytes; Gelbooru does not report it at all.
     fileSize: Number(post.file_size) || 0,
-    fileType: `image/${format === 'jpg' ? 'jpeg' : format}`,
+    fileType: `${video ? 'video' : 'image'}/${format === 'jpg' ? 'jpeg' : format}`,
     format,
+    ...(video && Number.isFinite(duration) && duration > 0 ? { durationMs: duration * 1000 } : {}),
     // BUG-035. The site's own word that this file moves, for the card's chip. Danbooru
     // keeps "animated" among its META tags, which the card's tag list leaves out.
     animated: motion.taggedAsMoving([post.tag_string, post.tag_string_meta].join(' '), format),
@@ -316,6 +319,7 @@ const PROVIDER = Object.freeze({
     tagSuggest: true,
     // ONL-015. Cards from here carry their format — see the note in src/wallhaven.js.
     cardFormat: true,
+    onlineVideo: true,
     // ONL-010. Measured on the live API 2026-09-03: `width:>=`, `height:>=` and
     // `ratio:>=` all work, and three terms at once are accepted. One bound at a time, so
     // no list.
@@ -341,8 +345,6 @@ const PROVIDER = Object.freeze({
   loadsDirectly: false,
 });
 
-// ONL-012. See the note in src/wallhaven.js. This site has no `enrich`: its search
-// response already carries grouped tags and the artist.
 async function search(params, ctx) {
   const request = requestFrom(params);
   const { page, limit } = request;
@@ -421,11 +423,24 @@ async function suggestTags(params, ctx) {
   return { items: parseTagSuggestions(res.json) };
 }
 
-async function lookup(id, ctx) {
+async function fetchPost(id, ctx) {
   if (!/^[1-9][0-9]{0,19}$/.test(id)) return { error: 'badItem' };
   const res = await ctx.fetchJson(`${API_BASE}?tags=id%3A${id}&limit=1`);
   if (res.error) return { error: res.error };
-  const post = Array.isArray(res.json) && res.json.find((entry) => String(entry.id) === id);
+  const post = Array.isArray(res.json) && res.json.find((entry) => String(entry?.id) === id);
+  return post ? { post } : { error: '404' };
+}
+
+async function enrich(item, ctx) {
+  const id = String(item.id ?? '').replace(/^danbooru:/, '');
+  const { post } = await fetchPost(id, ctx);
+  const summary = postSummary(post);
+  return summary?.tags.length ? { author: summary.author, postTags: summary.tags } : {};
+}
+
+async function lookup(id, ctx) {
+  const { post, error } = await fetchPost(id, ctx);
+  if (error) return { error };
   const item = mapItem(post);
   return item ? { item } : { error: '404' };
 }
@@ -434,6 +449,7 @@ module.exports = {
   lookup,
   PROVIDER,
   search,
+  enrich,
   findByFingerprint,
   suggestTags,
   TAG_SUGGEST_API,

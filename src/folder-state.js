@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pathKey } = require('./path-key');
-const { fileExtensions } = require('./media-type');
+const { libraryExtensions, isVideoPath } = require('./media-type');
 
 // `hiddenDirs` was added to v4 rather than becoming v5 ON PURPOSE. validateStoredState
 // accepts only versions it knows, so a build that predates a bump treats the newer
@@ -26,7 +26,8 @@ const { fileExtensions } = require('./media-type');
 // is never touched.
 const VERSION = 4;
 const VALID_SCAN_STATUSES = new Set(['complete', 'partial', 'unavailable']);
-const DEFAULT_IMAGE_EXTS = new Set(fileExtensions());
+// MEDIA-002: pictures and video, the same set main passes; the slideshow never reads this index.
+const DEFAULT_IMAGE_EXTS = new Set(libraryExtensions());
 
 function emptyState() {
   return { version: VERSION, folders: {} };
@@ -158,6 +159,10 @@ function normalizeState(raw) {
       // Continue it as a baseline so an old unseen tail is not labelled "new".
       baselineComplete: raw.version === 1 ? false : folder.baselineComplete !== false,
     };
+    // Optional v4 metadata: a version bump would make older builds discard this index.
+    if (typeof folder.videoBaselineComplete === 'boolean') {
+      out.folders[folderId].videoBaselineComplete = folder.videoBaselineComplete;
+    }
   }
   return out;
 }
@@ -210,6 +215,15 @@ function reconcileFolder(rawState, options = {}) {
     changed = true;
   }
   const baselinePending = folder.baselineComplete === false;
+  // Old image-only indexes have never observed videos. Bootstrap that family at
+  // the folder's original date, without changing known records or photo discovery.
+  // An existing video proves prior coverage. Persist false across partial batches
+  // so a restart cannot mistake the first bootstrap batch for completed coverage.
+  if (typeof folder.videoBaselineComplete !== 'boolean') {
+    folder.videoBaselineComplete = Object.values(folder.files).some(file => isVideoPath(file.relativePath));
+    changed = true;
+  }
+  const videoBaselinePending = !folder.videoBaselineComplete;
 
   const seen = new Set();
   const images = [];
@@ -225,7 +239,7 @@ function reconcileFolder(rawState, options = {}) {
     if (!metadata) {
       metadata = {
         relativePath: rel.relativePath,
-        firstSeenAt: baselinePending ? baselineAt : now,
+        firstSeenAt: baselinePending || (videoBaselinePending && isVideoPath(rel.relativePath)) ? baselineAt : now,
         modifiedAt: finiteTime(entry && entry.modifiedAt),
       };
       const aspect = finiteAspect(entry && entry.aspect);
@@ -320,6 +334,10 @@ function reconcileFolder(rawState, options = {}) {
       folder.baselineComplete = true;
       changed = true;
     }
+    if (!folder.videoBaselineComplete) {
+      folder.videoBaselineComplete = true;
+      changed = true;
+    }
   }
 
   return { state, images, changed, contentChanged, added, removed, moved };
@@ -385,6 +403,9 @@ function listImages(rawState, folderIds = null, { only = 'visible' } = {}) {
         addedAt: file.firstSeenAt,
         modifiedAt: file.modifiedAt,
         aspect: finiteAspect(file.aspect),
+        // LIB-030: the background pass groups files by size before reading any of them;
+        // 0 when the index has not measured this file yet.
+        size: finiteSize(file.size),
         hidden,
         // The "removed" section shows the folder as ONE card rather than each photo
         // inside it, so it needs to tell the two reasons apart.
@@ -590,6 +611,14 @@ function validateStoredState(raw) {
     && raw.folders && typeof raw.folders === 'object' && !Array.isArray(raw.folders);
 }
 
+// DATA-001. A copy of the index is worth keeping or handing back only when loadState()
+// would take it as it is rather than renaming it away.
+function isLoadableText(text) {
+  try { return validateStoredState(JSON.parse(String(text))); } catch { return false; }
+}
+
+// `options.restore(kind)` returns the newest good copy, or null. A backup of the damaged
+// index is required before the next save can replace it.
 function loadState(filePath, options = {}) {
   let text;
   try {
@@ -606,6 +635,16 @@ function loadState(filePath, options = {}) {
   } catch {
     const stamp = finiteTime(options.now, Date.now());
     const brokenPath = `${filePath}.broken-${stamp}`;
+    const found = typeof options.restore === 'function' ? options.restore('folder-state') : null;
+    if (found && isLoadableText(found.text)) {
+      try {
+        // BUG-075. Keep the original path occupied until the atomic save. If the app
+        // exits before the save timer fires, the next load will try recovery again.
+        fs.copyFileSync(filePath, brokenPath);
+      } catch { return { state: emptyState(), recovered: true, brokenPath: '' }; }
+      const copy = JSON.parse(String(found.text));
+      return { state: normalizeState(copy), recovered: true, brokenPath, restoredAt: Number(found.takenAt) || 0 };
+    }
     try { fs.renameSync(filePath, brokenPath); }
     catch { return { state: emptyState(), recovered: true, brokenPath: '' }; }
     return { state: emptyState(), recovered: true, brokenPath };
@@ -646,4 +685,5 @@ module.exports = {
   scanFolderTree,
   loadState,
   saveState,
+  isLoadableText,
 };

@@ -409,7 +409,49 @@ function mergeTrash(fromStore, fromConfig) {
 //   * unparseable        -> broken:true + backup     (recoverable, fall back to inline)
 //   * unreadable (EACCES,
 //     EBUSY, EIO, …)     -> unreadable:true          (say nothing about the contents)
-function load(configPath) {
+// DATA-001. Whether a copy of the store is one this build would load as healthy: it
+// parses, it is not from a newer build (whose fields a save here would drop), and it has
+// none of the damage describeStoreDamage() fails a live file for.
+function isHealthyText(text) {
+  try {
+    const parsed = JSON.parse(String(text).replace(/^\uFEFF/, ''));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    if (Number(parsed.version) > VERSION) return false;
+    return describeStoreDamage(parsed, normalizeStore(parsed)).ok;
+  } catch {
+    return false;
+  }
+}
+
+// DATA-001. An unparseable store is replaced by its newest good copy only when the damaged
+// bytes were backed up first: without that backup the damaged file is the only record of
+// what was there. Null means "no copy to stand in", and load() falls back to the
+// fail-closed answer it always gave.
+function restoredFromCopy(restore, backedUp) {
+  if (!backedUp || typeof restore !== 'function') return null;
+  const found = restore('library');
+  if (!found) return null;
+  try {
+    const parsed = JSON.parse(String(found.text).replace(/^\uFEFF/, ''));
+    const store = normalizeStore(parsed);
+    if (!describeStoreDamage(parsed, store).ok) return null;
+    const restoredAt = Number(found.takenAt) || 0;
+    console.error('library.json восстановлен из последней целой копии:', new Date(restoredAt).toISOString());
+    return {
+      library: store.library, trash: store.trash,
+      existed: true, broken: false, unreadable: false, newerVersion: false, restoredAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function backupDamaged(file) {
+  try { fs.copyFileSync(file, `${file}.corrupt-${Date.now()}.bak`); return true; } catch { return false; }
+}
+
+function load(configPath, options = {}) {
+  const restore = options && typeof options.restore === 'function' ? options.restore : null;
   const file = storePathFor(configPath);
   let raw = null;
   try {
@@ -423,9 +465,10 @@ function load(configPath) {
   try {
     parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
   } catch (err) {
-    try { fs.copyFileSync(file, `${file}.corrupt-${Date.now()}.bak`); } catch {}
+    const backedUp = backupDamaged(file);
     console.error('library.json не разбирается, бэкап сохранён; пул будет взят из config.json:', err);
-    return { library: {}, trash: [], existed: true, broken: true, unreadable: false, newerVersion: false };
+    return restoredFromCopy(restore, backedUp)
+      || { library: {}, trash: [], existed: true, broken: true, unreadable: false, newerVersion: false };
   }
   // A build newer than this one may have written fields we know nothing about, and
   // save() would drop every one of them while stamping the version back down. Reading
@@ -435,8 +478,10 @@ function load(configPath) {
   const store = normalizeStore(parsed);
   const damage = describeStoreDamage(parsed, store);
   if (!damage.ok) {
-    try { fs.copyFileSync(file, `${file}.corrupt-${Date.now()}.bak`); } catch {}
+    backupDamaged(file);
     console.error(`library.json повреждён (${damage.reason}), бэкап сохранён; запись заблокирована.`);
+    // BUG-073. A parseable store can still contain current records or removals that
+    // an older snapshot would discard. Keep the readable sections and block writes.
     // Hand back whatever IS well formed. A store whose library is unusable must still
     // surrender the trash — those photos exist nowhere else — and the same holds the
     // other way round. The first cut of this check returned empty for both, which broke
@@ -543,5 +588,5 @@ module.exports = {
   VERSION, SUFFIX, TRASH_LIMIT, storePathFor, emptyStore, normalizeStore, normalizeTrashEntry,
   normalizeLibraryRecord,
   boundedTrash, pushEntry, mergeLibraries, mergePool, newestTombstones, mergeTrash,
-  load, save, createWriter,
+  load, save, createWriter, isHealthyText,
 };

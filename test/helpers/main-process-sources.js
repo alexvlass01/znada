@@ -343,6 +343,29 @@ function parse(file, text) {
 function readCode(file, text) {
   const ast = parse(file, text);
   const requires = [];
+  // MEDIA-003: the only utility entrypoint is a literal first-party file in main.
+  // Follow it as source; never allow a renamed loader, dynamic path or other utility use.
+  function videoUtilityUse(node, parent, ancestors) {
+    if (file !== 'main.js') return false;
+    const grand = ancestors[ancestors.length - 2];
+    const pattern = node.type === 'Property' ? parent : parent?.type === 'Property' ? grand : null;
+    if (pattern?.type === 'ObjectPattern') {
+      const declaration = node.type === 'Property' ? grand : ancestors[ancestors.length - 3];
+      const init = declaration?.init;
+      return init?.type === 'CallExpression' && init.callee.name === 'require'
+        && init.arguments.length === 1 && init.arguments[0].value === 'electron'
+        && (node.type === 'Property' ? node.value.name === 'utilityProcess' : parent.value.name === 'utilityProcess');
+    }
+    if (node.type !== 'Identifier' || parent?.type !== 'MemberExpression' || parent.object !== node
+      || propertyName(parent) !== 'fork' || grand?.type !== 'CallExpression' || grand.callee !== parent) return false;
+    const target = grand.arguments[0];
+    if (target?.type !== 'CallExpression' || target.callee.type !== 'MemberExpression'
+      || target.callee.object.name !== 'path' || propertyName(target.callee) !== 'join'
+      || target.arguments.length !== 3 || target.arguments[0].name !== '__dirname'
+      || target.arguments[1].value !== 'src' || target.arguments[2].value !== 'video-worker.js') return false;
+    requires.push({ spec: './src/video-worker.js', line: node.loc.start.line });
+    return true;
+  }
   const runsText = (line, what) => {
     if (!RUNS_TEXT_ON_PURPOSE.has(file)) throw cannotFollow(file, line, `${what} runs code from text`);
   };
@@ -371,7 +394,9 @@ function readCode(file, text) {
       // object, or as the string that reads it, it is the loader's.
       throw cannotFollow(file, line, `${as} reaches into the module loader`);
     }
-    if (OTHER_LOADERS.has(name)) throw cannotFollow(file, line, `${as} loads code of its own`);
+    if (OTHER_LOADERS.has(name) && !(name === 'utilityProcess' && videoUtilityUse(node, parent, ancestors))) {
+      throw cannotFollow(file, line, `${as} loads code of its own`);
+    }
     // eval and Function wherever they are named, not only where they are called: (0, eval)(t),
     // globalThis.eval(t), `const F = Function; new F(t)` and `const { eval: run } = globalThis`
     // all run text.

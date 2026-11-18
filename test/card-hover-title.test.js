@@ -66,7 +66,8 @@ ok('the Appearance strip still names a folder', strip.includes('el.title = it.pa
 ok('the Appearance strip still names a photo',
   strip.includes('el.title = (window.CardCaption && window.CardCaption.text(it)) || baseName(it.path)'));
 
+// MEDIA-002: a video there opens the player instead, so it names that instead.
 ok('Home recently added keeps the assign hint',
-  functionBody('renderHomeRecentItems').includes("card.title = t('home.recentAssignHint')"));
+  functionBody('renderHomeRecentItems').includes("card.title = isVideo ? t('video.openHint') : t('home.recentAssignHint')"));
 
 console.log(`\n${passed} passed`);

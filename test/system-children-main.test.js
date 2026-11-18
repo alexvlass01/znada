@@ -312,7 +312,7 @@ function shortDeadlines(m, ms) {
     // no deadline would bring the whole defect back.
     // CODE-001: asked of the syntax tree, like every check below, so a comment between a
     // name and its parenthesis or its quotes does not hide it.
-    const { ast } = mainProcessSources().find((s) => s.file === 'main.js');
+    const { ast, requires } = mainProcessSources().find((s) => s.file === 'main.js');
     const direct = [];
     const bareNames = [];
     let resolver = 0;
@@ -323,7 +323,10 @@ function shortDeadlines(m, ms) {
         const regexp = name === 'exec' && node.callee.type === 'MemberExpression';
         // main deletes its own login item with execFileSync, always given a resolved path.
         const resolved = name === 'execFileSync' && node.arguments.length && stringValue(node.arguments[0]) === null;
-        if (LAUNCHES.has(name) && !regexp && !resolved) direct.push(`main.js:${node.loc.start.line} ${name}()`);
+        // mainProcessSources has already validated the exact literal utility entrypoint.
+        const videoWorker = name === 'fork' && node.callee.object?.name === 'utilityProcess'
+          && requires.some(row => row.spec === './src/video-worker.js' && row.line === node.loc.start.line);
+        if (LAUNCHES.has(name) && !regexp && !resolved && !videoWorker) direct.push(`main.js:${node.loc.start.line} ${name}()`);
       }
       // The resolver is the one place allowed to name a program; everywhere else a bare
       // name would be looked up on PATH.
@@ -367,6 +370,11 @@ function shortDeadlines(m, ms) {
       }
       const reported = new Set(); // `{ execFile } = deps` is a read and a name on one line
       walk(ast, (node, parent) => {
+        // Electron emits a lifecycle event named 'spawn'; it is not a program launcher.
+        if (file === 'src/video-player.js' && node.type === 'Literal' && node.value === 'spawn'
+          && parent?.type === 'CallExpression' && parent.arguments[0] === node
+          && parent.callee.type === 'MemberExpression' && parent.callee.object.name === 'worker'
+          && propertyName(parent.callee) === 'once') return;
         const written = writtenName(node, parent);
         if (!written || !LAUNCHES.has(written.name) || (written.name === 'exec' && written.how !== 'name')) return;
         const line = node.loc.start.line;

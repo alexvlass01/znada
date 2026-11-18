@@ -121,6 +121,51 @@ ok('very large tag sets stay bounded and report the hidden count',
   && locales.every((locale) => typeof locale.library.moreTags === 'string'
     && locale.library.moreTags.includes('{n}')));
 
+// META-005. A tag in Details is a button so Enter and Space copy it. The click copies
+// that chip and does not search, edit, or add a tag. The "+N" counter is not a tag.
+{
+  const tagsStart = detailsBlock.indexOf("if (row.kind === 'tags')");
+  const tagsEnd = detailsBlock.indexOf('// META-001. The content rating', tagsStart);
+  const tagsBlock = tagsStart >= 0 && tagsEnd > tagsStart ? detailsBlock.slice(tagsStart, tagsEnd) : '';
+  ok('each shown tag is a button that copies itself',
+    tagsBlock.includes("createElement('button')")
+    && tagsBlock.includes("chip.type = 'button'")
+    && tagsBlock.includes('copyDetailsTag(chip, tag)')
+    && tagsBlock.includes("t('details.copyTag', { tag })")
+    && tagsBlock.includes('event.stopPropagation()')
+    && !tagsBlock.includes('keydown')
+    && !tagsBlock.includes('libSearch')
+    && !tagsBlock.includes('LIB.q')
+    && !tagsBlock.includes('libraryAddTag')
+    && !tagsBlock.includes('normTag'));
+  ok('the hidden-count chip is not a copy button',
+    tagsBlock.includes("createElement('span')")
+    && tagsBlock.includes("more.className = 'details-tag more'")
+    && !tagsBlock.includes('more.type'));
+  const copyStart = detailsBlock.indexOf('function copyDetailsTag(chip, tag)');
+  const copyBlock = copyStart >= 0 ? detailsBlock.slice(copyStart, detailsBlock.indexOf('\n}\n', copyStart)) : '';
+  ok('a copied tag is confirmed and a failed copy is said out loud',
+    copyBlock.includes('window.api.detailsCopyTag(tag)')
+    && copyBlock.includes("'details.tagCopied'")
+    && copyBlock.includes("'details.tagCopyFailed'")
+    && !copyBlock.includes('chip.disabled'));
+  ok('the tag-copy words exist in both reference languages',
+    locales[0].details.copyTag.includes('{tag}')
+    && locales[1].details.copyTag.includes('{tag}')
+    && locales[0].details.tagCopied
+    && locales[1].details.tagCopied
+    && locales[0].details.tagCopyFailed
+    && locales[1].details.tagCopyFailed);
+  ok('copying a tag is a bounded main-window channel, not an open clipboard',
+    preload.includes("ipcRenderer.invoke('details-copy-tag', tag)")
+    && !preload.includes("ipcRenderer.invoke('copy-text'")
+    && main.includes("ipcMain.handle('details-copy-tag'")
+    && main.includes('itemDetails.copyableTag(raw)')
+    && main.includes('await clipboard.writeText(tag)')
+    && !main.includes('clipboard.writeText(raw)')
+    && styles.includes('button.details-tag'));
+}
+
 // ONL-009 moved the menu onto the shared action registry, so this asks the registry
 // what a local card offers instead of matching the old inline call.
 {

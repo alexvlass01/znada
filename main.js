@@ -1,6 +1,8 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain: electronIpcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, net, safeStorage, Notification, clipboard, protocol, session } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain: electronIpcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, net, safeStorage, Notification, clipboard, protocol, session, utilityProcess, sharedTexture } = require('electron');
+const { fetchVideo } = require('./src/online-video');
+const { createVideoPlayer } = require('./src/video-player');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -13,11 +15,12 @@ const { createLibraryRemovalQuestion } = require('./src/library-removal-question
 const ipcAuthorityMod = require('./src/ipc-authority'); // SEC-002: кто вправе звать какой канал
 const pathGrantsMod = require('./src/path-grants'); // SEC-002: какие пути приложение подтвердило само
 const { pathKey, isDirectChildPath } = require('./src/path-key'); // canonical identity for every local path map
-const libraryAssignment = require('./src/library-assignment');
 const folderState = require('./src/folder-state'); // persistent firstSeenAt для файлов живых папок
 const liveFolderWatch = require('./src/live-folder-watch'); // lightweight fs.watch lifecycle + debounce
-const { createManagedFolder } = require('./src/managed-folder'); // CODE-001 2.1b: папка своих копий, импорт и скачивание
+const { createManagedFolder, stagingInFlight } = require('./src/managed-folder'); // CODE-001 2.1b: папка своих копий, импорт и скачивание
+const { moveNoClobber } = require('./src/no-clobber-move'); // BUG-084: GC-перенос в .trash без перезаписи
 const { createLibraryService } = require('./src/library-service'); // CODE-001 2.2a: ядро пула — замок, дверь в пул, «что используется»
+const { createLibraryRemoval } = require('./src/library-removal'); // CODE-001 2.2b: удаление, отмена, «Убранное», возврат, стирание в корзину Windows
 // ONL-013: ни поиск, ни поиск по отпечатку больше не называют сайтов — оба ходят через
 // реестр, поэтому прямые require адаптеров здесь не нужны.
 const online = require('./src/online');
@@ -38,8 +41,11 @@ const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // жи�
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const libraryStore = require('./src/library-store'); // пул живёт в своём файле с пакетной записью
 const { createConfigStore } = require('./src/config-store'); // CODE-001 2.1a: единственная дверь записи config.json и пула
+const { createDataSnapshots } = require('./src/data-snapshots'); // DATA-001: последние целые копии файлов данных
 const metadataLookup = require('./src/metadata-lookup'); // кого спрашивать, стоит ли и что это значит
 const metadataLookupServiceMod = require('./src/metadata-lookup-service'); // CODE-001: отпечаток, бюджет запросов, журнал, запись в фото
+const { createLibraryChecks } = require('./src/library-checks'); // LIB-030: фоновый проход по библиотеке, одинаковые файлы
+const onlineHave = require('./src/online-have'); // LIB-031: карточка «Онлайн», которая уже есть в библиотеке
 const coalesce = require('./src/coalesce'); // склейка частых рассылок конфига в интерфейс
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
@@ -301,7 +307,8 @@ const failureNotifier = createFailureNotifier();
 const eventLog = createEventLog({ filePath: path.join(app.getPath('userData'), 'event-log.json') });
 const deliverSystemNotification = createNotificationDelivery({
   NotificationClass: Notification,
-  translate: (key) => tMain(key),
+  translate: (key, params) => String(tMain(key)).replace(/\{(\w+)\}/g,
+    (whole, name) => (params && params[name] != null ? String(params[name]) : whole)),
   onClick: () => showWindow(),
   logError: (err) => console.error('[Notify] failed to show notification:', err),
 });
@@ -314,6 +321,34 @@ function reportChannelFailure(channel, messageKey, { titleKey, bodyKey, notify =
   eventLog.append({ channel, kind: 'failure', messageKey, params });
   if (!notify || config.notifyOnFailure === false) return;
   deliverSystemNotification({ titleKey: titleKey || messageKey, bodyKey: bodyKey || messageKey });
+}
+
+// DATA-001. A damaged data file was replaced by its last good copy. Not a failure that
+// will "recover" later — it already did — so it is journaled as a recovery straight away
+// and, unless failure notifications are off, shown once. The copy's date is in both:
+// work done after it may be missing, and the user should know from when.
+const DATA_RESTORE_KEYS = Object.freeze({
+  // The title names the damaged file on its own: a collapsed Windows notification shows
+  // only the title, and "restored" without the reason left the owner asking why (2026-11-01).
+  config: { journal: 'journal.configRestored', title: 'notify.configRestoredTitle', body: 'notify.configRestoredBody' },
+  library: { journal: 'journal.libraryRestored', title: 'notify.libraryRestoredTitle', body: 'notify.libraryRestoredBody' },
+  'folder-state': {
+    journal: 'journal.folderStateRestored', title: 'notify.folderStateRestoredTitle', body: 'notify.folderStateRestoredBody',
+  },
+});
+function reportDataRestored(kind, takenAt) {
+  const keys = DATA_RESTORE_KEYS[kind];
+  if (!keys) return;
+  let date = '';
+  try {
+    date = new Date(takenAt).toLocaleString(effectiveLang(), {
+      day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+    });
+  } catch { date = new Date(takenAt).toISOString(); }
+  const params = { date };
+  eventLog.append({ channel: 'data-restore', kind: 'recovered', messageKey: keys.journal, params });
+  if (config.notifyOnFailure === false) return;
+  deliverSystemNotification({ titleKey: keys.title, bodyKey: keys.body, params });
 }
 
 function reportChannelSuccess(channel, messageKey, { params } = {}) {
@@ -465,13 +500,27 @@ function openDiagnosticsControlWindow() {
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 const FOLDER_STATE_PATH = path.join(app.getPath('userData'), 'folder-state.json');
 
+// DATA-001. The last good copies of the three small data files, in <profile>\backups.
+// A damaged one is replaced by its newest copy at startup (the loaders ask through
+// `restore`); copies are taken at startup, on an hourly check and after a folder move.
+const dataSnapshots = createDataSnapshots({
+  dir: path.join(app.getPath('userData'), 'backups'),
+  kinds: {
+    config: { file: CONFIG_PATH, accept: (text) => configMod.isLoadableText(text) },
+    library: { file: libraryStore.storePathFor(CONFIG_PATH), accept: (text) => libraryStore.isHealthyText(text) },
+    'folder-state': { file: FOLDER_STATE_PATH, accept: (text) => folderState.isLoadableText(text) },
+  },
+});
+const restoreDataCopy = (kind) => dataSnapshots.findGood(kind);
+const DATA_SNAPSHOT_CHECK_MS = 60 * 60 * 1000;
+
 // DATA-006 + CODE-001 2.1b. Where Znada's own copies live, local photo import and remote
 // download staging belong to src/managed-folder.js. main.js keeps one-line wrappers so
 // the ~40 call sites and every harness suite stay unchanged.
 const managedFolder = createManagedFolder({
   userDataPath: app.getPath('userData'),
   getConfig: () => config,
-  getHiddenDirs: () => folderState.listHiddenDirs(liveFolderState).map((d) => d.path),
+  getHiddenDirs: () => liveFolderIndex.listHiddenDirs().map((d) => d.path),
   liveMaterializeExtra: (srcPath, type) => liveMaterializeExtra(srcPath, type),
   dirExists: (p) => dirExists(p),
   getExeDir: () => { try { return path.dirname(app.getPath('exe')); } catch { return ''; } },
@@ -495,8 +544,6 @@ function downloadWallpaperFromUrl(url, fetchOptions) { return managedFolder.down
 // file, the order between them and both "do not write" modes — belongs to
 // src/config-store.js, whose flags and batched pool writer nothing in this file can reach.
 let config = configMod.freshDefaults();
-// Snapshot of the most recent library removal so the toast can offer a real undo.
-let lastLibraryRemoval = null;
 const configStore = createConfigStore({
   configPath: CONFIG_PATH,
   configMod,
@@ -509,6 +556,8 @@ const configStore = createConfigStore({
   broadcast: () => broadcastConfig(),
   notify: (channel, messageKey, options) => reportChannelFailure(channel, messageKey, options),
   randomId: () => crypto.randomBytes(16).toString('hex'),
+  restore: restoreDataCopy,
+  reportRestored: (kind, takenAt) => reportDataRestored(kind, takenAt),
 });
 
 function loadConfig() { configStore.load(); }
@@ -518,39 +567,82 @@ function loadConfig() { configStore.load(); }
 // removal and trash rows — belongs to src/library-service.js. The removed-marks stay in
 // the live-folder index and are reached through the narrow port below; main.js keeps
 // one-line wrappers under the old names so the call sites and harness suites stay put.
+// The same port serves the removal line below (CODE-001 2.2b), which also lists the marks.
+const { createLiveFolderIndex } = require('./src/live-folder-index');
+const liveFolderIndex = createLiveFolderIndex({
+  filePath: FOLDER_STATE_PATH, folderState, pathKey,
+  restore: restoreDataCopy,
+  onRestored: (takenAt) => reportDataRestored('folder-state', takenAt),
+});
+const libraryMarks = liveFolderIndex.marks;
 const libraryService = createLibraryService({
   library,
   playlist,
   pathKey,
   getConfig: () => config,
   slotFor: (monitorId, theme) => slotFor(monitorId, theme),
-  marks: {
-    setHidden(paths, hidden) {
-      const res = folderState.setHidden(liveFolderState, paths, hidden);
-      liveFolderState = res.state;
-      invalidateHiddenPaths();
-      return res;
+  localImport: {
+    // This port performs IO and issues authority, never mutates the pool or a slot.
+    inspectPath: (src, forSlot) => {
+      if (!itemDetails.isValidAbsolutePath(src)) return '';
+      const stats = fs.statSync(src);
+      if (stats.isDirectory()) return 'folder';
+      if (!stats.isFile()) return '';
+      const accepted = forSlot ? playlist.IMG_EXTS : playlist.LIBRARY_EXTS;
+      if (accepted.has(path.extname(src).toLowerCase())) return 'photo';
+      return forSlot && mediaFormats.isVideoPath(src) ? 'video' : '';
     },
-    setHiddenDir(paths, hidden) {
-      const res = folderState.setHiddenDir(liveFolderState, paths, hidden);
-      liveFolderState = res.state;
-      invalidateHiddenPaths();
-      return res;
-    },
-    persistNow() { folderStateDirty = true; flushLiveFolderState(); },
-    hiddenPaths: () => hiddenPathSet(),
+    preparePhoto: (src) => photoForPool(src),
+    grantFile: (src) => grantMediaPath(src),
+    grantFolder: (src) => grantMediaPath(src, { root: true }),
   },
+  marks: libraryMarks,
   liveFolders: { forget: (id) => forgetLiveFolder(id), sync: () => syncLiveFolderWatchers() },
   storeSlideshowPosition: (monitorId, theme, position) => storeSlideshowPosition(monitorId, theme, position),
 });
 function withLibraryLock(fn) { return libraryService.withLock(fn); }
-function poolRevivals() { return libraryService.revivals(); }
 function clearRemovedState(paths) { return libraryService.clearRemovedState(paths); }
-function markRecordRevived(item) { return libraryService.markRecordRevived(item); }
 function addToPool(type, srcPath, extra) { return libraryService.addToPool(type, srcPath, extra); }
-function inUsePaths() { return libraryService.inUsePaths(); }
 function removeFromLibrary(id) { return libraryService.removeRecord(id); }
-function dropFromLibraryTrash(id) { return libraryService.dropFromTrash(id); }
+// markRecordRevived, inUsePaths and dropFromTrash had no caller left here after 2.2b: the
+// removal module receives the whole core as `pool`.
+
+// CODE-001 2.2b. The removal line — remove, Undo, the "Removed" section, restore, delete
+// into the Recycle Bin — and the pending Undo it keeps. Everything is read lazily: the
+// handlers that use it are registered further down, after these functions exist.
+const libraryRemoval = createLibraryRemoval({
+  library,
+  libraryStore,
+  pathKey,
+  getConfig: () => config,
+  pool: libraryService,
+  marks: libraryMarks,
+  liveFolders: {
+    forget: (ids) => forgetLiveFolders(ids),
+    sync: () => syncLiveFolderWatchers(),
+    refresh: (ids) => requestLiveFolderRefresh(ids),
+    notifyViewStale: (reason) => notifyLibraryViewStale(reason),
+  },
+  wallpaper: {
+    apply: () => applyForTheme(null, true),
+    storeSlideshowPosition: (monitorId, theme, position) => storeSlideshowPosition(monitorId, theme, position),
+    gc: () => gcWallpapers(),
+  },
+  save: () => saveConfig(),
+  broadcast: () => broadcastConfig(),
+  refreshTray: () => trayCtl.refresh(),
+  ownCopies: {
+    isOwnCopy: (p) => isOwnWallpaperCopy(p),
+    rootReady: () => managedRootReady(),
+    trashDir: () => trashDirPath(),
+  },
+  physicalDeleteEnabled: () => physicalDeleteEnabled,
+  askDeleteForever: (targets) => askDeleteForever(targets),
+  trashItem: (p) => shell.trashItem(p),
+  fs,
+  now: () => Date.now(),
+  randomHex: (bytes) => crypto.randomBytes(bytes).toString('hex'),
+});
 
 // The four ways to save, under the names the handlers already use. What each guarantees
 // (pool before settings, inline copy while the pool file is unusable, settings-only never
@@ -571,8 +663,8 @@ function saveSettingsOnly() { return configStore.saveSettings(); }
 let mediaMoveRunning = false;
 
 // The pool and the trash are one in-memory model here, but the remap expects them in
-// the shape they have on disk. Handed over live, not copied: remapMediaRoot deep-clones
-// its input and returns new documents, so nothing here is mutated behind our back.
+// the shape they have on disk. Config/pool stay live; remapMediaRoot deep-clones its
+// input. The index supplies its own detached snapshot so move code cannot mutate it.
 function mediaMoveDocuments() {
   return {
     config,
@@ -581,7 +673,7 @@ function mediaMoveDocuments() {
       library: config.library,
       trash: Array.isArray(config.libraryTrash) ? config.libraryTrash : [],
     },
-    folderState: liveFolderState,
+    folderState: liveFolderIndex.snapshot(),
   };
 }
 
@@ -615,10 +707,7 @@ function commitManagedFolderMove(targetFolder, documents) {
   if (typeof documents.config.lastSaveDir === 'string') config.lastSaveDir = documents.config.lastSaveDir;
   config.mediaFolder = targetFolder;
   if (documents.folderState) {
-    liveFolderState = documents.folderState;
-    invalidateHiddenPaths();
-    folderStateDirty = true;
-    flushLiveFolderState();
+    liveFolderIndex.replaceForMove(documents.folderState);
   }
   // From here on every caller asks for the new folder.
   refreshManagedRoot();
@@ -673,6 +762,11 @@ async function moveManagedFolder(targetFolder, {
     mediaMoveRunning = false;
   }
   if (report.status === 'done') {
+    // DATA-001. The old folder is gone now, so a copy taken before the move points every
+    // own-copy at files that no longer exist. Copy the moved state at once rather than up
+    // to four hours later.
+    dataSnapshots.take('config', { force: true });
+    dataSnapshots.take('library', { force: true });
     // What is on the desktop right now came from a file that no longer exists under
     // that name. Applying again from the new paths keeps the next change honest.
     try { await applyForTheme(null, true); } catch (err) { console.error('move: re-apply failed', err); }
@@ -684,36 +778,13 @@ async function moveManagedFolder(targetFolder, {
 function ensureAnonId() { configStore.ensureAnonId(); }
 function persistSlideshowPosition() { configStore.persistPosition(); }
 
-// Discovery history is intentionally separate from config.json: a folder may
-// contain thousands of paths, while config remains small user-facing settings.
-let liveFolderState = folderState.emptyState();
-// Paths the user removed from the library, as a lowercased Set. Cached because it is
-// consulted on the wallpaper path (playlist expansion) and rebuilding it walks the
-// whole folder index. Every reassignment of liveFolderState drops the cache.
-let hiddenPathsCache = null;
-function invalidateHiddenPaths() { hiddenPathsCache = null; }
-function hiddenPathSet() {
-  if (hiddenPathsCache) return hiddenPathsCache;
-  const set = new Set();
-  try {
-    for (const im of folderState.listImages(liveFolderState, null, { only: 'hidden' })) {
-      // Keyed like everything else that answers "is this the same file" (pathKey).
-      // Plain lowercase kept `\` here while the playlist and the delete guard asked
-      // with `/`, so this set silently matched nothing they looked up.
-      if (im && im.path) set.add(pathKey(im.path));
-    }
-  } catch (err) { console.error('hiddenPathSet:', err); }
-  hiddenPathsCache = set;
-  return set;
-}
-let folderStateDirty = false;
-let folderStateSaveTimer = null;
+// Discovery state and its writer belong to liveFolderIndex; runtime queues stay here.
+function hiddenPathSet() { return liveFolderIndex.hiddenPaths(); }
 let liveFolderAspectTimer = null;
 const pendingLiveFolderAspects = new Map();
 let folderRefreshQueue = Promise.resolve();
 const folderScanFreshAt = new Map();
 const FOLDER_SCAN_FRESH_MS = 5000;
-const FOLDER_STATE_SAVE_DEBOUNCE_MS = 5000;
 const LIVE_FOLDER_ASPECT_FLUSH_MS = 750;
 let liveFolderWatcher = null;
 const liveFolderWatcherRetryTimers = new Map();
@@ -721,49 +792,15 @@ let liveFolderFullScanTimer = null;
 let liveFolderLastFullScanAt = 0;
 const LIVE_FOLDER_FULL_SCAN_MS = 60 * 60 * 1000;
 
-function loadLiveFolderState() {
-  try {
-    const loaded = folderState.loadState(FOLDER_STATE_PATH);
-    liveFolderState = loaded.state;
-    invalidateHiddenPaths();
-    if (loaded.recovered) {
-      console.warn('folder-state.json повреждён; создан безопасный новый индекс.', loaded.brokenPath || '');
-    }
-  } catch (err) {
-    liveFolderState = folderState.emptyState();
-    invalidateHiddenPaths();
-    console.error('Не удалось загрузить folder-state.json:', err);
-  }
-}
-
-function flushLiveFolderState() {
-  if (folderStateSaveTimer) { clearTimeout(folderStateSaveTimer); folderStateSaveTimer = null; }
-  if (!folderStateDirty) return;
-  try {
-    liveFolderState = folderState.saveState(FOLDER_STATE_PATH, liveFolderState);
-    invalidateHiddenPaths();
-    folderStateDirty = false;
-  } catch (err) {
-    console.error('Не удалось сохранить folder-state.json:', err);
-  }
-}
-
-function scheduleLiveFolderStateSave() {
-  folderStateDirty = true;
-  if (folderStateSaveTimer) clearTimeout(folderStateSaveTimer);
-  folderStateSaveTimer = setTimeout(flushLiveFolderState, FOLDER_STATE_SAVE_DEBOUNCE_MS);
-  if (folderStateSaveTimer && typeof folderStateSaveTimer.unref === 'function') folderStateSaveTimer.unref();
-}
+function loadLiveFolderState() { liveFolderIndex.load(); }
+function flushLiveFolderState() { liveFolderIndex.flush(); }
 
 function flushPendingLiveFolderAspects() {
   if (liveFolderAspectTimer) { clearTimeout(liveFolderAspectTimer); liveFolderAspectTimer = null; }
   if (!pendingLiveFolderAspects.size) return 0;
   const updates = Array.from(pendingLiveFolderAspects.values());
   pendingLiveFolderAspects.clear();
-  const result = folderState.setAspects(liveFolderState, updates);
-  liveFolderState = result.state;
-  invalidateHiddenPaths();
-  if (result.changed) scheduleLiveFolderStateSave();
+  const result = liveFolderIndex.setAspects(updates);
   // A live-folder image may already be materialized in the pool (favorite/assigned).
   // Keep that additive metadata in sync too, otherwise "All" would omit the
   // folder-backed record and fall back to an unstable default aspect after restart.
@@ -791,15 +828,8 @@ function queueLiveFolderAspect(p, aspect) {
 }
 
 function forgetLiveFolders(ids) {
-  const state = folderState.normalizeState(liveFolderState);
-  let removed = false;
-  for (const id of (ids || [])) {
-    if (id && state.folders[id]) { delete state.folders[id]; removed = true; }
-    folderScanFreshAt.delete(id);
-  }
-  liveFolderState = state;
-  invalidateHiddenPaths();
-  if (removed) scheduleLiveFolderStateSave();
+  liveFolderIndex.forget(ids);
+  for (const id of (ids || [])) folderScanFreshAt.delete(id);
 }
 
 function forgetLiveFolder(id) {
@@ -827,7 +857,7 @@ function pruneConfirmedMissingLiveFolderImages() {
   try {
     ids = library.findConfirmedMissingLiveFolderImageIds(
       config.library,
-      folderState.listImages(liveFolderState),
+      liveFolderIndex.listImages(),
       pathExists,
       dirExists
     );
@@ -849,143 +879,8 @@ function pruneConfirmedMissingLiveFolderImages() {
   return removed;
 }
 
-// LIB-024. A photo renamed or moved inside a watched folder, in Explorer. The folder
-// index has just said that the old name and the new one are the same file; this moves
-// what the user attached to the photo onto the new name — its record (star, tags, author,
-// source, date) and its places on the monitors. Without it, the very scan that noticed
-// the rename went on to erase all of that (LIB-013, probes S4 and S7).
-//
-// Only an ACTIVE record moves. A removed photo's record sits in the trash under its old
-// name; following it there is a separate question and is not answered here. Anything this
-// function declines is left to the code below exactly as before, so a pair it cannot
-// follow costs what a rename always cost and never more.
-function followMovedFiles(pairs) {
-  let moved = 0;
-  let removedMoved = 0;
-  const removedPaths = hiddenPathSet();
-  for (const pair of (Array.isArray(pairs) ? pairs : [])) {
-    if (!pair || typeof pair.from !== 'string' || typeof pair.to !== 'string') continue;
-    // LIB-025. A photo the user had removed: the index already moved its "removed" mark
-    // to the new name, so here only what is kept for putting it back follows.
-    if (pair.hidden === true) {
-      if (followRemovedMove(pair.from, pair.to)) removedMoved++;
-      continue;
-    }
-    const oldId = library.idFor(pair.from);
-    const record = library.getItem(config.library, oldId);
-    if (!record || record.type !== 'image') continue;
-    const newId = library.idFor(pair.to);
-    // The new name already has a record of its own (a star given to the new card before
-    // this ran). Merging two records is not decided here: both stay as they are.
-    if (library.getItem(config.library, newId)) continue;
-    // Moved into a place the user removed from the library. Bringing the record along
-    // would make the photo active and removed at once — the one state the library must
-    // never be in.
-    if (removedPaths.has(pathKey(pair.to))) continue;
-    const { id: _oldId, path: _oldPath, rev: oldRev, ...carried } = record;
-    // In through the one door every active photo uses, so the new name is cleared of any
-    // old "removed" state the same way a star on it would clear it.
-    //
-    // LIB-027. The revision comes along too. Starting the new name from zero made the
-    // user's latest edits look like the oldest state of the photo, and a recovery merge
-    // then let any stale tombstone for that name delete the record (gate 03, 2026-10-09).
-    if (addToPool('image', pair.to, { ...carried, rev: oldRev }) !== newId) continue;
-    // makeItem keeps only the fields it knows. Whatever else the record carries — the
-    // source page, the age rating, a field added next year — comes across in one go, so
-    // a new field cannot be forgotten here.
-    library.updateItem(config.library, newId, carried);
-    library.replaceIdInSlots(config.monitors, oldId, newId);
-    library.removeItem(config.library, oldId);
-    // The slideshow remembers where it stopped by path; without this it would lose its
-    // place on a monitor whose current photo was the one renamed.
-    for (const [monitorId, byTheme] of Object.entries(config.slideshowCurrentPath || {})) {
-      for (const theme of ['light', 'dark']) {
-        if (!byTheme || pathKey(byTheme[theme] || '') !== pathKey(pair.from)) continue;
-        storeSlideshowPosition(monitorId, theme, {
-          index: ((config.slideshowIndex || {})[monitorId] || {})[theme],
-          path: pair.to,
-        });
-      }
-    }
-    // The pre-library fallback is a bare path; migrateConfig folds it back into the pool
-    // on every start, so a stale one would bring the old name back as a dead record.
-    for (const key of ['lightWallpaper', 'darkWallpaper']) {
-      if (config[key] && pathKey(config[key]) === pathKey(pair.from)) config[key] = pair.to;
-    }
-    moved++;
-  }
-  if (removedMoved) {
-    // The index normally waits five seconds before it is written. The mark that keeps a
-    // removed photo out of the library is the user's decision; a crash in that window
-    // would bring the photo back under its new name, so it is written now, as removal
-    // itself does.
-    folderStateDirty = true;
-    flushLiveFolderState();
-  }
-  if (moved || removedMoved) {
-    saveConfig();
-    trayCtl.refresh();
-  }
-  return moved + removedMoved;
-}
-
-// LIB-025. A removed photo was renamed or moved inside its watched folder. What the user
-// can get back from "Removed" — its kept record with the star, tags and places on the
-// monitors, and the Undo still on screen — named the old path, so "Restore" on the new
-// card brought the photo back blank, and Undo looked for a file that is no longer there.
-// Both follow the new name here.
-//
-// One rule outranks this: a photo is never active and removed at once. If the new name
-// already has an active record, the active record stays, and the photo is shown — the
-// removed mark the index carried over is lifted, exactly as it would be by adding it.
-function followRemovedMove(from, to) {
-  const fromKey = pathKey(from);
-  const oldId = library.idFor(from);
-  const newId = library.idFor(to);
-  const trash = config.libraryTrash || [];
-  const followsFrom = (entry) => !!(entry && entry.item && entry.item.type === 'image'
-    && pathKey(entry.item.path) === fromKey);
-  if (library.getItem(config.library, newId)) {
-    clearRemovedState(to);
-    // LIB-027. The kept record named the old file, and that name is gone: the file is
-    // the active photo now. Left behind, it was a card in "Removed" for a file that does
-    // not exist (gate 03, 2026-10-09).
-    config.libraryTrash = trash.filter((entry) => !followsFrom(entry));
-    return true;
-  }
-  // LIB-027. A record already kept under the new name belongs to an earlier photo whose
-  // file is gone — this file now holds that name. Two records under one id would be
-  // settled later by a tie-break, maybe in favour of the stale one, so it is settled
-  // here: the record that follows the file stays, and it is made newer than the one it
-  // replaces, so a recovery merge with an older copy of the store decides the same way.
-  const toKey = pathKey(to);
-  let replacedRev = 0;
-  const kept = [];
-  for (const entry of trash) {
-    if (!followsFrom(entry) && entry && entry.item && pathKey(entry.item.path) === toKey) {
-      replacedRev = Math.max(replacedRev, library.revOf(entry));
-      continue;
-    }
-    kept.push(entry);
-  }
-  for (const entry of kept) {
-    if (!followsFrom(entry)) continue;
-    entry.item = { ...entry.item, id: newId, path: to };
-    if (replacedRev) entry.rev = Math.max(library.revOf(entry), replacedRev) + 1;
-  }
-  config.libraryTrash = kept;
-  const undo = lastLibraryRemoval;
-  if (undo) {
-    undo.items = (undo.items || []).map((item) => (
-      item && item.type === 'image' && pathKey(item.path) === fromKey ? { ...item, id: newId, path: to } : item));
-    for (const snap of (undo.slots || [])) {
-      snap.itemIds = snap.itemIds.map((id) => (id === oldId ? newId : id));
-    }
-    undo.paths = (undo.paths || []).map((p) => (pathKey(p) === fromKey ? to : p));
-  }
-  // The index already moved the mark, so something changed either way.
-  return true;
-}
+// The scan holds the library lock; the library owns all consequences of a rename.
+function followMovedFiles(pairs) { return libraryRemoval.followMovedFiles(pairs); }
 
 function syncLiveFolderWatchers() {
   if (!liveFolderWatcher) return { watched: 0, failed: 0 };
@@ -1013,13 +908,15 @@ const libraryViewStale = { count: 0, last: '' };
 function notifyLibraryViewStale(reason) {
   libraryViewStale.count += 1;
   libraryViewStale.last = String(reason || '');
+  libraryChecks.schedule(); // LIB-030: a photo left or came back without the pool changing
   if (!mainWindow || mainWindow.isDestroyed()) return;
   diagCountSend('live-folders-changed');
   mainWindow.webContents.send('live-folders-changed', { folderIds: [] });
 }
 
-function broadcastLiveFolderChanges(summaries) {
+function broadcastLiveFolderChanges(summaries, recheckFingerprints = false) {
   const changed = (Array.isArray(summaries) ? summaries : []).filter((summary) => summary && summary.changed);
+  if (changed.length || recheckFingerprints) libraryChecks.schedule();
   if (!changed.length || !mainWindow || mainWindow.isDestroyed()) return;
   diagCountSend('live-folders-changed');
   mainWindow.webContents.send('live-folders-changed', {
@@ -1046,7 +943,7 @@ function refreshLiveFolders(folderIds = null, force = false) {
       const reconcile = (status, entries, notify = false) => {
         const current = library.getItem(config.library, item.id);
         if (!current || current.type !== 'folder' || current.path !== item.path) return null;
-        const result = folderState.reconcileFolder(liveFolderState, {
+        const result = liveFolderIndex.reconcile({
           folderId: item.id,
           rootPath: item.path,
           folderAddedAt: item.addedAt,
@@ -1054,9 +951,6 @@ function refreshLiveFolders(folderIds = null, force = false) {
           status,
           entries,
         });
-        liveFolderState = result.state;
-        invalidateHiddenPaths();
-        if (result.changed) scheduleLiveFolderStateSave();
         changed = changed || result.contentChanged;
         added += result.added;
         removed += result.removed;
@@ -1068,9 +962,11 @@ function refreshLiveFolders(folderIds = null, force = false) {
       };
 
       const scan = await folderState.scanFolderTree(item.path, {
-        imageExts: playlist.IMG_EXTS,
+        // MEDIA-002: the index is what the Library shows, video included. The slideshow
+        // never reads it — it scans with playlist.scanFolder.
+        imageExts: playlist.LIBRARY_EXTS,
         batchSize: 10000,
-        knownPaths: folderState.knownPathKeys(liveFolderState, item.id),
+        knownPaths: liveFolderIndex.knownPathKeys(item.id),
         onBatch: async (entries) => { reconcile('partial', entries, true); },
       });
       folderScanFreshAt.set(item.id, Date.now());
@@ -1111,7 +1007,10 @@ function refreshLiveFolders(folderIds = null, force = false) {
     if (pruned) {
       summaries.push({ id: 'library', status: 'pruned', changed: true, added: 0, removed: pruned });
     }
-    broadcastLiveFolderChanges(summaries.filter((summary) => !summary.notified));
+    // A forced scan can be triggered by a same-path replacement. The discovery
+    // index skips stats for known files, so ask the background pass to remeasure.
+    const recheckFingerprints = force && summaries.some(({ status }) => status === 'complete' || status === 'partial');
+    broadcastLiveFolderChanges(summaries.filter((summary) => !summary.notified), recheckFingerprints);
     return summaries;
   };
   folderRefreshQueue = folderRefreshQueue.then(run, run);
@@ -1567,7 +1466,8 @@ function gcWallpapers() {
   // global fallback paths out of config.json, so a defaults-only config makes an
   // own-copy that nothing else references look like an orphan. Measured, not assumed:
   // without this line the regression test's photo really is moved to .trash.
-  if (configStore.writesBlocked()) return;
+  // DATA-001: also while this session runs on a restored copy (configStore.sweepBlocked).
+  if (configStore.sweepBlocked()) return;
   // DATA-006. Same rule, one level up: with the folder itself absent, readdir returns
   // nothing and the sweep would be a no-op today — but the moment it came back as a
   // freshly created empty folder, every own-copy would look like an orphan.
@@ -1585,9 +1485,16 @@ function gcWallpapers() {
     for (const f of fs.readdirSync(wallpapersDir())) {
       if (f === '.trash') continue;
       const full = path.join(wallpapersDir(), f);
-      try { if (!fs.statSync(full).isFile()) continue; } catch { continue; }
+      let st;
+      try { st = fs.statSync(full); if (!st.isFile()) continue; } catch { continue; }
+      // BUG-087: an import or download may be writing this file right now —
+      // remove-slot-item and clear-slot sweep outside the library lock. Moving it made
+      // the import fail and left a .tmp in .trash.
+      if (stagingInFlight(f, st.mtimeMs)) continue;
       if (!keep.has(pathKey(full))) {
-        try { fs.renameSync(full, path.join(trashDirPath(), f)); } catch { /* оставляем как есть, не удаляем */ }
+        // BUG-084: never renameSync here — on Windows it replaces a file already in
+        // .trash under the same name. moveNoClobber picks a free name instead.
+        try { moveNoClobber(full, trashDirPath()); } catch { /* оставляем как есть, не удаляем */ }
       }
     }
   } catch {}
@@ -1604,7 +1511,14 @@ function wallpaperFor(monitorId, theme) {
   const slot = m && m[theme];
   if (!library.allowsLegacyFallback(slot)) return '';
   // Легаси-fallback нужен старым конфигам, но не после явной очистки слота пользователем.
-  return (theme === 'dark' ? config.darkWallpaper : config.lightWallpaper) || '';
+  return legacyGlobalWallpaper(theme);
+}
+
+// The two pre-library globals. Nothing in the app writes them any more, but a profile can
+// still carry them; a video there must not reach the desktop either (MEDIA-002).
+function legacyGlobalWallpaper(theme) {
+  const p = (theme === 'dark' ? config.darkWallpaper : config.lightWallpaper) || '';
+  return mediaFormats.isVideoPath(p) ? '' : p;
 }
 
 // Windows' IDesktopWallpaper renders a blank/solid desktop for a large PNG — it accepts the
@@ -1702,7 +1616,7 @@ async function applyForThemeCore(themeName, isManual = false, targetMonitors = n
 
   if (superseded()) return SUPERSEDED;
   // Fallback: single wallpaper for all monitors (older Windows / COM failure)
-  const target = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
+  const target = legacyGlobalWallpaper(theme);
   // The same fork on the single-wallpaper path. Fixing only the per-monitor loop
   // would have left this one silent on exactly the machines that fall back to it.
   const legacy = applyOutcome.classifyApplyTargets([
@@ -1951,6 +1865,9 @@ function createWindow() {
   });
 
   mainWindow.on('show', reconcileLiveFoldersIfStale);
+  // LIB-030: copies found while the window sat in the tray are announced now.
+  mainWindow.on('show', () => sendLibraryChecks());
+  mainWindow.on('restore', () => sendLibraryChecks());
   // A renderer crash/hide must never leave all app shortcuts suspended. The
   // recording UI also resumes explicitly, but main owns this final fail-safe.
   mainWindow.on('hide', resumeHotkeys);
@@ -2000,6 +1917,7 @@ function placeGalleryWindow(win, area) {
   win.setBounds({ x: area.x, y: area.y, width: area.width, height: area.height });
 }
 
+let galleryVideo = null;
 function createGalleryWindow() {
   // Span #5 of the MVP-A budget: viewer window creation → ready-to-show.
   const endOpenSpan = diagSpan('viewer', 'open-to-ready', { count: galleryPayload.items.length });
@@ -2027,6 +1945,26 @@ function createGalleryWindow() {
       additionalArguments: diagRendererArgs('renderer-viewer'),
     },
   });
+  galleryVideo = createVideoPlayer({ app, sharedTexture, window: galleryWindow,
+    createWorker: () => utilityProcess.fork(path.join(__dirname, 'src', 'video-worker.js'), [], { serviceName: 'Znada video decoder', stdio: 'ignore' }),
+    resolveEntry(index) {
+      const entry = galleryPayload.items[index];
+      if (entry?.kind === 'internet' && online.allowedVideo(entry.raw)) {
+        return { online: entry.raw, headers: providerAccess.requestHeaders(entry.raw) };
+      }
+      return entry && (entry.kind === 'library' || entry.kind === 'path')
+        && mediaFormats.isVideoPath(entry.path) && isAuthorizedMediaPath(entry.path) ? { path: entry.path } : null;
+    },
+    async openExternal(entry) {
+      if (!entry || !mediaFormats.isVideoPath(entry.path) || !isAuthorizedMediaPath(entry.path)) return { ok: false };
+      const error = await shell.openPath(entry.path);
+      return { ok: !error };
+    },
+  });
+  const ownedVideo = galleryVideo;
+  galleryWindow.webContents.on('render-process-gone', () => ownedVideo.reset());
+  galleryWindow.webContents.on('did-start-loading', () => ownedVideo.reset());
+  galleryWindow.on('close', () => ownedVideo.dispose());
   // BUG-052. The constructor applies this size with the primary monitor's scale.
   // On the portrait display (125%, work area 960×1536 at x=1920) that came out
   // 1200×1292: wider than the monitor and short of its bottom, so the picture sat
@@ -2062,6 +2000,8 @@ function createGalleryWindow() {
   });
 
   galleryWindow.on('closed', () => {
+    ownedVideo.dispose();
+    if (galleryVideo === ownedVideo) galleryVideo = null;
     galleryWindow = null;
     galleryWindowNormalBounds = null;
     galleryWindowFullscreen = false;
@@ -2069,6 +2009,7 @@ function createGalleryWindow() {
 }
 
 function openGalleryWindow(payload) {
+  if (galleryVideo) galleryVideo.stop();
   galleryPayload = sanitizeGalleryPayload(payload);
   galleryPayload.background = config.viewerBackground || 'ambient';
   if (!galleryPayload.items.length) return { ok: false, error: 'empty' };
@@ -2392,6 +2333,78 @@ function quitAndInstallUpdate() {
   try { autoUpdater.quitAndInstall(); } catch (e) { console.error('quitAndInstall:', e); }
 }
 
+// ---- LIB-030: the background pass over the library and its first check -----------------
+// One pass, many checks later (owner, 2026-11-02); today it finds identical files. It
+// reads fingerprints through META-001's cache, never touches the network and never changes
+// a file or a record. What the library holds, whether a game is running and whether the
+// user switched it off stay main's and are read at the moment of use.
+function libraryCheckFiles() {
+  const files = new Map();
+  for (const it of Object.values(config.library || {})) {
+    if (!it || it.type !== 'image' || !it.path) continue;
+    files.set(pathKey(it.path), { path: it.path, size: it.size, video: mediaFormats.isVideoPath(it.path) });
+  }
+  // Removed photos are already absent from this list (folder-state's default view).
+  for (const im of liveFolderIndex.listImages()) {
+    if (!im || !im.path) continue;
+    const key = pathKey(im.path);
+    const existing = files.get(key);
+    files.set(key, { path: existing ? existing.path : im.path, size: im.size,
+      video: mediaFormats.isVideoPath(im.path), watched: true });
+  }
+  return Array.from(files.values());
+}
+
+const libraryChecks = createLibraryChecks({
+  configPath: CONFIG_PATH,
+  isEnabled: () => !config.libraryChecks || config.libraryChecks.duplicates !== false,
+  listFiles: libraryCheckFiles,
+  fingerprint: (p) => metadataService.fingerprint(p),
+  // LIB-031. Without reading the file: what the Online cards can know right after launch.
+  cachedFingerprint: (p) => metadataService.cachedFingerprint(p),
+  // A move of Znada's own folder copies files the pass would otherwise be reading.
+  isBusy: () => mediaMoveRunning || isGameOrFullscreenRunning(),
+  onChange: (summary) => sendLibraryChecks(summary),
+  // LIB-031. What the library holds may have changed: the window re-asks its Online cards.
+  onHaveChange: () => sendLibraryHaveChanged(),
+});
+
+// LIB-031. "This Online card is a photo you already have": matched against what the pass
+// knows, never the network. The record, when the photo has one, so the card acts on it.
+const onlineHaveMatcher = onlineHave.create({
+  finder: () => libraryChecks.finder(),
+  readHeader: (p) => itemDetails.readHeaderFromDisk(p),
+  recordFor: (p) => {
+    const pool = config.library || {};
+    const direct = library.getItem(pool, library.idFor(p));
+    if (direct && direct.type === 'image') return direct;
+    const key = pathKey(p);
+    for (const it of Object.values(pool)) {
+      if (it && it.type === 'image' && it.path && pathKey(it.path) === key) return it;
+    }
+    return null;
+  },
+});
+
+function sendLibraryHaveChanged() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  diagCountSend('library-have-changed');
+  mainWindow.webContents.send('library-have-changed');
+}
+
+// The window may only announce copies when someone can see it. Main knows for certain
+// whether the window is on screen (started in the tray, hidden, minimized), so it says so
+// with every summary and sends one again when the window is shown or restored.
+function libraryChecksForWindow(summary) {
+  return { ...summary, windowShown: liveFolderWindowVisible() };
+}
+
+function sendLibraryChecks(summary = libraryChecks.summary()) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  diagCountSend('library-checks-changed');
+  mainWindow.webContents.send('library-checks-changed', libraryChecksForWindow(summary));
+}
+
 // ---------------------------------------------------------------------------
 // Renderer communication
 // ---------------------------------------------------------------------------
@@ -2401,6 +2414,9 @@ function quitAndInstallUpdate() {
 // assign IPC reply); only machine-driven bursts collapse. See src/coalesce.js.
 function sendConfigNow() {
   trayCtl.refresh();
+  // LIB-030. A pool change may add or remove a copy. A pass already waiting is not pushed
+  // back, and one that finds every fingerprint in the cache costs a few stats.
+  libraryChecks.schedule();
   if (mainWindow && !mainWindow.isDestroyed()) {
     diagCountSend('config-changed');
     mainWindow.webContents.send('config-changed', config);
@@ -2447,7 +2463,7 @@ const IPC_MAIN_ONLY = [
   'folder-entries', 'folder-info', 'gallery-open', 'get-cloud-capability', 'get-config',
   'get-monitors', 'get-release-info', 'get-theme', 'get-update-state', 'get-version', 'get-wallpaper-theme',
   'install-update', 'internet-search', 'internet-status', 'internet-tag-suggest',
-  'item-copy-path', 'item-details', 'item-open-source', 'item-reveal', 'library-add-folder',
+  'item-copy-path', 'details-copy-tag', 'item-details', 'item-open-source', 'item-reveal', 'library-add-folder',
   'library-add-images', 'library-add-paths', 'library-add-tag', 'library-assign-record',
   'library-assign-records', 'library-delete-forever', 'library-ensure-sizes',
   'library-hidden-list', 'library-materialize', 'library-path-sizes', 'library-recent',
@@ -2455,10 +2471,12 @@ const IPC_MAIN_ONLY = [
   'library-refresh', 'library-remove-tag', 'library-restore', 'library-toggle-favorite',
   'media-folder-move', 'media-folder-pick', 'media-folder-plan', 'media-folder-state',
   'media-folder-stop',
-  'next-change-get', 'next-wallpaper', 'open-releases', 'open-website', 'quit-app',
+  'library-checks-state', 'library-checks-ack', 'library-duplicates',
+  'next-change-get', 'next-wallpaper', 'open-releases', 'open-video', 'open-website', 'quit-app',
   'remove-slot-item', 'set-autostart', 'set-config', 'set-hotkey', 'set-hotkey-recording',
   'set-slideshow', 'set-slideshow-index', 'set-slideshow-to-path', 'set-start-minimized',
-  'shortcuts-status', 'thumb', 'thumb-aspects', 'thumb-info',
+  'media-motion-many', 'shortcuts-status', 'thumb', 'thumb-aspects', 'thumb-info',
+  'online-have-many',
 ];
 
 // Both windows show cards, so both need the actions behind a card's menu (ONL-009).
@@ -2467,14 +2485,14 @@ const IPC_MAIN_ONLY = [
 const IPC_MAIN_AND_VIEWER = [
   'favorite-state', 'favorite-set',
   'card-copy-file', 'card-copy-link', 'card-open-source', 'card-save-as', 'cloud-add',
-  'file-url', 'get-i18n', 'internet-add', 'item-lookup-metadata',
+  'file-url', 'get-i18n', 'internet-add', 'internet-cancel-video', 'item-lookup-metadata',
   'library-assign', 'library-remove-many', 'library-undo-remove', 'media-motion',
 ];
 
 // The fullscreen viewer's own window controls.
 const IPC_VIEWER_ONLY = [
   'card-assign-targets', 'card-ensure-record', 'gallery-close', 'gallery-payload',
-  'gallery-toggle-fullscreen',
+  'gallery-toggle-fullscreen', 'gallery-video',
 ];
 
 // Dev-only, and only in a gated diagnostics run; that window does not exist otherwise.
@@ -2851,6 +2869,8 @@ const SETTINGS_FIELDS = {
   onlineSort: asOneOf('date_added', 'toplist', 'random', 'views'),
   onlineSources: (value, current) => onlineSources.patch(value, current, providerRegistry.PROVIDERS) || REJECT_SETTING,
   librarySidebarCollapsed: asBool,
+  // LIB-030. One switch per check; today the only check is identical files.
+  libraryChecks: asMergedObject({ duplicates: asBool }),
   contentBlur: asMergedObject({ nsfw: asBool, sketchy: asBool }),
   onlinePurity: asMergedObject({ sfw: asBool, sketchy: asBool, nsfw: asBool }),
   // DESIGN-002. The whole list at once, validated by the module the window also uses.
@@ -2943,6 +2963,7 @@ ipcMain.handle('set-config', async (e, patch) => {
   }
   trayCtl.refresh();
   if (patch && 'themeSchedule' in patch) applyThemeSchedule();
+  if (patch && 'libraryChecks' in patch) libraryChecks.settingsChanged();
   if (patch && 'viewerBackground' in patch && galleryWindow && !galleryWindow.isDestroyed()) {
     diagCountSend('gallery-background');
     galleryWindow.webContents.send('gallery-background', config.viewerBackground);
@@ -2999,25 +3020,6 @@ ipcMain.handle('set-hotkey-recording', (e, recording) => {
 
 const IMG_FILTERS = [{ name: 'Images', extensions: mediaFormats.WALLPAPER_FORMATS.slice() }];
 
-function ensureSlot(monitorId, which) {
-  const theme = which === 'dark' ? 'dark' : 'light';
-  if (!config.monitors[monitorId]) config.monitors[monitorId] = { light: { itemIds: [] }, dark: { itemIds: [] } };
-  const m = config.monitors[monitorId];
-  if (!m.light || !Array.isArray(m.light.itemIds)) m.light = { itemIds: [] };
-  if (!m.dark || !Array.isArray(m.dark.itemIds)) m.dark = { itemIds: [] };
-  return m[theme];
-}
-
-// Импорт картинки/папки в пул + назначение её в слот (вернёт true, если реально добавили).
-function assignToSlot(slot, type, srcPath, extra) {
-  const id = addToPool(type, srcPath, extra);
-  if (!id) return false;
-  if (slot.itemIds.includes(id)) return false; // уже в этом слоте
-  slot.itemIds.push(id);
-  library.clearSlotExplicitEmpty(slot);
-  return true;
-}
-
 // add one or more local photos to a monitor's playlist (multi-select dialog)
 ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
   if (!monitorId) return { config, added: 0 };
@@ -3034,17 +3036,12 @@ ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
   // Making a photo active has to be ordered against deleting files, like every other
   // route into the pool — this one is on the Design page and was outside the lock.
   return withLibraryLock(async () => {
-    const slot = ensureSlot(monitorId, which);
-    let added = 0;
-    for (const src of res.filePaths) {
-      try {
-        const photo = await photoForPool(src);
-        if (assignToSlot(slot, 'image', photo.path, photo.extra)) added++;
-      } catch (err) { console.error('Не удалось импортировать обои:', err); }
+    const imported = await libraryService.importSlotImages(res.filePaths, monitorId, which);
+    if (imported.saveRequired) {
+      saveConfig();
+      trayCtl.refresh();
     }
-    saveConfig();
-    trayCtl.refresh();
-    return { config, added };
+    return { config, added: imported.added };
   });
 });
 
@@ -3058,76 +3055,30 @@ ipcMain.handle('add-slot-folder', async (e, monitorId, which) => {
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };
   const dir = grantMediaPath(res.filePaths[0], { root: true });
   return withLibraryLock(async () => {
-    const slot = ensureSlot(monitorId, which);
-    assignToSlot(slot, 'folder', dir);
-    saveConfig();
-    syncLiveFolderWatchers();
-    requestLiveFolderRefresh([library.idFor(dir)]);
-    return { config, added: 1 };
+    const imported = libraryService.importSlotFolder(dir, monitorId, which);
+    if (imported.saveRequired) saveConfig();
+    if (imported.folderIds.length) syncLiveFolderWatchers();
+    if (imported.folderIds.length) requestLiveFolderRefresh(imported.folderIds);
+    return { config, added: imported.added };
   });
 });
 
 // add multiple dropped file paths (files or folders) to a monitor's playlist
 ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => withLibraryLock(async () => {
   if (!monitorId || !Array.isArray(paths)) return { config, added: 0 };
-  const slot = ensureSlot(monitorId, which);
-  let added = 0;
-  const revivalsBefore = poolRevivals();
-  const folderIds = [];
-  for (const src of paths) {
-    try {
-      if (!itemDetails.isValidAbsolutePath(src)) continue;
-      const stats = fs.statSync(src);
-      if (stats.isDirectory()) {
-        if (assignToSlot(slot, 'folder', src)) added++;
-        // The grant follows the POOL, not the slot, and it is issued only once the pool
-        // actually holds the folder. `assignToSlot` answers false for two different
-        // things — the pool refused it, or this slot already had it — and reading that
-        // as "accepted" handed out recursive read authority over a directory the app had
-        // just declined. Asking the pool directly tells the two apart: a folder already
-        // in the slot is legitimately ours and stays readable.
-        const folderId = library.idFor(src);
-        if (library.getItem(config.library, folderId)) {
-          grantMediaPath(src, { root: true });
-          folderIds.push(folderId);
-        }
-      } else if (stats.isFile()) {
-        const ext = path.extname(src).toLowerCase();
-        if (playlist.IMG_EXTS.has(ext)) {
-          const photo = await photoForPool(src);
-          if (assignToSlot(slot, 'image', photo.path, photo.extra)) added++;
-          // photoForPool completing proves the supported file was actually readable.
-          // Rejected extensions and failed imports must not leave read authority behind.
-          grantMediaPath(src);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to import drag-dropped path:', src, err);
-    }
-  }
-  // Also when nothing new was added: dropping a photo that is already here clears the
-  // removed-marker still on it, and that repair has to reach the disk or the photo is
-  // removed again after the next restart.
-  if (added > 0 || poolRevivals() !== revivalsBefore) {
+  const imported = await libraryService.importSlotPaths(paths, monitorId, which);
+  if (imported.saveRequired) {
     saveConfig();
     trayCtl.refresh();
   }
-  if (folderIds.length) syncLiveFolderWatchers();
-  if (folderIds.length) requestLiveFolderRefresh(folderIds);
-  return { config, added };
+  if (imported.folderIds.length) syncLiveFolderWatchers();
+  if (imported.folderIds.length) requestLiveFolderRefresh(imported.folderIds);
+  return { config, added: imported.added, videos: imported.videos };
 }));
 
 ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
   if (!monitorId) return config;
-  const theme = which === 'dark' ? 'dark' : 'light';
-  const slot = ensureSlot(monitorId, which);
-  if (index >= 0 && index < slot.itemIds.length) {
-    slot.itemIds.splice(index, 1);
-    if (slot.itemIds.length === 0) {
-      library.markSlotExplicitEmpty(slot);
-      storeSlideshowPosition(monitorId, theme, { index: 0, path: '' });
-    }
-  }
+  libraryService.removeSlotItem(monitorId, which, index);
   saveSettingsOnly();  // slot membership only; the pool is untouched
   gcWallpapers();
   trayCtl.refresh();
@@ -3136,11 +3087,7 @@ ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
 
 ipcMain.handle('clear-slot', (e, monitorId, which) => {
   if (!monitorId) return config;
-  const theme = which === 'dark' ? 'dark' : 'light';
-  const slot = ensureSlot(monitorId, which);
-  slot.itemIds = [];
-  library.markSlotExplicitEmpty(slot);
-  storeSlideshowPosition(monitorId, theme, { index: 0, path: '' });
+  libraryService.clearSlot(monitorId, which);
   saveSettingsOnly();  // slot membership only; the pool is untouched
   gcWallpapers();
   return config;
@@ -3153,26 +3100,18 @@ ipcMain.handle('library-add-images', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: tMain('library.addPhotos'),
     properties: ['openFile', 'multiSelections'],
-    filters: IMG_FILTERS,
+    // MEDIA-002: the Library takes video too; a monitor's own dialog stays IMG_FILTERS.
+    filters: [{
+      name: tMain('library.dialogFilterMedia'),
+      extensions: mediaFormats.WALLPAPER_FORMATS.concat(mediaFormats.VIDEO_FORMATS),
+    }],
   });
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };
   for (const chosen of res.filePaths) grantMediaPath(chosen);
   return withLibraryLock(async () => {
-    const before = Object.keys(config.library).length;
-    const revivalsBefore = poolRevivals();
-    for (const src of res.filePaths) {
-      try {
-        const photo = await photoForPool(src);
-        addToPool('image', photo.path, photo.extra);
-      }
-      catch (err) { console.error('library: не удалось импортировать', src, err); }
-    }
-    const added = Object.keys(config.library).length - before;
-    // Re-adding a photo that is already in the pool adds no row, but it DOES clear the
-    // removed-marker or trash entry that was still on it — and that repair has to be
-    // written down, or the photo is removed again after the next restart.
-    if (added || poolRevivals() !== revivalsBefore) saveConfig();
-    return { config, added };
+    const imported = await libraryService.importLibraryImages(res.filePaths);
+    if (imported.saveRequired) saveConfig();
+    return { config, added: imported.added };
   });
 });
 
@@ -3288,49 +3227,22 @@ ipcMain.handle('library-add-folder', async () => {
   });
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };
   return withLibraryLock(async () => {
-    const before = Object.keys(config.library).length;
-    const revivalsBefore = poolRevivals();
-    const id = addToPool('folder', grantMediaPath(res.filePaths[0], { root: true }));
-    const added = Object.keys(config.library).length - before;
-    if (added || poolRevivals() !== revivalsBefore) saveConfig();
-    if (id) syncLiveFolderWatchers();
-    if (id) requestLiveFolderRefresh([id]);
-    return { config, added };
+    const imported = libraryService.importLibraryFolder(grantMediaPath(res.filePaths[0], { root: true }));
+    if (imported.saveRequired) saveConfig();
+    if (imported.folderIds.length) syncLiveFolderWatchers();
+    if (imported.folderIds.length) requestLiveFolderRefresh(imported.folderIds);
+    return { config, added: imported.added };
   });
 });
 
 // Добавить перетащенные пути (файлы/папки) в пул.
 ipcMain.handle('library-add-paths', async (e, paths) => withLibraryLock(async () => {
   if (!Array.isArray(paths)) return { config, added: 0 };
-  // SEC-002. Drag-and-drop: the path is asserted by the window, because Electron resolves
-  // a dropped File in the renderer and main has no way to confirm it. Adding is a visible
-  // act - a card appears - which is what keeps this from being a silent read of anything
-  // on the disk. Main grants only paths it has validated and successfully accepted below;
-  // a missing or unsupported renderer-supplied path must never acquire read authority.
-  const before = Object.keys(config.library).length;
-  const revivalsBefore = poolRevivals();
-  const folderIds = [];
-  for (const src of paths) {
-    try {
-      if (!itemDetails.isValidAbsolutePath(src)) continue;
-      const stats = fs.statSync(src);
-      if (stats.isDirectory()) {
-        const id = addToPool('folder', src);
-        if (id) {
-          grantMediaPath(src, { root: true });
-          folderIds.push(id);
-        }
-      } else if (stats.isFile() && playlist.IMG_EXTS.has(path.extname(src).toLowerCase())) {
-        const photo = await photoForPool(src);
-        if (addToPool('image', photo.path, photo.extra)) grantMediaPath(src);
-      }
-    } catch (err) { console.error('library: drop import failed', src, err); }
-  }
-  const added = Object.keys(config.library).length - before;
-  if (added || poolRevivals() !== revivalsBefore) saveConfig();
-  if (folderIds.length) syncLiveFolderWatchers();
-  if (folderIds.length) requestLiveFolderRefresh(folderIds);
-  return { config, added };
+  const imported = await libraryService.importLibraryPaths(paths);
+  if (imported.saveRequired) saveConfig();
+  if (imported.folderIds.length) syncLiveFolderWatchers();
+  if (imported.folderIds.length) requestLiveFolderRefresh(imported.folderIds);
+  return { config, added: imported.added };
 }));
 
 // LIB-004: "remove from library" means the same thing for every card — stop showing
@@ -3393,529 +3305,45 @@ async function confirmLibraryRemoval(rawRecords, rawOptions) {
   return { config, affected: 0, removed: 0, hidden: 0, error: null, cancelled: true, warning: null, undo: null };
 }
 
+// CODE-001 2.2b. Removing, the toast's Undo, the "Removed" section, restoring and deleting
+// into the Recycle Bin live in src/library-removal.js (libraryRemoval, created beside the
+// pool core). The handlers stay here: the question before removing, the role of the
+// window that asked and Electron itself belong to main.js.
 ipcMain.handle('library-remove-many', async (e, rawRecords, rawOptions) => {
   const declined = await confirmLibraryRemoval(rawRecords, rawOptions);
   if (declined) return declined;
-  return withLibraryLock(async () => {
-  if (!Array.isArray(rawRecords) || !rawRecords.length || rawRecords.length > 50000) {
-    return { config, removed: 0, hidden: 0, error: 'bad_request', warning: null, undo: null };
-  }
-
-  const records = [];
-  const seen = new Set();
-  for (const raw of rawRecords) {
-    const rec = typeof raw === 'string' ? { id: raw, path: '' } : (raw || {});
-    const id = typeof rec.id === 'string' && rec.id ? rec.id : '';
-    const p = typeof rec.path === 'string' ? rec.path : '';
-    const item = id ? library.getItem(config.library, id) : null;
-    const filePath = p || (item && item.path) || '';
-    const type = (item && item.type) || (rec.type === 'folder' ? 'folder' : 'image');
-    const key = `${id}|${pathKey(filePath)}`;
-    if ((!id && !filePath) || seen.has(key)) continue;
-    seen.add(key);
-    records.push({ id: item ? id : '', path: filePath, item, type });
-  }
-  if (!records.length) return { config, removed: 0, hidden: 0, error: 'bad_request', warning: null, undo: null };
-
-  // Removing a folder removes what is inside it — including the photos in there that
-  // earned a pool record of their own (a star, a tag or an assignment creates one).
-  //
-  // This closure is computed FIRST, before anything is snapshotted or deleted. It used
-  // to run at the very end, after the pool and the slots had already been rewritten,
-  // which meant the descendants were found and then nothing was done with them: they
-  // stayed in the pool and in their slots. Inside an ordinary subfolder the hidden
-  // marker covered that up; remove a watched ROOT and its index is forgotten too, so
-  // the photos came straight back on screen and into the rotation.
-  const removedDirKeys = records
-    .filter((r) => r.type === 'folder')
-    .map((r) => pathKey(r.path))
-    .filter(Boolean);
-  const underRemovedDir = (p) => removedDirKeys.some((dir) => library.isUnderPath(p, dir));
-  const descendants = [];
-  if (removedDirKeys.length) {
-    const named = new Set(records.map((r) => r.id).filter(Boolean));
-    for (const it of Object.values(config.library)) {
-      // Both kinds. Limiting this to images left a subfolder that had earned its own
-      // record — a star, a tag or an assignment creates one — sitting in the library and
-      // on a monitor after its parent was removed, still serving the photos inside it.
-      if (!it || !it.path || named.has(it.id)) continue;
-      if (it.type !== 'image' && it.type !== 'folder') continue;
-      if (underRemovedDir(it.path)) descendants.push(it);
-    }
-  }
-
-  // Snapshot enough to put everything back if the user immediately undoes. Slot
-  // membership is part of that: removal empties slots, and an undo that restored the
-  // pool record but not its placement would quietly change which wallpapers rotate.
-  const undo = { items: [], slots: [], paths: [], dirs: [], at: Date.now() };
-  const removedIds = new Set();
-  for (const rec of records) {
-    if (!rec.item) continue;
-    undo.items.push(JSON.parse(JSON.stringify(rec.item)));
-    removedIds.add(rec.id);
-  }
-  for (const it of descendants) {
-    undo.items.push(JSON.parse(JSON.stringify(it)));
-    removedIds.add(it.id);
-  }
-  for (const [monitorId, monitor] of Object.entries(config.monitors || {})) {
-    for (const theme of ['light', 'dark']) {
-      const slot = monitor[theme];
-      if (!slot || !Array.isArray(slot.itemIds)) continue;
-      if (!slot.itemIds.some((id) => removedIds.has(id))) continue;
-      undo.slots.push({ monitorId, theme, itemIds: slot.itemIds.slice(), emptied: false });
-    }
-  }
-
-  // LIB-006: keep the whole record — tags, star, author, source — for every photo whose
-  // record is being taken away, so putting it back means getting it back, not typing it
-  // in again. Where the file lives decides nothing here; the record is the record.
-  //
-  // This used to be limited to photos Znada had copied for itself, on the reasoning
-  // that only they needed protecting from the orphan sweep. But the file and the record
-  // are two different things: a starred, tagged photo inside a watched folder kept its
-  // FILE and lost its RECORD, so restoring the folder brought back a blank photo. (The
-  // orphan sweep only ever looks inside wallpapers/, so keeping other paths in this list
-  // costs nothing.)
-  if (!Array.isArray(config.libraryTrash)) config.libraryTrash = [];
-  const now = Date.now();
-  // One id for this whole removal. The trash is bounded, and the bound applies to whole
-  // removals: without this, removing a folder of 520 photos kept 500 of their records
-  // and lost the stars and tags of the rest with nothing on screen saying so.
-  const removalGroup = `${now.toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
-  // The main window replaces its one toast when another removal happens, but the
-  // fullscreen viewer is a separate document and can still show the older action.
-  // Carry the group as an opaque token so that stale Undo can never restore a newer,
-  // unrelated removal.
-  undo.token = removalGroup;
-  // Each entry records WHY it went: named by the user, or carried along by a folder.
-  // Putting a folder back may only undo the second kind.
-  //
-  // The NEAREST removed folder, not the first one that happens to contain the path.
-  // Removing a folder and one of its own subfolders in a single action wrote the outer
-  // one here, so restoring the subfolder alone brought nothing back with it.
-  const removalReason = (item) => {
-    let best = '';
-    for (const dir of removedDirKeys) {
-      if (!library.isUnderPath(item.path, dir)) continue;
-      if (dir.length > best.length) best = dir;
-    }
-    return best;
-  };
-  // Where each record was placed, so a restore after a restart can put it back on the
-  // same monitor and theme rather than only into the library.
-  const placementsFor = (id) => {
-    const out = [];
-    for (const snap of undo.slots) {
-      const index = snap.itemIds.indexOf(id);
-      if (index < 0) continue;
-      out.push({ monitorId: snap.monitorId, theme: snap.theme, index, emptied: false });
-    }
-    return out;
-  };
-  // LIB-009. Вытеснение переживает эту функцию: запись, выпавшая из корзины, теряет защиту
-  // от сборщика обоев, и вернуть её одним нажатием уже нельзя. Раньше об этом знала только
-  // консоль разработчика, поэтому счёт копится здесь и уходит в ответ вместе с остальным.
-  let evicted = 0;
-  // Descendants of a removed folder are covered by the same rule.
-  for (const rec of [...records.map((r) => ({ ...r, named: true })),
-    ...descendants.map((item) => ({ item, named: false }))]) {
-    // Folders are kept too. Skipping them meant a subfolder that had earned a record —
-    // a star, tags, a place on a monitor — lost all of it the moment its parent went,
-    // and the only way back was the toast, which does not survive a restart.
-    if (!rec.item || (rec.item.type !== 'image' && rec.item.type !== 'folder')) continue;
-    // Bounded here, not only on save: the trash is what holds GC off these files, so
-    // a list that is longer in memory than on disk would quietly drop protection for
-    // the oldest entry at the next start.
-    const pushed = libraryStore.pushEntry(config.libraryTrash, {
-      item: JSON.parse(JSON.stringify(rec.item)),
-      // DATA-005. The tombstone has to be NEWER than the record it buries, or a merge
-      // cannot tell "deleted after the last edit" from "edited after the deletion" —
-      // and gets it wrong in the direction that brings the photo back.
-      rev: library.revOf(rec.item) + 1,
-      removedAt: now,
-      via: rec.named ? '' : removalReason(rec.item),
-      group: removalGroup,
-      slots: placementsFor(rec.item.id),
-    });
-    config.libraryTrash = pushed.trash;
-    if (pushed.evicted.length) {
-      evicted += pushed.evicted.length;
-      console.log(`library trash full: ${pushed.evicted.length} oldest entr(y/ies) released to the orphan sweep`);
-    }
-  }
-
-  // The pre-library fallback still applies a bare path, and migrateConfig would pull
-  // it back into the pool on the next start — so a removed photo could reappear and
-  // keep being used. Clear it here, keeping the explicit-empty semantics intact.
-  const removedPaths = new Set(records.map((r) => pathKey(r.path)).filter(Boolean));
-  for (const key of ['lightWallpaper', 'darkWallpaper']) {
-    if (!config[key]) continue;
-    // Either named directly, or sitting inside a folder that was just removed.
-    if (!removedPaths.has(pathKey(config[key])) && !underRemovedDir(config[key])) continue;
-    undo.legacy = undo.legacy || {};
-    undo.legacy[key] = config[key];
-    config[key] = '';
-  }
-
-  for (const id of removedIds) library.removeItem(config.library, id);
-  const emptiedSlots = new Set();
-  for (const [monitorId, monitor] of Object.entries(config.monitors || {})) {
-    for (const theme of ['light', 'dark']) {
-      const slot = monitor[theme];
-      if (!slot || !Array.isArray(slot.itemIds)) continue;
-      const before = slot.itemIds.length;
-      slot.itemIds = slot.itemIds.filter((id) => !removedIds.has(id));
-      if (before > 0 && slot.itemIds.length === 0) {
-        library.markSlotExplicitEmpty(slot);
-        storeSlideshowPosition(monitorId, theme, { index: 0, path: '' });
-        const snap = undo.slots.find((sl) => sl.monitorId === monitorId && sl.theme === theme);
-        if (snap) snap.emptied = true;
-        emptiedSlots.add(`${monitorId}|${theme}`);
-      }
-    }
-  }
-  // Which slots this removal left empty is only known after the slots have been
-  // rewritten, but the kept records were written before that. A restore has to lift the
-  // "deliberately empty" marker it set, or the monitor would keep playing nothing with
-  // its wallpaper sitting right there in the library again.
-  if (emptiedSlots.size) {
-    for (const entry of config.libraryTrash) {
-      if (!entry || entry.group !== removalGroup || !Array.isArray(entry.slots)) continue;
-      for (const slot of entry.slots) {
-        if (emptiedSlots.has(`${slot.monitorId}|${slot.theme}`)) slot.emptied = true;
-      }
-    }
-  }
-
-  // Photos still reachable through a watched folder would simply come back on the
-  // next scan, so they are marked removed in the index instead.
-  const hiddenResult = folderState.setHidden(
-    liveFolderState,
-    records.filter((r) => r.type !== 'folder').map((r) => r.path).filter(Boolean),
-    true,
-  );
-  liveFolderState = hiddenResult.state;
-  invalidateHiddenPaths();
-  undo.paths = hiddenResult.matched;
-
-  // LIB-008: a subfolder the user merely navigated into has no record of its own, so
-  // it is removed by path prefix. That also covers photos dropped into it later —
-  // hiding the files it holds today would let the folder come back one photo at a time.
-  // Every removed folder, including one that had earned a pool record of its own
-  // (a star, a tag, an assignment all create one). Its photos are indexed under the
-  // watched ROOT as well, so dropping the record alone left them on screen while the
-  // message claimed they were removed. The watched root itself is unaffected:
-  // setHiddenDir resolves it to an empty relative path and skips it, and removing a
-  // root is still done by dropping its record.
-  const dirResult = folderState.setHiddenDir(
-    liveFolderState,
-    records.filter((r) => r.type === 'folder').map((r) => r.path).filter(Boolean),
-    true,
-  );
-  liveFolderState = dirResult.state;
-  invalidateHiddenPaths();
-  undo.dirs = dirResult.matched;
-  if (dirResult.changed) { folderStateDirty = true; flushLiveFolderState(); }
-  // Written at once rather than on the usual 5s debounce: this is a deliberate user
-  // action, and a crash in that window would silently bring the photos back.
-  if (hiddenResult.changed) { folderStateDirty = true; flushLiveFolderState(); }
-
-  // (The photos inside a removed folder that had their own pool record were collected
-  // BEFORE any of the above and went through the same removal — see `descendants`.)
-
-  // Including the subfolders that came with the parent: leaving their watcher running
-  // would keep re-discovering the files of a folder the user has removed.
-  const removedFolders = [...records.filter((r) => r.item && r.item.type === 'folder').map((r) => r.id),
-    ...descendants.filter((it) => it.type === 'folder').map((it) => it.id)];
-  if (removedFolders.length) { forgetLiveFolders(removedFolders); syncLiveFolderWatchers(); }
-
-  saveConfig();
-  gcWallpapers();
-  trayCtl.refresh();
-  lastLibraryRemoval = (undo.items.length || undo.paths.length || undo.dirs.length) ? undo : null;
-
-  let warning = null;
-  try { await applyForTheme(null, true); }
-  catch (err) {
-    warning = 'apply_failed';
-    console.error('bulk library removal apply failed:', err);
-  }
-  // What the user is told must be counted in CARDS, not in bookkeeping rows. A photo
-  // that is both a library record and a file inside a watched folder touches two
-  // rows, and one reachable through two overlapping folders touches two more — the
-  // old sum said "2" for a single removed photo.
-  const changedPaths = new Set(
-    [...hiddenResult.matched, ...dirResult.matched].map(pathKey),
-  );
-  const affected = records.filter((rec) => (
-    (rec.id && removedIds.has(rec.id)) || changedPaths.has(pathKey(rec.path))
-  )).length;
-
-  // A hide is invisible to the main window's grid, and only another window's removal
-  // needs telling — the main window updates itself as part of its own removal, and
-  // repeating it there would rebuild the grid twice and lose the scroll position.
-  const hiddenNow = hiddenResult.updated + dirResult.updated;
-  if (hiddenNow > 0 && ipcAuthority.roleOf(e) !== 'main') notifyLibraryViewStale('remove');
-
-  return {
-    config,
-    affected,
-    removed: undo.items.length,
-    evicted,
-    hidden: hiddenResult.updated + dirResult.updated,
-    error: null,
-    warning,
-    undo: lastLibraryRemoval ? { count: records.length, token: lastLibraryRemoval.token } : null,
-  };
-  });
+  return libraryRemoval.removeMany(rawRecords, { senderIsMain: () => ipcAuthority.roleOf(e) === 'main' });
 });
 
 // Put back exactly what the last removal took away. Only the most recent removal is
 // kept — this backs the "Undo" in the toast, not a full history.
-ipcMain.handle('library-undo-remove', async (e, expectedToken) => withLibraryLock(async () => {
-  const undo = lastLibraryRemoval;
-  if (!undo) return { config, restored: 0, error: 'nothing_to_undo' };
-  if (expectedToken && undo.token !== expectedToken) {
-    return { config, restored: 0, error: 'stale_undo' };
-  }
+ipcMain.handle('library-undo-remove', async (e, expectedToken) => libraryRemoval.undo(expectedToken));
 
-  const undoRestoredIds = new Set();
-  const failedItems = [];
-  for (const item of undo.items) {
-    if (!item || !item.id) continue;
-    // If Znada's own copy could not be brought back, do NOT add a record pointing at
-    // a file that is not there and do NOT drop the recovery entry — that entry is the
-    // only remaining way back.
-    if (isOwnWallpaperCopy(item.path) && !restoreOwnCopyFile(item)) {
-      console.error('undo: копия не восстановлена, запись корзины сохранена:', item.path);
-      failedItems.push(item);
-      continue;
-    }
-    const activeItem = config.library[item.id] || item;
-    markRecordRevived(activeItem);
-    if (!config.library[item.id]) config.library[item.id] = activeItem;
-    undoRestoredIds.add(item.id);
-    dropFromLibraryTrash(item.id);
-  }
-  // Put back only the ids this removal took out, in their original positions. The old
-  // code assigned the whole pre-removal list, so anything the user added afterwards —
-  // "remove A, then assign C" — vanished when they pressed Undo.
-  for (const snap of undo.slots) {
-    const monitor = (config.monitors || {})[snap.monitorId];
-    const slot = monitor && monitor[snap.theme];
-    if (!slot || !Array.isArray(slot.itemIds)) continue;
-    const present = new Set(slot.itemIds);
-    const rebuilt = slot.itemIds.slice();
-    snap.itemIds.forEach((id, index) => {
-      if (!undoRestoredIds.has(id) || present.has(id)) return;
-      rebuilt.splice(Math.min(index, rebuilt.length), 0, id);
-      present.add(id);
-    });
-    slot.itemIds = rebuilt;
-    if (snap.emptied) library.clearSlotExplicitEmpty(slot);
-  }
-  if (undo.paths.length) {
-    const res = folderState.setHidden(liveFolderState, undo.paths, false);
-    liveFolderState = res.state;
-    invalidateHiddenPaths();
-    if (res.changed) { folderStateDirty = true; flushLiveFolderState(); }
-  }
-  // The legacy fallback is a bare path with no record behind it, so putting it back
-  // when its file did not come back would point the desktop at nothing.
-  for (const [key, value] of Object.entries(undo.legacy || {})) {
-    if (config[key]) continue;
-    let present = true;
-    try { present = fs.existsSync(value); } catch { present = false; }
-    if (present) config[key] = value;
-  }
-  if ((undo.dirs || []).length) {
-    const res = folderState.setHiddenDir(liveFolderState, undo.dirs, false);
-    liveFolderState = res.state;
-    invalidateHiddenPaths();
-    if (res.changed) { folderStateDirty = true; flushLiveFolderState(); }
-  }
-  const restoredFolders = undo.items.filter((it) => it && it.type === 'folder');
-  if (restoredFolders.length) {
-    syncLiveFolderWatchers();
-    // Starting the watcher is not a scan: without this the folder's photos would only
-    // reappear on the next file event or the hourly pass, so Undo would look partial.
-    requestLiveFolderRefresh(restoredFolders.map((it) => it.id));
-  }
+// The "removed" section: what the user took out of the library and can still put back.
+ipcMain.handle('library-hidden-list', () => libraryRemoval.hiddenList());
 
-  // What is left to retry, and nothing more. Clearing the whole record up front meant a
-  // failed restore was unrepeatable; keeping the whole record would offer to undo work
-  // that is already done. Slot positions travel with the items they belong to.
-  const failedIds = new Set(failedItems.map((it) => it.id));
-  lastLibraryRemoval = failedItems.length ? {
-    items: failedItems,
-    slots: (undo.slots || []).filter((snap) => snap.itemIds.some((id) => failedIds.has(id))),
-    paths: [], dirs: [], legacy: undo.legacy, at: undo.at, token: undo.token,
-  } : null;
-
-  saveConfig();
-  trayCtl.refresh();
-  try { await applyForTheme(null, true); } catch (err) { console.error('undo removal apply failed:', err); }
-  // Counted from what actually happened: the old sum reported every item in the
-  // snapshot, including the ones whose file could not be brought back.
-  // Counted in CARDS, not in bookkeeping rows. One photo inside a watched folder is both
-  // a library record and a marked file in the index, so adding the two lists together
-  // said "2 restored" for a single photo.
-  const restoredKeys = new Set();
-  for (const id of undoRestoredIds) {
-    const item = config.library[id];
-    if (item && item.path) restoredKeys.add(pathKey(item.path));
-  }
-  for (const p of [...undo.paths, ...(undo.dirs || [])]) restoredKeys.add(pathKey(p));
-
-  return {
-    config,
-    restored: restoredKeys.size,
-    failed: failedItems.length,
-    error: null,
-  };
-}));
-
-// The "removed" section: photos the user took out of the library that are still
-// physically present in a watched folder, so restoring them costs nothing.
-ipcMain.handle('library-hidden-list', () => {
-  const images = [];
-  const shown = new Set();   // one card per photo, whichever bookkeeping it appears in
-  let hiddenDirs = [];
-  try { hiddenDirs = folderState.listHiddenDirs(liveFolderState).map((d) => d.path); }
-  catch (err) { console.error('library-hidden-list (hidden dirs):', err); }
-  const underHiddenDir = (p) => hiddenDirs.some((dir) => library.isUnderPath(p, dir));
-  try {
-    for (const im of folderState.listImages(liveFolderState, null, { only: 'hidden' })) {
-      // Photos hidden only because their subfolder was removed are represented by
-      // that folder's own card below; listing them too would turn one decision into
-      // hundreds of cards the user cannot act on individually.
-      if (im.hiddenByDir) continue;
-      // Two watched folders can overlap, so the same file is indexed under both roots
-      // and arrived here twice — two identical cards for one photo, and removing or
-      // restoring one left the other on screen.
-      const key = pathKey(im.path);
-      if (shown.has(key)) continue;
-      shown.add(key);
-      images.push(im);
-    }
-    for (const dir of folderState.listHiddenDirs(liveFolderState)) {
-      // Overlapping watched roots index the same subfolder twice, so it arrived here
-      // twice — two identical folder cards for one decision, and acting on one left the
-      // other on screen. The photos above were already deduplicated; folders were not.
-      const key = pathKey(dir.path);
-      if (shown.has(key)) continue;
-      shown.add(key);
-      images.push({
-        folderId: dir.folderId, path: dir.path, type: 'folder',
-        firstSeenAt: 0, addedAt: 0, modifiedAt: 0, aspect: 1.6, hidden: true,
-      });
-    }
-  } catch (err) {
-    console.error('library-hidden-list (folders):', err);
-  }
-  // LIB-006: photos whose record was taken away live here too — including the ones
-  // whose only copy belongs to Znada, which need a way back the most.
-  for (const entry of (config.libraryTrash || [])) {
-    if (!entry || !entry.item) continue;
-    // The same photo can be both a kept record and a marked file in the folder index;
-    // and a photo inside a removed FOLDER is represented by that folder's single card,
-    // exactly as above. Either way it must not turn into a second card the user cannot
-    // act on separately.
-    const key = pathKey(entry.item.path);
-    if (shown.has(key) || underHiddenDir(entry.item.path)) continue;
-    shown.add(key);
-    images.push({
-      folderId: '',
-      path: entry.item.path,
-      // Folder records live in here too now, and a folder card is not drawn like a
-      // photo: without this the removed view would try to show a thumbnail of a
-      // directory and offer photo actions on it.
-      ...(entry.item.type === 'folder' ? { type: 'folder' } : {}),
-      firstSeenAt: entry.removedAt,
-      addedAt: entry.item.addedAt || entry.removedAt,
-      modifiedAt: entry.item.modifiedAt || 0,
-      aspect: Number(entry.item.aspect) || 0,
-      hidden: true,
-    });
-  }
-  return { images };
-});
-
-// While a photo sits in the library trash its file stays where it was, held by the
-// GC keep-set. This only covers the older case where a previous build had already
-// swept the copy into wallpapers/.trash — then bring it back rather than telling the
-// user the photo is unrecoverable. Never overwrites an existing file.
-function restoreOwnCopyFile(item) {
-  if (!item || !item.path || !isOwnWallpaperCopy(item.path)) return false;
-  // DATA-006. With the folder away, "the file is not at its path" says nothing about
-  // whether it still exists, and the trash to bring it back from is out of reach too.
-  if (!managedRootReady()) return false;
-  if (fs.existsSync(item.path)) return true;
-  const trashed = path.join(trashDirPath(), path.basename(item.path));
-  try {
-    if (!fs.existsSync(trashed)) return false;
-    fs.mkdirSync(path.dirname(item.path), { recursive: true });
-    fs.renameSync(trashed, item.path);
-    return true;
-  } catch (err) {
-    console.error('restore from .trash failed:', err);
-    return false;
-  }
-}
-
-// LIB-007: the one action allowed to touch the user's files. "Remove from library"
-// only stops showing something; this deletes the file — and it deletes it into the
-// WINDOWS RECYCLE BIN (`shell.trashItem`), never past it, so the project's rule that
-// Znada does not destroy anything irreversibly still holds.
+// LIB-007: the one action allowed to touch the user's files — deleting a removed photo
+// into the WINDOWS RECYCLE BIN. What it checks and in which order is in
+// src/library-removal.js (deleteForever); the Recycle Bin call and the dialog stay here.
 //
-// Two guards make this safe to expose to the renderer:
-//   * only paths ALREADY in the library trash or marked removed can be deleted, so a
-//     compromised or buggy renderer cannot name an arbitrary file;
-//   * the user confirms in a native dialog that names what is about to go.
 // Deleting the user's files is the one thing Znada does that they cannot simply undo
 // inside the app, and five review rounds have not yet proved the guard around it sound:
 // a file the app was still using could be deleted through a race between validating a
 // path and committing the record that uses it. The owner's decision (2026-08-10) is to
 // switch the feature OFF until that transaction is proved, rather than ship it and hope.
 //
-// Off in ONE place, checked here and published to the renderer through 'feature-flags',
-// so the button and the handler cannot drift apart. Turning it back on is this constant.
+// Off in ONE place: this flag. The removal module asks it before anything else, and the
+// renderer learns it through 'feature-flags', so the button and the handler cannot drift
+// apart. Turning it back on is this constant.
 let physicalDeleteEnabled = false;
 
 ipcMain.handle('feature-flags', () => ({ physicalDelete: physicalDeleteEnabled }));
 
-ipcMain.handle('library-delete-forever', async (e, rawPaths) => {
-  if (!physicalDeleteEnabled) return { config, deleted: 0, error: 'disabled' };
-  // DATA-006. Whatever re-enables this later must not be able to erase files while the
-  // folder holding them is unreachable: "not there right now" is not "safe to delete".
-  if (!managedRootReady()) return { config, deleted: 0, error: 'media_root_unavailable' };
-  const asked = (Array.isArray(rawPaths) ? rawPaths : []).filter((p) => typeof p === 'string' && p);
-  if (!asked.length) return { config, deleted: 0, error: 'bad_request' };
+ipcMain.handle('library-delete-forever', async (e, rawPaths) => libraryRemoval.deleteForever(rawPaths));
 
-  // Deletable = what the user already removed. Directories are deliberately out of
-  // scope: erasing a folder tree is a different question from erasing a photo.
-  const allowed = new Set();
-  for (const entry of (config.libraryTrash || [])) {
-    if (entry && entry.item && entry.item.path) allowed.add(pathKey(entry.item.path));
-  }
-  // This also covers photos under a removed SUBFOLDER, not only individually removed
-  // ones. Deliberate: the user removed the folder, so its contents count as removed
-  // here too. They have no card of their own in the trash, so nothing in the interface
-  // can reach them today — the guard is simply not narrower than the decision the user
-  // already made.
-  for (const key of hiddenPathSet()) allowed.add(key);
-
-  // Whatever is active RIGHT NOW can never be deleted, even if a stale trash entry
-  // still names it: re-importing or re-downloading the same content-addressed file
-  // makes it active again, and the leftover entry would otherwise authorise erasing
-  // a photo the user is currently using.
-  const activePaths = () => inUsePaths();
-
-  const before = activePaths();
-  const targets = asked.filter((p) => allowed.has(pathKey(p)) && !before.has(pathKey(p)));
-  if (!targets.length) return { config, deleted: 0, error: 'not_removed' };
-
+// The confirmation before deleting into the Recycle Bin: native, and it names what is about
+// to go. The window and the texts belong here; the removal module only hears yes or no.
+async function askDeleteForever(targets) {
   const shown = targets.slice(0, 10).map((p) => path.basename(p));
   const more = targets.length - shown.length;
   const answer = await dialog.showMessageBox(mainWindow, {
@@ -3930,179 +3358,10 @@ ipcMain.handle('library-delete-forever', async (e, rawPaths) => {
     detail: [...shown, ...(more > 0 ? [`… +${more}`] : []), '', tMain('library.deleteForeverDetail')].join('\n'),
     noLink: true,
   });
-  if (answer.response !== 0) return { config, deleted: 0, error: null, cancelled: true };
-
-  // The dialog was open for as long as the user took, and every await below is another
-  // chance for a download, a restore or an assignment to put one of these files back
-  // into use. One re-check after the dialog is not enough: it says nothing about the
-  // state between the second and the third `trashItem`.
-  //
-  // So the deletions run inside the library lock, which every route that activates a
-  // photo also takes — nothing can change underneath the loop — and each target is
-  // checked against the state as it is at that exact moment, immediately before it is
-  // erased. Re-checking "removed" as well as "active": a restore while the dialog was
-  // open takes a photo out of the trash without ever making it active.
-  return withLibraryLock(async () => {
-    const deletable = () => {
-      const set = new Set();
-      for (const entry of (config.libraryTrash || [])) {
-        if (entry && entry.item && entry.item.path) set.add(pathKey(entry.item.path));
-      }
-      for (const key of hiddenPathSet()) set.add(key);
-      return set;
-    };
-
-    let deleted = 0;
-    const failed = [];
-    const gone = new Set();
-    let skipped = 0;
-    for (const target of targets) {
-      const key = pathKey(target);
-      if (!deletable().has(key) || activePaths().has(key)) { skipped++; continue; }
-      try {
-        await shell.trashItem(target);
-        deleted++;
-        gone.add(key);
-      } catch (err) {
-        failed.push(target);
-        console.error('delete to recycle bin failed:', target, err);
-      }
-    }
-    if (!deleted && !failed.length) return { config, deleted: 0, error: 'not_removed' };
-
-    // Only forget what actually left: a file that could not be moved is still there,
-    // and dropping its record would strand it exactly the way the trash exists to avoid.
-    if (gone.size) {
-      const trashBefore = (config.libraryTrash || []).length;
-      config.libraryTrash = (config.libraryTrash || [])
-        .filter((entry) => !(entry && entry.item && gone.has(pathKey(entry.item.path))));
-      // The photo leaves the trash because its entry above is gone. The removed-marker
-      // in the folder index is deliberately LEFT ALONE: clearing it would mean "show
-      // this again", and the file no longer exists, so the grid would gain a broken
-      // card pointing at nothing. reconcileFolder drops the index record on the next
-      // complete scan, which is already how a file that vanished from disk is handled.
-      if (trashBefore !== config.libraryTrash.length) saveConfig();
-    }
-    return { config, deleted, failed: failed.length, skipped, error: null };
-  });
-});
-
-// A path can be missing for two completely different reasons, and they need
-// opposite answers. The file was deleted: there is nothing to point a record at,
-// so refusing is right. The DISK was unplugged: the record has to come back —
-// live folders exist precisely to survive an absent volume, and refusing leaves
-// the entry stuck in the trash with no way out.
-//
-// Found by the owner 2026-08-16: a live folder on an unplugged disk was removed
-// and could then never be restored — "put back: 0" every time. Folder records
-// only started reaching this check when they began being kept in the trash
-// (BUG-012), which is what turned a reasonable guard for images into a trap.
-function recordTargetLost(target) {
-  try {
-    if (fs.existsSync(target)) return false;
-    const root = path.parse(path.resolve(String(target))).root;
-    // No root at all means we cannot tell; treat that as "not proven lost".
-    if (!root || !fs.existsSync(root)) return false;
-    return true;
-  } catch {
-    return false;
-  }
+  return answer.response === 0;
 }
 
-// Put a restored record back where it was playing. The index is only a hint: the slot
-// may have been edited since, so it is clamped rather than trusted, and an id that is
-// somehow already there is left alone instead of being listed twice.
-function restoreSlotPlacements(entry) {
-  if (!entry || !Array.isArray(entry.slots) || !entry.item) return;
-  for (const placement of entry.slots) {
-    const monitor = (config.monitors || {})[placement.monitorId];
-    const slot = monitor && monitor[placement.theme];
-    if (!slot || !Array.isArray(slot.itemIds)) continue;
-    if (slot.itemIds.includes(entry.item.id)) continue;
-    const at = Math.min(Math.max(placement.index, 0), slot.itemIds.length);
-    slot.itemIds.splice(at, 0, entry.item.id);
-    // The slot was emptied BY this removal, so the marker that says "the user wants this
-    // one empty" was ours to set and is ours to lift.
-    if (placement.emptied) library.clearSlotExplicitEmpty(slot);
-  }
-}
-
-ipcMain.handle('library-restore', async (e, rawPaths) => withLibraryLock(async () => {
-  const paths = (Array.isArray(rawPaths) ? rawPaths : []).filter((p) => typeof p === 'string' && p);
-  if (!paths.length) return { config, restored: 0 };
-  const res = folderState.setHidden(liveFolderState, paths, false);
-  liveFolderState = res.state;
-  invalidateHiddenPaths();
-  const dirRes = folderState.setHiddenDir(liveFolderState, paths, false);
-  liveFolderState = dirRes.state;
-  invalidateHiddenPaths();
-  if (res.changed || dirRes.changed) { folderStateDirty = true; flushLiveFolderState(); }
-
-  // The same button puts the RECORDS back — tags, star and all — and brings Znada's
-  // own copies back from wallpapers/.trash on the way.
-  //
-  // Restoring a FOLDER has to reach the records of the photos inside it: those records
-  // were taken away with the folder, and matching only exact paths meant the folder came
-  // back full of photos that had quietly lost their stars and tags.
-  let poolRestored = 0;
-  // Which of the paths the CALLER asked about actually came back, for the count below.
-  // A photo restored because its folder was restored is not a separate card.
-  const restoredPoolKeys = new Set();
-  const wanted = new Set(paths.map(pathKey));
-  // A folder brings back exactly what went WITH IT — the entries whose `via` names THAT
-  // folder — and nothing else.
-  //
-  // This used to match by ancestry: any entry whose `via` sat anywhere under the folder
-  // being restored came back. So a subfolder the user had removed separately, earlier,
-  // was undone by restoring its parent — and since the subfolder's own removed-marker is
-  // untouched by that (it is a different folder), the photos ended up listed in "All"
-  // and in the trash at the same time. Provenance is the exact folder, not the tree.
-  const cameWithRestoredFolder = (entry) => !!entry.via && wanted.has(pathKey(entry.via));
-  const restoredFolderIds = [];
-  for (const entry of (config.libraryTrash || []).slice()) {
-    if (!entry || !entry.item) continue;
-    if (!wanted.has(pathKey(entry.item.path)) && !cameWithRestoredFolder(entry)) continue;
-    // Znada's own copy has to actually come back before its record does. Ignoring the
-    // answer here was a real gap (found reviewing DATA-006 step 1): with the folder
-    // away, `recordTargetLost` correctly says "cannot tell", so the record returned to
-    // the active pool while the file stayed unreachable in the trash. The undo path
-    // beside this one has always been strict; now both are.
-    if (isOwnWallpaperCopy(entry.item.path) && !restoreOwnCopyFile(entry.item)) {
-      console.error('restore: копия не восстановлена, запись корзины сохранена:', entry.item.path);
-      continue;
-    }
-    if (recordTargetLost(entry.item.path)) continue;  // nothing to point the record at
-    const activeItem = config.library[entry.item.id] || entry.item;
-    markRecordRevived(activeItem);
-    if (!config.library[entry.item.id]) config.library[entry.item.id] = activeItem;
-    restoreSlotPlacements(entry);
-    if (entry.item.type === 'folder') restoredFolderIds.push(entry.item.id);
-    dropFromLibraryTrash(entry.item.id);
-    restoredPoolKeys.add(pathKey(entry.item.path));
-    poolRestored++;
-  }
-  // A watched folder that came back has to start being watched again, or it would sit
-  // in the library while quietly ignoring everything added to it.
-  if (restoredFolderIds.length) {
-    syncLiveFolderWatchers();
-    requestLiveFolderRefresh(restoredFolderIds);
-  }
-  if (poolRestored) saveConfig();
-  else broadcastConfig();
-  // Removal takes photos out of the playlist, so putting them back has to re-apply
-  // for the same reason undo does: the slideshow position was computed without them.
-  if (res.changed || dirRes.changed) {
-    try { await applyForTheme(null, true); }
-    catch (err) { console.error('restore apply failed:', err); }
-  }
-  // Counted in cards for the same reason removal is: the caller asked about N cards, so
-  // the answer is how many of THOSE came back — not how many rows changed underneath.
-  // Restoring one folder card used to report 2, or 501.
-  const changed = new Set([...res.matched, ...dirRes.matched].map(pathKey));
-  for (const key of restoredPoolKeys) changed.add(key);
-  const restored = paths.filter((p) => changed.has(pathKey(p))).length;
-  return { config, restored };
-}));
+ipcMain.handle('library-restore', async (e, rawPaths) => libraryRemoval.restore(rawPaths));
 
 ipcMain.handle('library-toggle-favorite', (e, id, owner) => {
   const descriptor = { kind: 'local', id, owner };
@@ -4203,8 +3462,14 @@ ipcMain.handle('library-path-sizes', async (e, paths) => {
 // `library-path-sizes`, which already stats renderer-supplied paths.
 // BUG-035. One reader for "does this picture move", shared by the cards, the previews that
 // stand for the desktop and the details sheet, so all of them give the same answer.
-const motionReader = imageMotion.createMotionReader();
-const readItemDetails = itemDetails.createDetailsReader({ motion: motionReader });
+// MEDIA-004: the Library's filters ask about a whole library, so the cache holds one
+// small answer per file of a large one, not only the cards on screen.
+const motionReader = imageMotion.createMotionReader({ cacheCap: 50000 });
+const readItemDetails = itemDetails.createDetailsReader({
+  motion: motionReader,
+  // Called only once a request arrives, long after thumbnailService exists below.
+  video: (p) => thumbnailService.videoInfo(p),
+});
 // SEC-002, slice 2. Short-lived authority for paths main learned ITSELF — a dialog it
 // opened, or a listing it produced. Everything else has to be vouched for by the pool.
 const pathGrants = pathGrantsMod.create({
@@ -4306,6 +3571,18 @@ ipcMain.handle('item-copy-path', async (e, p) => {
   } catch { return false; }
 });
 
+// META-005. Copy the one tag the user pointed at in Details. This is not a general
+// clipboard door: the text has to be one short label (src/item-details.js), and the
+// call writes nothing to the library and does not change a search.
+ipcMain.handle('details-copy-tag', async (e, raw) => {
+  const tag = itemDetails.copyableTag(raw);
+  if (!tag) return false;
+  try {
+    await clipboard.writeText(tag);
+    return true;
+  } catch { return false; }
+});
+
 // ---------------------------------------------------------------------------
 // ONL-009 — card actions (right-click menu), shared by both windows
 // ---------------------------------------------------------------------------
@@ -4353,13 +3630,14 @@ function pooledImageFor(descriptor) {
 //     is not permission to hand any file in it to the clipboard or a save dialog;
 //   * it must still be there. A folder is live, and the answer must be "gone", not a
 //     copy attempt that fails halfway.
-function authorizedLocalFile(descriptor) {
+function authorizedLocalFile(descriptor, allowVideo = false) {
   const p = descriptor && descriptor.path;
   if (!p || !isAuthorizedMediaPath(p)) return '';
   // The same one list of formats the folder scanner and the online boundary use, so a
   // photo Znada can show is exactly a photo Znada can hand over (ONL-015).
   const ext = path.extname(p).replace('.', '');
-  if (!mediaFormats.isWallpaperFormat(mediaFormats.normalizeFormat(ext))) return '';
+  const format = mediaFormats.normalizeFormat(ext);
+  if (!mediaFormats.isWallpaperFormat(format) && !(allowVideo && mediaFormats.isVideoFormat(format))) return '';
   try {
     return fs.statSync(p).isFile() ? p : '';
   } catch { return ''; }
@@ -4435,7 +3713,7 @@ async function ensureCardFile(descriptor, opts = {}) {
 
     // BUG-029. No pool record — the ordinary case for a photo shown out of a watched
     // folder. The window's path is honoured only if the library vouches for it.
-    const vouched = authorizedLocalFile(descriptor);
+    const vouched = authorizedLocalFile(descriptor, !managed && opts.allowLocalVideo === true);
     if (vouched) return { path: vouched, error: null };
 
     // Local, and nothing stands behind it: the record's file is gone, or the window named
@@ -4524,7 +3802,7 @@ function saveDialogStartDir() {
 
 ipcMain.handle('card-save-as', async (e, raw) => {
   const descriptor = normalizeCardDescriptor(raw);
-  const file = await ensureCardFile(descriptor, { managed: false });
+  const file = await ensureCardFile(descriptor, { managed: false, allowLocalVideo: true });
   if (file.error) return { ok: false, error: file.error };
 
   const parent = BrowserWindow.fromWebContents(e.sender) || mainWindow;
@@ -4533,7 +3811,8 @@ ipcMain.handle('card-save-as', async (e, raw) => {
   try {
     res = await dialog.showSaveDialog(parent, {
       defaultPath: suggested,
-      filters: [{ name: 'Image', extensions: [path.extname(file.path).replace('.', '') || 'jpg'] }],
+      filters: [{ name: mediaFormats.isVideoPath(file.path) ? 'Video' : 'Image',
+        extensions: [path.extname(file.path).replace('.', '') || 'jpg'] }],
     });
   } catch (err) {
     console.error('card save dialog:', err);
@@ -4615,16 +3894,8 @@ async function commitLibraryAssignmentRecord(record, monitorId, which, options =
     if (known && known.type === 'image' && !pathExists(known.path)) {
       return { config, ok: false, error: 'missing_file' };
     }
-    // Share the single funnel so an assignment cannot create an active record that is
-    // still marked removed — and so assigning one that ALREADY has a record repairs a
-    // profile left in the active+removed state by an older build.
-    const revivalsBefore = poolRevivals();
-    const result = libraryAssignment.assignRecord(config, record, monitorId, theme,
-      { ...options, addToPool });
+    const { result, poolTouched } = libraryService.assignRecord(record, monitorId, theme, options);
     if (!result.ok) return result;
-    // The pool changed only if a record was created, or if the funnel cleared a
-    // removed-marker that was still on an existing one.
-    const poolTouched = !!result.created || poolRevivals() !== revivalsBefore;
     const warning = await finalizeLibraryAssignment(result, theme, poolTouched);
     return { ...result, config, warning };
   });
@@ -4754,12 +4025,18 @@ function onlineOriginalOptions(item) {
 // site's extra request for tags (ONL-012). The tags used to be asked only after the
 // download, with the library lock held across the request; now both run at once and
 // neither is inside the lock, since neither touches anything shared.
-async function fetchOnlineForAdd(item) {
-  const [stored, extra] = await Promise.all([
-    downloadWallpaperFromUrl(item.full, onlineOriginalOptions(item)),
-    enrichProviderItem(item),
-  ]);
-  return { stored, extra };
+function fetchOnlineForAdd(item) {
+  const url = String(item.full).trim();
+  // An original can appear in several posts. Share the bytes by URL, but only
+  // share the entire add request between callers adding the same post.
+  const key = JSON.stringify([item.provider, String(item.id ?? ''), url]);
+  return addsInFlight.run('internet:' + key, async () => {
+    const [stored, extra] = await Promise.all([
+      addsInFlight.run('internet-original:' + url, () => downloadWallpaperFromUrl(item.full, onlineOriginalOptions(item))),
+      enrichProviderItem(item),
+    ]);
+    return { stored, extra };
+  });
 }
 
 /* ------------------------------------------------- потоковый прокси картинок ---- */
@@ -4782,6 +4059,21 @@ async function fetchOnlineForAdd(item) {
  *   4. потолок размера — и по `content-length`, и ПО МЕРЕ чтения (см. ниже);
  *   5. таймаут.
  */
+/*
+ * BUG-065. The time limit used to be one 30 s deadline on the whole transfer
+ * (`AbortSignal.timeout` on fetch also covers reading the body). A big GIF that was
+ * still arriving got cut mid-way: measured 2026-11-07 on Gelbooru post 1945703, 23 MB,
+ * cut at 22.97 MB after exactly 30 s. The window got an error for the original, and the
+ * viewer stayed on the small thumbnail — every time, because every attempt hit the same
+ * wall. A limit belongs on silence, not on size: the size cap already bounds how much
+ * may come. So there are two limits:
+ *   - `answerMs`: the site has to start answering (status and headers);
+ *   - `stallMs`: the body may not go quiet for longer than this between two pieces.
+ * A transfer that keeps moving is never cut; one that stops is, and the stream then
+ * ends with an error — never as a complete (cut) picture.
+ */
+const mediaProxyTimeouts = { answerMs: 30000, stallMs: 30000 };
+
 function registerMediaProxy() {
   protocol.handle(mediaProxy.SCHEME, async (request) => {
     const asked = mediaProxy.parseUrl(request.url);
@@ -4798,14 +4090,27 @@ function registerMediaProxy() {
       : (asked.field === 'sample' ? online.allowedSampleFetchUrl(item) : online.allowedFullFetchUrl(item));
     if (!allowed) return new Response('forbidden', { status: 403 });
 
+    // BUG-065. One controller for the whole transfer, one timer that is re-armed: first
+    // for the answer, then before every read of the body.
+    const abort = new AbortController();
+    let timer = null;
+    const disarm = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const arm = (ms) => {
+      disarm();
+      timer = setTimeout(() => { timer = null; abort.abort(new Error('stalled')); }, ms);
+    };
     let upstream;
+    arm(mediaProxyTimeouts.answerMs);
     try {
       upstream = await fetch(asked.url, {
         headers: providerAccess.requestHeaders(item),
-        signal: AbortSignal.timeout(30000),
+        signal: abort.signal,
       });
     } catch (err) {
-      return new Response('upstream', { status: err && err.name === 'TimeoutError' ? 504 : 502 });
+      const timedOut = abort.signal.aborted || (err && err.name === 'TimeoutError');
+      return new Response('upstream', { status: timedOut ? 504 : 502 });
+    } finally {
+      disarm();
     }
     if (!upstream.ok) return new Response('upstream', { status: upstream.status });
 
@@ -4826,20 +4131,25 @@ function registerMediaProxy() {
      * `fail`, и ждущее добавление скачает само. Поэтому поток читается вручную: у него есть
      * `cancel`, по которому видно, что окно бросило загрузку (ушло на другое фото).
      */
-    const keep = asked.field === 'full' ? recentOriginals.begin(asked.url) : null;
+    let keep = asked.field === 'full' ? recentOriginals.begin(asked.url) : null;
     const kept = [];
     let seen = 0;
     const reader = upstream.body.getReader();
     const capped = new ReadableStream({
       async pull(controller) {
         let step;
+        // BUG-065. The limit is on silence: armed before each read, cleared when a piece
+        // arrives. A stalled site aborts the read, and the stream fails below.
+        arm(mediaProxyTimeouts.stallMs);
         try {
           step = await reader.read();
         } catch (err) {
+          disarm();
           if (keep) keep.fail();
           controller.error(err);
           return;
         }
+        disarm();
         if (step.done) {
           if (keep) keep.finish(Buffer.concat(kept), mime);
           controller.close();
@@ -4853,11 +4163,20 @@ function registerMediaProxy() {
           controller.error(new Error('too large'));
           return;
         }
+        // BUG-065. The original's cap (100 MB) is above what the store keeps (64 MB):
+        // past that, stop copying — the picture still streams to the window, and an add
+        // downloads it itself, as it does for any original that was not kept.
+        if (keep && seen > originalStoreMod.DEFAULTS.maxBytes) {
+          keep.fail();
+          keep = null;
+          kept.length = 0;
+        }
         // A copy: what is enqueued belongs to the window's side from here on.
         if (keep) kept.push(Buffer.from(chunk));
         controller.enqueue(chunk);
       },
       cancel(reason) {
+        disarm();
         if (keep) keep.fail();
         return reader.cancel(reason);
       },
@@ -4878,12 +4197,12 @@ function registerMediaProxy() {
 //
 // Never fatal and never noisy: a site that cannot answer just gives nothing more, and
 // the picture keeps whatever the search response already carried.
-async function enrichProviderItem(item) {
+async function enrichProviderItem(item, signal) {
   const descriptor = item ? providerRegistry.byId(item.provider) : null;
   if (!descriptor || typeof descriptor.enrich !== 'function') return { author: '', tags: [] };
   let extra;
   try {
-    extra = await descriptor.enrich(item, providerAccess.context(descriptor));
+    extra = await descriptor.enrich(item, providerAccess.context(descriptor, undefined, { signal }));
   } catch (err) {
     console.error(`${descriptor.id} enrich:`, err);
     return { author: '', tags: [] };
@@ -4891,26 +4210,84 @@ async function enrichProviderItem(item) {
   return {
     author: String((extra && extra.author) || '').trim(),
     tags: Array.isArray(extra && extra.tags) ? extra.tags : [],
+    postTags: metadataLookup.normalizeTagList(extra?.postTags).map((tag) => tag.name),
   };
 }
 
-ipcMain.handle('internet-add', async (e, item, query) => {
-  if (item?.bookmarkKey) {
-    const result = await favoriteService.resolveForUse(item.bookmarkKey, item.provider);
-    if (result.error) return { config, error: result.error };
-    item = result.item;
+const videoDownloads = new Map();
+
+ipcMain.handle('internet-cancel-video', (e, requestId) => {
+  const operation = videoDownloads.get(e.sender.id)?.get(requestId);
+  if (!operation) return false;
+  operation.abort();
+  return true;
+});
+
+ipcMain.handle('internet-add', async (e, item, query, requestId) => {
+  const sender = e.sender;
+  const senderId = sender?.id;
+  const hasRequestId = requestId !== undefined && requestId !== null;
+  if (hasRequestId && (typeof requestId !== 'string' || requestId.length > 64 || !requestId)) {
+    return { config, error: 'badItem' };
   }
-  if (!usableInternetDownload(item)) return { config, error: 'badItem' };
+  if (hasRequestId && (!sender || sender.isDestroyed())) return { error: 'cancelled' };
+  let operation = null;
+  let staged = null;
+  let dir = '';
+  let transfers;
+  const cancel = () => operation?.abort();
+  // The video flow supplies its request id before resolving a favorite link. Register
+  // cancellation at that boundary so the owner can abort while the provider lookup waits.
+  // A request id is optional for ordinary photos, which keep their existing path.
+  if (hasRequestId) {
+    transfers = videoDownloads.get(senderId) || new Map();
+    if (transfers.has(requestId) || transfers.size >= 4) return { config, error: 'download' };
+    operation = new AbortController();
+    transfers.set(requestId, operation);
+    videoDownloads.set(senderId, transfers);
+    sender.once('destroyed', cancel);
+    sender.once('render-process-gone', cancel);
+  }
   try {
+    operation?.signal.throwIfAborted();
+    if (item?.bookmarkKey) {
+      const result = await favoriteService.resolveForUse(item.bookmarkKey, item.provider);
+      operation?.signal.throwIfAborted();
+      if (result.error) return { config, error: result.error };
+      item = result.item;
+    }
+    const video = online.allowedVideo(item);
+    if (!video && !usableInternetDownload(item)) return { config, error: 'badItem' };
+    if (video && (!sender || sender.isDestroyed())) return { error: 'cancelled' };
+    if (video && !managedRootReady()) return { config, error: 'media_root_unavailable' };
+    if (video && !operation) return { config, error: 'badItem' };
+    dir = video ? wallpapersDir() : '';
     // The download itself is outside the lock — it is slow and touches nothing shared.
     // Everything from "this file is now ours" onwards is inside it: a re-download lands
     // on the same content-addressed path a "delete from disk" may be aiming at.
-    // PERF-010: the grid and the viewer adding this picture at once share one download.
-    const { stored, extra } = await addsInFlight.run(
-      'internet:' + String(item.full).trim(),
-      () => fetchOnlineForAdd(item),
-    );
+    const { stored, extra } = video ? await (async () => {
+      const signal = operation.signal;
+      const transfer = await fetchVideo(item, providerAccess.requestHeaders(item), { signal });
+      try {
+        let lastProgress = -Infinity;
+        staged = await managedFolder.stageDownloadVideo(dir, item.format, transfer, {
+          signal,
+          onProgress(received, total) {
+            if (Date.now() - lastProgress < 100 || sender.isDestroyed()) return;
+            lastProgress = Date.now();
+            sender.send('internet-video-progress', { requestId, received, total });
+          },
+        });
+        signal.throwIfAborted();
+        return { stored: staged.path, extra: await enrichProviderItem(item, signal) };
+      } finally { transfer.cancel(); }
+    })() : await fetchOnlineForAdd(item);
     return await withLibraryLock(async () => {
+      if (video) {
+        operation.signal.throwIfAborted();
+        if (mediaMoveRunning || dir !== wallpapersDir()) return { config, error: 'media_move_running' };
+        commitDownloadArtifact(staged, dir);
+      }
       const id = addToPool('image', stored, { width: item.width, height: item.height });
       library.rememberDimensions(config.library, id, item.width, item.height);
       const it = config.library[id];
@@ -4933,14 +4310,13 @@ ipcMain.handle('internet-add', async (e, item, query) => {
         if (!it.author && extra.author) {
           library.updateItem(config.library, id, { author: extra.author });
         }
-        const extraTags = extra.tags;
-        (Array.isArray(item.tags) ? item.tags : []).slice(0, 24).forEach((tag) => {
+        const cardTags = Array.isArray(item.tags) ? item.tags.slice(0, 24) : [];
+        const postTags = extra.postTags?.length ? extra.postTags : cardTags;
+        postTags.forEach((tag) => {
           if (typeof tag === 'string') library.addTag(config.library, id, tag.slice(0, 80));
         });
-        // Gelbooru: the artist tag is usually outside the search response's 24-tag cap.
-        // Wallhaven: the search response has no tags at all. Either way these are the
-        // tags the user expects to find the picture by.
-        extraTags.forEach((tag) => library.addTag(config.library, id, tag.slice(0, 80)));
+        // Wallhaven supplies supplemental tags that are absent from the card.
+        extra.tags.forEach((tag) => library.addTag(config.library, id, tag.slice(0, 80)));
         String(query || '').slice(0, 500).split(/[\s,]+/).filter(Boolean).slice(0, 20)
           .forEach((tag) => library.addTag(config.library, id, tag.slice(0, 80)));
       }
@@ -4948,8 +4324,17 @@ ipcMain.handle('internet-add', async (e, item, query) => {
       return { config, id, error: null };
     });
   } catch (err) {
+    if (operation?.signal.aborted) return { error: 'cancelled' };
     console.error('internet add:', err);
     return { config, error: 'download' };
+  } finally {
+    if (operation) {
+      managedFolder.discardDownloadArtifact(staged, dir);
+      sender.removeListener('destroyed', cancel);
+      sender.removeListener('render-process-gone', cancel);
+      transfers.delete(requestId);
+      if (!transfers.size) videoDownloads.delete(senderId);
+    }
   }
 });
 
@@ -4969,6 +4354,33 @@ const metadataService = metadataLookupServiceMod.create({
   isMoveRunning: () => mediaMoveRunning,
   savePoolOnly: () => savePoolOnly(),
   thumbnail: (p) => thumbnailHost.thumbnail(p, 512, 82),
+});
+
+// LIB-030. The background library check, as the window sees it. The pass itself is
+// created with the renderer broadcasts above, because a pool change schedules it.
+ipcMain.handle('library-checks-state', () => libraryChecksForWindow(libraryChecks.summary()));
+// The window showed the notification; the copies found so far are not news any more.
+ipcMain.handle('library-checks-ack', () => libraryChecksForWindow(libraryChecks.acknowledge()));
+// The groups, as cards the Library can draw: a pool record where there is one, the folder
+// index's dates and proportions where there is not.
+ipcMain.handle('library-duplicates', () => {
+  const discovery = new Map(liveFolderIndex.listImages().map((im) => [pathKey(im.path), im]));
+  return {
+    groups: libraryChecks.duplicates().map((group) => ({
+      size: group.size,
+      files: group.paths.map((p) => {
+        const id = library.idFor(p);
+        const seen = discovery.get(pathKey(p));
+        return {
+          path: p,
+          id,
+          addedAt: (seen && seen.addedAt) || 0,
+          modifiedAt: (seen && seen.modifiedAt) || 0,
+          aspect: (seen && seen.aspect) || 0,
+        };
+      }),
+    })),
+  };
 });
 
 // Manual, explicit, one at a time — the button the user pressed.
@@ -5001,9 +4413,12 @@ ipcMain.handle('folder-info', (e, dir) => {
     // separators, so nothing ever matched and the folder card went on showing the old
     // count and preview after photos inside it were removed.
     const visible = images.filter((p) => !removed.has(pathKey(p)));
-    const removedDirs = folderState.listHiddenDirs(liveFolderState).map((d) => d.path);
+    const removedDirs = liveFolderIndex.listHiddenDirs().map((d) => d.path);
     const subfolders = folders.filter((f) => !removedDirs.some((dir) => library.isUnderPath(f, dir))).length;
-    return { count: visible.length, subfolders, previews: visible.slice(0, 4) };
+    // MEDIA-002: `count` is everything the folder shows, video included (owner: "all
+    // together"); `videos` only lets the card say "files" instead of "photos".
+    const videos = visible.filter((p) => mediaFormats.isVideoPath(p)).length;
+    return { count: visible.length, videos, subfolders, previews: visible.slice(0, 4) };
   } catch { return { count: 0, subfolders: 0, previews: [] }; }
 });
 
@@ -5027,12 +4442,39 @@ function mediaMotionOf(p, options) {
 // A card learns whether its picture moves in the same round trip as its thumbnail, so the
 // grid needs no second request per card. The thumbnail itself stays a still frame.
 ipcMain.handle('thumb-info', async (e, p, w, h, priority) => {
-  const [data, motion] = await Promise.all([thumbnailService.thumbnailData(p, w, h, priority), mediaMotionOf(p)]);
-  return motion ? { ...data, motion } : data;
+  const [data, motion, video] = await Promise.all([
+    thumbnailService.thumbnailData(p, w, h, priority), mediaMotionOf(p), thumbnailService.videoInfo(p),
+  ]);
+  // MEDIA-002: a video card learns it is one, and its length, in the same round trip.
+  // `video` is present even with no known length — the ▶ badge does not wait for it.
+  const out = motion ? { ...data, motion } : data;
+  return mediaFormats.isVideoPath(p) ? { ...out, video: video || { durationMs: 0, width: 0, height: 0 } } : out;
 });
+
+// MEDIA-002. Until our own viewer plays video (MEDIA-003), a video card opens in the
+// program Windows uses for it. Same authority as a thumbnail, and video only: this must
+// not become a way to launch any file the window names.
+ipcMain.handle('open-video', async (e, p) => {
+  if (!mediaFormats.isVideoPath(p) || !isAuthorizedMediaPath(p)) return { ok: false, error: 'bad_request' };
+  const error = await shell.openPath(p);
+  return error ? { ok: false, error: 'open_failed' } : { ok: true };
+});
+// MEDIA-003. The role/frame guard runs first. Resolve an index in main's current
+// payload and recheck path authority; never accept a renderer path or mpv command.
+ipcMain.handle('gallery-video', (e, request) => galleryVideo ? galleryVideo.request(request) : { ok: false });
 // The previews that stand for the desktop ask before they choose between the file itself
 // and its still frame.
 ipcMain.handle('media-motion', (e, p) => mediaMotionOf(p));
+// MEDIA-004. The same answer for many files, for the Library's "Filters": one boolean per
+// path, in order. The window sends a few hundred at a time.
+ipcMain.handle('media-motion-many', (e, paths) => {
+  const list = Array.isArray(paths) ? paths.slice(0, 2000) : [];
+  return imageMotion.motionOfMany(list, (p) => mediaMotionOf(p));
+});
+
+// LIB-031. Which of the Online cards on screen are photos the user already has. The window
+// asks for a few hundred at a time; the answer maps each card's key to { path, id } or null.
+ipcMain.handle('online-have-many', (e, cards) => onlineHaveMatcher.match(cards));
 
 ipcMain.handle('thumb-aspects', (e, entries, w, h) => thumbnailService.aspects(entries, w, h));
 
@@ -5043,7 +4485,7 @@ function liveFolderDiscovery(p) {
   if (!p || typeof p !== 'string') return null;
   const key = pathKey(p);
   try {
-    for (const im of folderState.listImages(liveFolderState)) {
+    for (const im of liveFolderIndex.listImages()) {
       if (im && im.path && pathKey(im.path) === key) return im;
     }
   } catch {}
@@ -5065,7 +4507,7 @@ ipcMain.handle('folder-entries', (e, dir) => {
       // have to be filtered out here too — otherwise they reappear one level down.
       // One pass: rebuilding the index is the expensive part, and each entry already
       // says whether it is hidden.
-      for (const im of folderState.listImages(liveFolderState, null, { only: 'all' })) {
+      for (const im of liveFolderIndex.listImages(null, { only: 'all' })) {
         if (im && im.path) meta.set(pathKey(im.path), im);
       }
     } catch {}
@@ -5075,7 +4517,7 @@ ipcMain.handle('folder-entries', (e, dir) => {
     });
     // A removed subfolder is gone from the library, so it must not remain as a card
     // in its parent — it would open empty and removing it again would do nothing.
-    const removedDirs = folderState.listHiddenDirs(liveFolderState).map((d) => d.path);
+    const removedDirs = liveFolderIndex.listHiddenDirs().map((d) => d.path);
     // Ancestor-aware: entering a removed folder used to still list its children, and
     // restoring one of those children did nothing because the removal is on the parent.
     // Through the shared helper, so "is this inside that folder" has ONE answer — the
@@ -5110,7 +4552,7 @@ ipcMain.handle('folder-entries', (e, dir) => {
 ipcMain.handle('expand-folders', async () => {
   const endSpan = diagSpan('library', 'expand-folders');
   try {
-    const indexed = folderState.listImages(liveFolderState);
+    const indexed = liveFolderIndex.listImages();
     const images = library.ephemeralFolderImages(config.library, indexed);
     endSpan({ count: images.length, status: 'ok' });
     return { images };
@@ -5123,7 +4565,7 @@ ipcMain.handle('expand-folders', async () => {
 
 ipcMain.handle('library-recent', async (e, limit) => {
   try {
-    const indexed = folderState.listImages(liveFolderState);
+    const indexed = liveFolderIndex.listImages();
     return { items: library.recentImages(config.library, indexed, limit) };
   } catch (err) {
     console.error('library-recent:', err);
@@ -5154,7 +4596,8 @@ async function validateMaterializePath(p, itemType) {
   try { stats = await fs.promises.stat(p); }
   catch { return itemType === 'folder' ? 'missing_folder' : 'missing_file'; }
   if (itemType === 'folder') return stats.isDirectory() ? null : 'missing_folder';
-  return stats.isFile() && playlist.IMG_EXTS.has(path.extname(p).toLowerCase()) ? null : 'missing_file';
+  // MEDIA-002: a video may become a pool record (★, tags); assignment refuses it later.
+  return stats.isFile() && playlist.LIBRARY_EXTS.has(path.extname(p).toLowerCase()) ? null : 'missing_file';
 }
 
 // Atomic transient assignment: validation happens before the synchronous pool+slot
@@ -5224,7 +4667,7 @@ ipcMain.handle('library-assign-records', async (e, rawRecords, monitorId, which)
   if (needsDiscovery) {
     discoveryByPath = new Map();
     try {
-      for (const image of folderState.listImages(liveFolderState)) {
+      for (const image of liveFolderIndex.listImages()) {
         if (image && image.path) discoveryByPath.set(pathKey(image.path), image);
       }
     } catch {}
@@ -5247,19 +4690,13 @@ ipcMain.handle('library-assign-records', async (e, rawRecords, monitorId, which)
     return { config, ok: false, error: (prepared.find((entry) => entry && entry.error) || {}).error || 'missing_item', assigned: 0, failed: validationFailed };
   }
   const theme = which === 'dark' ? 'dark' : 'light';
-  const withFunnel = valid.map((entry) => ({
-    ...entry,
-    options: { ...(entry.options || {}), addToPool },
-  }));
   // Same ordering guarantee as the single-record path (see commitLibraryAssignmentRecord).
   return withLibraryLock(async () => {
-    const revivalsBefore = poolRevivals();
-    const result = libraryAssignment.assignRecords(config, withFunnel, monitorId, theme);
+    const { result, poolTouched } = libraryService.assignRecords(valid, monitorId, theme);
     result.failed += validationFailed;
     if (!result.ok) {
-      return { config, ok: false, error: result.error, assigned: 0, failed: result.failed, warning: null };
+      return { config, ok: false, error: result.error, assigned: 0, failed: result.failed, videos: result.videos, warning: null };
     }
-    const poolTouched = (result.createdIds || []).length > 0 || poolRevivals() !== revivalsBefore;
     const warning = await finalizeLibraryAssignment(result, theme, poolTouched);
     // Keep the IPC response compact: config already contains authoritative items;
     // returning duplicate ids/items arrays would double serialization for huge batches.
@@ -5269,6 +4706,7 @@ ipcMain.handle('library-assign-records', async (e, rawRecords, monitorId, which)
       error: null,
       assigned: result.assigned,
       failed: result.failed,
+      videos: result.videos,
       warning,
     };
   });
@@ -5298,9 +4736,13 @@ async function materializePathIntoPool(p, type) {
   return id || null;
 }
 
-ipcMain.handle('library-materialize', (e, p, type) => withLibraryLock(
-  async () => ({ config, id: await materializePathIntoPool(p, type) }),
-));
+// BUG-068: read `config` only after the await. `{ config, id: await … }` captured the
+// object before validation awaited fs.stat; a set-config meanwhile replaced it, and the
+// window got its old settings back. test/ipc-reply-config.test.js guards the whole shape.
+ipcMain.handle('library-materialize', (e, p, type) => withLibraryLock(async () => {
+  const id = await materializePathIntoPool(p, type);
+  return { config, id };
+}));
 
 // META-001 / ONL-009. The fullscreen viewer's half of "the record is made when the user
 // acts". The main window gets the whole config back because it owns one; this window
@@ -5731,6 +5173,12 @@ app.whenReady().then(async () => {
   loadConfig();
   ensureAnonId(); // generate the anonymous install id once, before any cloud request
   loadLiveFolderState();
+  // DATA-001. After the loaders, so a file restored a moment ago is the one copied. A
+  // file that does not load is never copied (the snapshot's own acceptance check), so a
+  // degraded session leaves the earlier good copies alone.
+  dataSnapshots.takeAll();
+  const snapshotTimer = setInterval(() => dataSnapshots.takeAll(), DATA_SNAPSHOT_CHECK_MS);
+  if (typeof snapshotTimer.unref === 'function') snapshotTimer.unref();
   // Restore as a new session generation: any in-flight answer from an earlier lifecycle
   // (tests exercise reloads in one process) must not be allowed to mutate it.
   replaceCloudSession(loadStoredToken(), null); // validated on first use
@@ -5809,6 +5257,8 @@ app.whenReady().then(async () => {
   trayCtl.create();
   startLiveFolderWatchers();
   scheduleLiveFolderFullScan('startup', 3000);
+  // LIB-030. Well after the window, the wallpaper and the folder scan have had their turn.
+  libraryChecks.start(60000);
 
   // refresh monitor list when displays change (added/removed/resolution/rotation)
   for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) {
@@ -5887,10 +5337,12 @@ app.on('before-quit', () => {
   liveFolderWatcherRetryTimers.clear();
   flushPendingLiveFolderAspects();
   flushLiveFolderState();
+  liveFolderIndex.dispose();
   configStore.flush(); // batched pool edits must not die with the process
   // META-001: losing the journal costs no user data, but it does cost the memory of
   // which questions have already been asked — and re-asking is what gets us blocked.
   metadataService.flush();
+  libraryChecks.dispose(); // LIB-030: its state is written as it changes; only the timer is left
   configBroadcast.dispose();
   if (liveFolderWatcher) liveFolderWatcher.closeAll();
   void thumbnailHost.dispose();
@@ -5973,6 +5425,12 @@ module.exports = {
     // first choice and the fallback are exercised wherever the suite runs.
     setProviderCredentials: (id, value) => providerAccess.setCredentials(id, value),
     eventLogEntries: () => eventLog.list(),
+    // DATA-001. Startup takes the copies inside app.whenReady, which the harness never
+    // resolves; a restart test takes them through the same instance instead.
+    dataSnapshots: () => dataSnapshots,
+    // The restored index is written by the debounced writer; a test flushes it the way quit does.
+    flushLiveFolderState: () => flushLiveFolderState(),
+    flushMetadata: () => metadataService.flush(),
     // BUG-023. Both of these write config.json outside any IPC handler — anonId on
     // startup, the slideshow position from a timer — so a test cannot reach them through
     // the handlers, and they are exactly the two that must not write over a config the
@@ -5990,14 +5448,14 @@ module.exports = {
     flushLibraryWriter: () => configStore.flush(),
     poolWritePending: () => configStore.poolWritePending(),
     activeHotkey: () => hotkeyCtl.active(),
-    lastRemovalPending: () => !!lastLibraryRemoval,
+    lastRemovalPending: () => libraryRemoval.undoPending(),
     // The guard around deleting files still has to be TESTED while the feature itself is
     // switched off for users — otherwise every one of those tests would pass by doing
     // nothing, and the day the feature is turned back on nobody would know whether its
     // guard still works. The default stays off; only the tests turn it on.
     setPhysicalDeleteEnabled: (on) => { physicalDeleteEnabled = !!on; },
-    setLiveFolderState: (state) => { liveFolderState = state; invalidateHiddenPaths(); },
-    getLiveFolderState: () => liveFolderState,
+    setLiveFolderState: (state) => liveFolderIndex.__test.replace(state),
+    getLiveFolderState: () => liveFolderIndex.snapshot(),
     // The loader startup runs, so a restart test reads the index the way the app does.
     loadLiveFolderState: () => loadLiveFolderState(),
     hiddenPathSet: () => hiddenPathSet(),
@@ -6017,6 +5475,8 @@ module.exports = {
     setMonitorsCache: (list) => { monitorsCache = Array.isArray(list) ? list : []; },
     // WIN-002: the deadlines are half a minute in the app; a test waits milliseconds.
     setSystemChildTimeouts: (limits) => { Object.assign(systemChildTimeouts, limits || {}); },
+    // BUG-065: the proxy's two limits, shortened by tests instead of waiting 30 s.
+    setMediaProxyTimeouts: (limits) => { Object.assign(mediaProxyTimeouts, limits || {}); },
     systemChildren: () => systemChildren,
     cleanLegacyAutostartRegistryValues: () => cleanLegacyAutostartRegistryValues(),
     checkLiveFolderReachability: () => checkLiveFolderReachability(),
@@ -6082,6 +5542,7 @@ module.exports = {
     discardDownloadArtifact: (artifact, dir) => discardDownloadArtifact(artifact, dir),
     metadataCache: () => metadataService.cache(),
     flushMetadataWriter: () => metadataService.flush(),
+    libraryChecks: () => libraryChecks,
     // Проверять надо не саму функцию, а что плановый обход её ЗОВЁТ при скрытом окне:
     // ровно эта развилка и молчала.
     runHourlyLiveFolderPass: () => scheduleLiveFolderFullScan(String("hourly"), 0),
@@ -6100,13 +5561,15 @@ module.exports = {
       cancelCloudSignin();
       configStore.dispose();
       metadataService.dispose();
+      // LIB-030. A pass a library change scheduled must not run into the next test's profile.
+      libraryChecks.dispose();
       configBroadcast.dispose();
       clearSlideshowTimer();
       // A test that switches the theme schedule on arms the next flip, which can be
       // hours away; without this the node process simply never exits.
       clearThemeTimer();
       clearWallpaperTimer();
-      if (folderStateSaveTimer) clearTimeout(folderStateSaveTimer);
+      liveFolderIndex.dispose();
       if (liveFolderAspectTimer) clearTimeout(liveFolderAspectTimer);
       // A deadline of a test's hung child would otherwise keep node alive after it.
       wallpaperPlatform.dispose();

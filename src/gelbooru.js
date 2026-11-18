@@ -68,9 +68,14 @@ const NOT_VIDEO_TAG = '-video';
 // LIB-014 stage 3: every typed tag goes out. This used to keep the first two and drop the
 // rest without a word, so a three-tag search showed pictures without the third.
 function buildSearchTags(opts = {}) {
+  const tags = searchBox.siteTags(opts.q);
+  const formats = Array.isArray(opts.formats) ? opts.formats : [];
+  const video = formats.some(media.isVideoFormat);
+  const videoTag = !video ? NOT_VIDEO_TAG
+    : formats.some(media.isWallpaperFormat) || tags.includes('video') ? '' : 'video';
   return [
-    ...searchBox.siteTags(opts.q),
-    NOT_VIDEO_TAG,
+    ...tags,
+    videoTag,
     ...ratingTags(opts.purity),
     ...sizeTags(opts.sizeHints),
     orderTag(opts.sorting),
@@ -95,7 +100,7 @@ function buildSearchUrl(opts = {}) {
 }
 
 function fileExtension(post) {
-  const candidates = [post && post.image, post && post.file_url];
+  const candidates = [post && post.file_url, post && post.image];
   for (const value of candidates) {
     const match = String(value || '').match(/\.([a-z0-9]+)(?:$|[?#])/i);
     if (match) return match[1].toLowerCase();
@@ -130,6 +135,7 @@ function mapItem(post) {
   // handler's decision, in one place, for every site.
   const full = String(post.file_url || '');
   if (!full) return null;
+  const video = media.ONLINE_VIDEO_FORMATS.includes(ext);
   const width = Number(post.width) || 0;
   const height = Number(post.height) || 0;
   // Gelbooru generates a downscaled "sample" only when post.sample is set; use it
@@ -142,7 +148,7 @@ function mapItem(post) {
     page: `${POST_BASE}${post.id}`,
     full,
     sample,
-    thumb: post.preview_url || post.sample_url || full,
+    thumb: post.preview_url || (video ? '' : post.sample_url || full),
     resolution: width > 0 && height > 0 ? `${width}x${height}` : '',
     width,
     height,
@@ -150,7 +156,7 @@ function mapItem(post) {
     // 2026-09-03, a Gelbooru post carries no size field of any kind. Declaring the fact
     // is worth more than omitting it — the next person does not have to go and look.
     fileSize: 0,
-    fileType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+    fileType: `${video ? 'video' : 'image'}/${ext === 'jpg' ? 'jpeg' : ext}`,
     format: media.normalizeFormat(ext),
     // BUG-035. The site's own word that this file moves, for the card's chip. Read from
     // the full tag list: the card keeps only the first 24 tags.
@@ -437,6 +443,7 @@ const PROVIDER = Object.freeze({
     tagSuggest: true,
     // ONL-015. Cards from here carry their format — see the note in src/wallhaven.js.
     cardFormat: true,
+    onlineVideo: true,
     // ONL-010. Measured on the live API 2026-09-03, and the odd one out: `width:>=` and
     // `height:>=` work, while `ratio:` does not exist here at all — every spelling tried
     // (`ratio:16:9`, `ratio:>=1.7`, `ratio:1.77`, `aspect_ratio:>=1.3`) returned an empty
@@ -475,6 +482,7 @@ async function search(params, ctx) {
     page,
     limit,
     sizeHints: o.sizeHints,
+    formats: o.formats,
     ...credentials,
   });
   const res = await ctx.fetchJson(url, { timeoutMs: 15000 });
@@ -531,24 +539,21 @@ async function tagTypesFor(tags, ctx) {
 // them alphabetically, so a late-sorting artist (BUG-002: tag 45 of 51) is simply not
 // in it. One request on an explicit download, never per card in the feed.
 async function enrich(item, ctx) {
-  let tags = Array.isArray(item && item.tags)
-    ? item.tags.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean)
-    : [];
-  const postUrl = buildPostUrl(item && item.id, (ctx && ctx.credentials) || {});
-  if (postUrl) {
-    const res = await ctx.fetchJson(postUrl, { timeoutMs: 10000 });
-    if (!res.error && res.json) {
-      const posts = postsFromResponse(res.json);
-      const full = posts.length ? allTags(posts[0]) : [];
-      if (full.length) tags = full;
-    }
-  }
-  if (!tags.length) return {};
+  const id = String(item.id ?? '').replace(/^gelbooru:/, '').trim();
+  const postUrl = buildPostUrl(id, ctx.credentials || {});
+  const res = postUrl ? await ctx.fetchJson(postUrl, { timeoutMs: 10000 }) : null;
+  const post = res && !res.error && !responseError(res.json)
+    ? postsFromResponse(res.json).find((entry) => String(entry?.id) === id)
+    : null;
+  const postTags = allTags(post);
+  // Even if the full post is unavailable, a card tag can still identify the artist.
+  const cardTags = Array.isArray(item.tags) ? item.tags.slice(0, 24) : [];
+  const tags = postTags.length ? postTags : cardTags;
   const typeMap = await tagTypesFor(tags, ctx);
   // Owner decision: join multiple artists with a comma, at most 3.
   return {
     author: artistLabel(artistNamesFromTypes(tags, typeMap), 3).slice(0, 120),
-    tags: artistTagsFromTypes(tags, typeMap),
+    postTags,
   };
 }
 

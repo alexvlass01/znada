@@ -148,10 +148,34 @@ fs.writeFileSync(path.join(formatsTree, 'note.TXT'), 'x');
 const shallowFormats = P.scanFolder(formatsTree).map((p) => path.basename(p)).sort();
 const entryFormats = P.scanFolderEntries(formatsTree).images.map((p) => path.basename(p)).sort();
 const deepFormats = P.scanFolderImagesDeep(formatsTree).map((p) => path.basename(p)).sort();
-ok('all local playlist scanners accept the six formats case-insensitively and reject the rest',
-  shallowFormats.join() === formatNames.slice().sort().join()
-  && entryFormats.join() === shallowFormats.join()
-  && deepFormats.join() === shallowFormats.join());
+// MEDIA-002 split the scanners in two: the slideshow scan (desktop) takes the six picture
+// formats only; browsing (folder entries, the deep scan behind "All") also shows video.
+const browsed = formatNames.concat('moving.WEBM').sort();
+ok('the slideshow scanner accepts the six formats case-insensitively and rejects video and the rest',
+  shallowFormats.join() === formatNames.slice().sort().join());
+ok('browsing scanners show the six formats AND video, case-insensitively, and reject the rest',
+  entryFormats.join() === browsed.join() && deepFormats.join() === browsed.join());
 fs.rmSync(formatsTree, { recursive: true, force: true });
+
+// MEDIA-002. The one door to the desktop: a video record in a slot — by id, by legacy
+// item form, or inside an assigned folder — never comes out of resolveSlot.
+{
+  const dir = makeTempDir('znada-video-door-');
+  const photo = path.join(dir, 'still.jpg');
+  const clip = path.join(dir, 'clip.mp4');
+  fs.writeFileSync(photo, 'x');
+  fs.writeFileSync(clip, 'x');
+  const libraryRecords = {
+    p: { id: 'p', type: 'image', path: photo },
+    v: { id: 'v', type: 'image', path: clip },
+    f: { id: 'f', type: 'folder', path: dir },
+  };
+  const byId = P.resolveSlot({ itemIds: ['v', 'p'] }, libraryRecords);
+  const legacy = P.resolveSlot({ items: [{ type: 'image', path: clip }, { type: 'image', path: photo }] });
+  const folder = P.resolveSlot({ itemIds: ['f'] }, libraryRecords, { forceFolderScan: true });
+  ok('resolveSlot: a video record in a slot never reaches the playlist',
+    byId.join() === photo && legacy.join() === photo && folder.join() === photo);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
 
 console.log('\nAll ' + passed + ' playlist tests passed.');

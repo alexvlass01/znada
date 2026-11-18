@@ -232,7 +232,7 @@
     "addFolder": "Ordner hinzufügen…",
     "empty": "Die Bibliothek ist leer — Bilder hier ablegen oder auf „Hinzufügen“ klicken.",
     "emptyFolder": "Dieser Ordner enthält keine Bilder.",
-    "noMatches": "Nichts passt zur Suche oder zum Tag. Zurücksetzen, um alles zu sehen.",
+    "noMatches": "Hier wurde nichts gefunden. Setze Suche, Tags oder Filter zurück, um alles anzuzeigen.",
     "emptyFavorites": "Noch keine Favoriten — ein Foto mit dem Stern markieren, dann erscheint es hier.",
     "emptyFolders": "Noch keine Ordner — einen mit „Ordner hinzufügen…“ hinzufügen.",
     "back": "‹ Alle Ordner",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} Foto",
     "photosCount_few": "{n} Fotos",
     "photosCount_many": "{n} Fotos",
-    "photosCount_other": "{n} Fotos"
+    "photosCount_other": "{n} Fotos",
+    "kindPhoto": "Fotos",
+    "kindVideo": "Videos",
+    "dialogFilterMedia": "Bilder und Videos"
   },
   "details": {
     "type": "Typ",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Allgemein",
     "ratingSensitive": "Sensibel",
     "ratingQuestionable": "Fraglich",
-    "ratingExplicit": "Explizit"
+    "ratingExplicit": "Explizit",
+    "copyTag": "Tag {tag} kopieren",
+    "tagCopied": "Tag kopiert",
+    "tagCopyFailed": "Tag konnte nicht kopiert werden",
+    "typeVideo": "Video",
+    "duration": "Dauer"
   },
   "motion": {
     "format": "Animation · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "{n} Favorit hat im Konto keinen Platz — er bleibt auf diesem Computer",
     "syncHeldToast_few": "{n} Favoriten haben im Konto keinen Platz — sie bleiben auf diesem Computer",
     "syncHeldToast_many": "{n} Favoriten haben im Konto keinen Platz — sie bleiben auf diesem Computer",
-    "syncHeldToast_other": "{n} Favoriten haben im Konto keinen Platz — sie bleiben auf diesem Computer"
+    "syncHeldToast_other": "{n} Favoriten haben im Konto keinen Platz — sie bleiben auf diesem Computer",
+    "sourceFailed": "Diese Website hat nicht geantwortet"
   },
   "theme": {
     "group": "Windows-Design",
@@ -486,7 +495,10 @@
     "libraryStore": "Bibliotheksdatei",
     "configStore": "Einstellungsdatei",
     "wallpaperSource": "Quelle des eingerichteten Hintergrundbilds",
-    "poolConsistency": "Hintergrundbild-Zuweisung nach unterbrochener Speicherung repariert"
+    "poolConsistency": "Hintergrundbild-Zuweisung nach unterbrochener Speicherung repariert",
+    "configRestored": "Die Einstellungsdatei war beschädigt und wurde aus der Kopie vom {date} wiederhergestellt",
+    "libraryRestored": "Die Bibliotheksdatei war beschädigt und wurde aus der Kopie vom {date} wiederhergestellt",
+    "folderStateRestored": "Die Datei mit den Ordnerinformationen war beschädigt und wurde aus der Kopie vom {date} wiederhergestellt"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada konnte das Hintergrundbild nicht wechseln",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada konnte Ihr Hintergrundbild nicht finden",
     "wallpaperSourceMissingBody": "Das eingestellte Bild ist nicht mehr vorhanden. Wenn das Laufwerk oder der Ordner verschoben wurde, stellen Sie den Pfad wieder her, damit das Bild beim nächsten Wechsel geladen wird.",
     "poolConsistencyTitle": "Znada hat eine Hintergrundbild-Einstellung repariert",
-    "poolConsistencyBody": "Ein Speichervorgang wurde unterbrochen — vermutlich durch Stromausfall oder erzwungenes Herunterfahren — und ein Monitor verwies auf ein unvollständig gespeichertes Bild. Die Einstellung wurde bereinigt. Ihre Bilder wurden nicht angetastet."
+    "poolConsistencyBody": "Ein Speichervorgang wurde unterbrochen — vermutlich durch Stromausfall oder erzwungenes Herunterfahren — und ein Monitor verwies auf ein unvollständig gespeichertes Bild. Die Einstellung wurde bereinigt. Ihre Bilder wurden nicht angetastet.",
+    "configRestoredTitle": "Einstellungsdatei beschädigt — Znada hat sie wiederhergestellt",
+    "libraryRestoredTitle": "Bibliotheksdatei beschädigt — Znada hat sie wiederhergestellt",
+    "folderStateRestoredTitle": "Datei mit Ordnerinformationen beschädigt — Znada hat sie wiederhergestellt",
+    "configRestoredBody": "Znada konnte die Einstellungsdatei nicht lesen. Sie wurde möglicherweise durch einen Stromausfall oder Absturz beschädigt. Die Einstellungen wurden aus einer Sicherung wiederhergestellt ({date}). Spätere Änderungen können fehlen.",
+    "libraryRestoredBody": "Znada konnte die Bibliotheksdatei nicht lesen. Sie wurde möglicherweise durch einen Stromausfall oder Absturz beschädigt. Die Bibliothek wurde aus einer Sicherung wiederhergestellt ({date}). Spätere Favoriten, Tags und Zuweisungen können fehlen. Deine Bilder wurden nicht verändert.",
+    "folderStateRestoredBody": "Znada konnte die Datei mit den Informationen zu verbundenen Ordnern nicht lesen. Sie wurde möglicherweise durch einen Stromausfall oder Absturz beschädigt. Die Datei wurde aus einer Sicherung wiederhergestellt ({date}). Später aus diesen Ordnern entfernte Fotos können wieder erscheinen."
   },
   "toast": {
     "applied": "Hintergrundbild angewendet",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Vorschaubild für die Suche konnte nicht vorbereitet werden.",
     "lookupChanged": "Das Bild wurde geändert oder ist nicht mehr verfügbar. Eine neue Suche starten.",
     "lookupResponseFailed": "Angaben in der Antwort der Website konnten nicht bestätigt werden. Keine Daten geändert.",
-    "lookupHttpError": "Die Website hat Fehler {n} zurückgegeben. Später erneut versuchen."
+    "lookupHttpError": "Die Website hat Fehler {n} zurückgegeben. Später erneut versuchen.",
+    "lookupDismissed": "Vergleich geschlossen. Keine Daten geändert."
   },
   "whatsNew": {
     "button": "Neuigkeiten",
@@ -656,5 +675,38 @@
     "unavailable": "Nicht verfügbar",
     "retry": "Das Bild konnte nicht geladen werden. Erneut versuchen.",
     "writeFailed": "Favoriten konnten nicht gespeichert werden. Bisherige Markierungen bleiben erhalten."
+  },
+  "libraryChecks": {
+    "title": "Bibliotheksprüfung",
+    "duplicatesSwitch": "Identische Dateien suchen",
+    "duplicatesTitle": "Identische Dateien",
+    "show": "Anzeigen",
+    "checking": "Wird geprüft…",
+    "copiesCount": "Zusätzliche Kopien: {n}",
+    "noneFound": "Keine gefunden",
+    "foundToast": "Identische Dateien gefunden: {n}",
+    "duplicatesEmpty": "Keine identischen Dateien."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Im Videoplayer öffnen",
+    "openFailed": "Dieses Video konnte nicht geöffnet werden",
+    "notWallpaper": "Videos können noch nicht als Hintergrund verwendet werden",
+    "skippedOnAssign": "Fotos zugewiesen. Videos können noch nicht als Hintergrund verwendet werden",
+    "play": "Abspielen",
+    "pause": "Pause",
+    "seek": "Spulen",
+    "volume": "Lautstärke",
+    "mute": "Stummschalten",
+    "unmute": "Ton einschalten",
+    "playback": "Videowiedergabe",
+    "controls": "Videosteuerung",
+    "playbackFailed": "Dieses Video konnte nicht abgespielt werden.",
+    "openExternal": "In einem anderen Player öffnen",
+    "loading": "Video wird geöffnet…",
+    "downloading": "Video wird heruntergeladen…",
+    "local": "Video aus der Bibliothek",
+    "localFolder": "Video aus einem Ordner"
   }
 }

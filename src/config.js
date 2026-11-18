@@ -77,6 +77,10 @@ const DEFAULT_CONFIG = {
   libraryTagsExpanded: false,
   // Library navigation may collapse to icons without hiding its sections.
   librarySidebarCollapsed: false,
+  // LIB-030. Background checks over the whole library, one switch per check. Identical
+  // files is on by default (owner, 2026-11-02): it reads only the user's own disk and
+  // changes nothing by itself.
+  libraryChecks: { duplicates: true },
   // Persisted Online search params (restored on restart). sort = whSort value;
   // purity = the SFW/Sketchy/NSFW content filter.
   onlineSort: 'date_added',
@@ -232,6 +236,9 @@ function normalize(cfg) {
   if (!cfg.onlineSources.lumina && !cfg.onlineSources.internet) cfg.onlineSources.internet = true;
   cfg.libraryTagsExpanded = cfg.libraryTagsExpanded === true;
   cfg.librarySidebarCollapsed = cfg.librarySidebarCollapsed === true;
+  // Only an explicit `false` switches a check off: a profile from before LIB-030 has no
+  // such field and gets the default.
+  cfg.libraryChecks = { duplicates: cfg.libraryChecks?.duplicates !== false };
 
   if (!['date_added', 'toplist', 'random', 'views'].includes(cfg.onlineSort)) cfg.onlineSort = 'date_added';
   cfg.contentBlur = { nsfw: cfg.contentBlur?.nsfw === true, sketchy: cfg.contentBlur?.sketchy === true };
@@ -303,24 +310,45 @@ function readConfigFile(configPath) {
   }
 }
 
-function load(configPath) {
+// DATA-001. The acceptance a copy of config.json has to pass before it is kept as a
+// "last good" one or handed back: exactly what load() itself can take without falling
+// back to defaults.
+function parseConfigText(text) {
+  const parsed = JSON.parse(String(text).replace(/^\uFEFF/, '')); // strip BOM if present
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('config.json is not an object');
+  return parsed;
+}
+
+function isLoadableText(text) {
+  try { parseConfigText(text); return true; } catch { return false; }
+}
+
+// `options.restore(kind)` (DATA-001) returns the newest good copy of a damaged file, or
+// null. It is asked ONLY when the file was readable, did not parse and its damaged bytes
+// were backed up: an unreadable file says nothing about its contents and is never
+// replaced, and without the backup the damaged file is the only copy left.
+function load(configPath, options = {}) {
+  const restore = typeof options.restore === 'function' ? options.restore : null;
   const read = readConfigFile(configPath);
   const raw = read.raw;
   let sourceState = read.state;
+  let restoredAt = 0;
   let cfg;
   let inlineLibrary = null;
   let inlineTrash = null;
+  const takeParsed = (parsed) => {
+    cfg = { ...freshDefaults(), ...parsed };
+    inlineLibrary = parsed.library && typeof parsed.library === 'object' ? parsed.library : null;
+    // The recovery path writes the trash inline next to the pool; reading only the
+    // pool back meant those entries vanished on the very next start.
+    inlineTrash = Array.isArray(parsed.libraryTrash) ? parsed.libraryTrash : null;
+    // The defaults are merged before normalize(). Preserve whether the new field
+    // existed so legacy autoSwitch:false can migrate to mode='off'.
+    if (!Object.prototype.hasOwnProperty.call(parsed, 'wallpaperSchedule')) cfg.wallpaperSchedule = null;
+  };
   if (raw != null) {
     try {
-      const parsed = JSON.parse(raw.replace(/^\uFEFF/, '')); // strip BOM if present
-      cfg = { ...freshDefaults(), ...parsed };
-      inlineLibrary = parsed.library && typeof parsed.library === 'object' ? parsed.library : null;
-      // The recovery path writes the trash inline next to the pool; reading only the
-      // pool back meant those entries vanished on the very next start.
-      inlineTrash = Array.isArray(parsed.libraryTrash) ? parsed.libraryTrash : null;
-      // The defaults are merged before normalize(). Preserve whether the new field
-      // existed so legacy autoSwitch:false can migrate to mode='off'.
-      if (!Object.prototype.hasOwnProperty.call(parsed, 'wallpaperSchedule')) cfg.wallpaperSchedule = null;
+      takeParsed(parseConfigText(raw));
     } catch (err) {
       // The backup IS the recovery path, so whether it was made decides what may happen
       // next. With one, falling back to defaults is the long-standing policy and the
@@ -342,11 +370,24 @@ function load(configPath) {
         err,
       );
       cfg = freshDefaults();
+      const found = backedUp && restore ? restore('config') : null;
+      if (found) {
+        try {
+          takeParsed(parseConfigText(found.text));
+          sourceState = 'restored';
+          restoredAt = Number(found.takenAt) || 0;
+          console.error('config.json восстановлен из последней целой копии:', new Date(restoredAt).toISOString());
+        } catch (copyErr) {
+          // findGood() already accepted it, so this is a copy that changed under us.
+          cfg = freshDefaults();
+          console.error('Копия config.json не прочиталась, остаются настройки по умолчанию:', copyErr);
+        }
+      }
     }
   } else {
     cfg = freshDefaults();
   }
-  const stored = libraryStore.load(configPath);
+  const stored = libraryStore.load(configPath, { restore });
   // DATA-005. Records carry a revision now, so which side is newer is answered rather
   // than guessed, and a tombstone keeps a deleted photo deleted instead of letting the
   // returning file resurrect it. Pool and trash have to be merged TOGETHER: deciding
@@ -377,6 +418,9 @@ function load(configPath) {
       unreadable: !!stored.unreadable,
       broken: !!stored.broken,
       newerVersion: !!stored.newerVersion,
+      // DATA-001. When the store was damaged and a good copy stood in for it: the copy's
+      // time. The caller rewrites the store from it and says so.
+      restoredAt: Number(stored.restoredAt) || 0,
       // BUG-024. Whether the inline copy actually CONTRIBUTED, not merely whether it
       // was present. This flag is what tells main the canonical file needs rewriting,
       // and counting rejected candidates made a damaged config.json trigger a rewrite
@@ -394,7 +438,9 @@ function load(configPath) {
     value: {
       state: sourceState,
       existed: sourceState !== 'missing',
-      writable: sourceState === 'ok' || sourceState === 'missing' || sourceState === 'corrupt',
+      writable: sourceState === 'ok' || sourceState === 'missing' || sourceState === 'corrupt'
+        || sourceState === 'restored',
+      restoredAt,
     },
     enumerable: false, writable: true, configurable: true,
   });
@@ -432,4 +478,4 @@ function save(config, configPath, { skipLibrary = false, keepInline = false } = 
   return poolSafe;
 }
 
-module.exports = { DEFAULT_CONFIG, freshDefaults, normalize, load, save };
+module.exports = { DEFAULT_CONFIG, freshDefaults, normalize, load, save, isLoadableText };

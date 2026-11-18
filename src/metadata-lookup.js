@@ -248,6 +248,7 @@ module.exports = {
   providersFor,
   providerById,
   journalKey,
+  normalizeTagList,
   makeResult,
   emptyEntry,
   normalizeEntry,

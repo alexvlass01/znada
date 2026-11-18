@@ -56,13 +56,14 @@ function create(deps = {}) {
   // failure are the handler's business, so a new site inherits all of it and cannot get
   // them subtly wrong. Never throws: a site that breaks must drop out of the round, not
   // take the round down.
-  function fetchJson(descriptor) {
+  function fetchJson(descriptor, signal) {
     return async (url, opts) => {
       const timeoutMs = Number(opts && opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 15000;
+      const timeout = AbortSignal.timeout(timeoutMs);
       try {
         const res = await fetchImpl(url, {
           headers: { 'User-Agent': userAgent, ...(descriptor.requestHeaders || {}) },
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         });
         if (!res.ok) return { error: String(res.status) };
         return { json: await res.json() };
@@ -73,10 +74,11 @@ function create(deps = {}) {
   }
 
   // What a site's own code is handed for any request it makes.
-  function context(descriptor, creds = credentials(descriptor)) {
+  /** @param {{ signal?: AbortSignal }} [options] */
+  function context(descriptor, creds = credentials(descriptor), options = {}) {
     return {
       credentials: creds,
-      fetchJson: fetchJson(descriptor),
+      fetchJson: fetchJson(descriptor, options.signal),
     };
   }
 

@@ -232,7 +232,7 @@
     "addFolder": "폴더 추가…",
     "empty": "라이브러리가 비어 있습니다 — 여기에 이미지를 놓거나 \"추가\"를 클릭하세요.",
     "emptyFolder": "이 폴더에는 이미지가 없습니다.",
-    "noMatches": "검색이나 태그와 일치하는 항목이 없습니다. 지우면 모두 볼 수 있습니다.",
+    "noMatches": "결과가 없습니다. 모두 보려면 검색어, 태그 또는 필터를 지우세요.",
     "emptyFavorites": "아직 즐겨찾기가 없습니다. 사진에 별표를 하면 여기에 표시됩니다.",
     "emptyFolders": "아직 폴더가 없습니다. ‘폴더 추가…’로 추가하세요.",
     "back": "‹ 모든 폴더",
@@ -285,7 +285,10 @@
     "photosCount_one": "사진 {n}장",
     "photosCount_few": "사진 {n}장",
     "photosCount_many": "사진 {n}장",
-    "photosCount_other": "사진 {n}장"
+    "photosCount_other": "사진 {n}장",
+    "kindPhoto": "사진",
+    "kindVideo": "동영상",
+    "dialogFilterMedia": "이미지 및 동영상"
   },
   "details": {
     "type": "유형",
@@ -321,7 +324,12 @@
     "ratingGeneral": "일반",
     "ratingSensitive": "민감함",
     "ratingQuestionable": "주의",
-    "ratingExplicit": "성인용"
+    "ratingExplicit": "성인용",
+    "copyTag": "{tag} 태그 복사",
+    "tagCopied": "태그를 복사했습니다",
+    "tagCopyFailed": "태그를 복사할 수 없습니다",
+    "typeVideo": "동영상",
+    "duration": "길이"
   },
   "motion": {
     "format": "애니메이션 · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "계정에 담지 못해 이 컴퓨터에 남은 즐겨찾기: {n}개",
     "syncHeldToast_few": "계정에 담지 못해 이 컴퓨터에 남은 즐겨찾기: {n}개",
     "syncHeldToast_many": "계정에 담지 못해 이 컴퓨터에 남은 즐겨찾기: {n}개",
-    "syncHeldToast_other": "계정에 담지 못해 이 컴퓨터에 남은 즐겨찾기: {n}개"
+    "syncHeldToast_other": "계정에 담지 못해 이 컴퓨터에 남은 즐겨찾기: {n}개",
+    "sourceFailed": "이 사이트가 응답하지 않았습니다"
   },
   "theme": {
     "group": "Windows 테마",
@@ -486,7 +495,10 @@
     "libraryStore": "라이브러리 파일",
     "configStore": "설정 파일",
     "wallpaperSource": "설정된 배경화면 소스",
-    "poolConsistency": "중단된 저장 후 배경화면 할당이 복구되었습니다"
+    "poolConsistency": "중단된 저장 후 배경화면 할당이 복구되었습니다",
+    "configRestored": "설정 파일이 손상되어 {date}의 사본에서 복원했습니다",
+    "libraryRestored": "라이브러리 파일이 손상되어 {date}의 사본에서 복원했습니다",
+    "folderStateRestored": "폴더 정보 파일이 손상되어 {date}의 사본에서 복원했습니다"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada에서 배경화면을 변경할 수 없습니다",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada가 배경화면을 찾을 수 없습니다",
     "wallpaperSourceMissingBody": "설정되었던 이미지가 더 이상 원래 위치에 없습니다. 드라이브나 폴더를 이동한 경우 제자리로 복원하면 다음 전환 시 배경화면이 다시 적용됩니다.",
     "poolConsistencyTitle": "Znada가 배경화면 설정을 복구했습니다",
-    "poolConsistencyBody": "정전이나 강제 종료 등으로 인해 저장이 중단되어 모니터가 저장이 완료되지 않은 이미지에 연결되어 있었습니다. 해당 설정이 초기화되었습니다. 사진 파일에는 영향이 없습니다."
+    "poolConsistencyBody": "정전이나 강제 종료 등으로 인해 저장이 중단되어 모니터가 저장이 완료되지 않은 이미지에 연결되어 있었습니다. 해당 설정이 초기화되었습니다. 사진 파일에는 영향이 없습니다.",
+    "configRestoredTitle": "설정 파일이 손상되어 Znada에서 복원했습니다",
+    "libraryRestoredTitle": "라이브러리 파일이 손상되어 Znada에서 복원했습니다",
+    "folderStateRestoredTitle": "폴더 정보 파일이 손상되어 Znada에서 복원했습니다",
+    "configRestoredBody": "Znada에서 설정 파일을 읽을 수 없었습니다. 정전이나 앱 오류로 파일이 손상되었을 수 있습니다. 설정을 백업에서 복원했습니다({date}). 그 이후의 변경 사항은 누락될 수 있습니다.",
+    "libraryRestoredBody": "Znada에서 라이브러리 파일을 읽을 수 없었습니다. 정전이나 앱 오류로 파일이 손상되었을 수 있습니다. 라이브러리를 백업에서 복원했습니다({date}). 그 이후의 즐겨찾기, 태그, 배경 화면 지정은 누락될 수 있습니다. 이미지 파일은 변경하지 않았습니다.",
+    "folderStateRestoredBody": "Znada에서 연결한 폴더의 정보 파일을 읽을 수 없었습니다. 정전이나 앱 오류로 파일이 손상되었을 수 있습니다. 파일을 백업에서 복원했습니다({date}). 그 이후에 해당 폴더에서 제외한 사진이 다시 표시될 수 있습니다."
   },
   "toast": {
     "applied": "배경화면이 적용되었습니다",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "검색 미리보기를 준비하지 못했습니다.",
     "lookupChanged": "이미지가 변경되었거나 더 이상 사용할 수 없습니다. 새 검색을 시작하세요.",
     "lookupResponseFailed": "출처 응답을 확인하지 못했습니다. 데이터는 변경되지 않았습니다.",
-    "lookupHttpError": "사이트가 오류 {n}을 반환했습니다. 나중에 다시 시도하세요."
+    "lookupHttpError": "사이트가 오류 {n}을 반환했습니다. 나중에 다시 시도하세요.",
+    "lookupDismissed": "비교를 닫았습니다. 변경된 데이터는 없습니다."
   },
   "whatsNew": {
     "button": "새로운 기능",
@@ -656,5 +675,38 @@
     "unavailable": "사용할 수 없음",
     "retry": "이미지를 불러오지 못했습니다. 다시 시도하세요.",
     "writeFailed": "즐겨찾기를 저장하지 못했습니다. 이전 즐겨찾기는 그대로 유지됩니다."
+  },
+  "libraryChecks": {
+    "title": "라이브러리 검사",
+    "duplicatesSwitch": "동일한 파일 찾기",
+    "duplicatesTitle": "동일한 파일",
+    "show": "보기",
+    "checking": "검사 중…",
+    "copiesCount": "추가 복사본: {n}개",
+    "noneFound": "찾은 파일 없음",
+    "foundToast": "찾은 동일한 파일: {n}개",
+    "duplicatesEmpty": "동일한 파일이 없습니다."
+  },
+  "video": {
+    "badge": "동영상",
+    "badgeLength": "동영상 · {length}",
+    "openHint": "동영상 플레이어에서 열기",
+    "openFailed": "이 동영상을 열 수 없습니다",
+    "notWallpaper": "동영상은 아직 배경 화면으로 지정할 수 없습니다",
+    "skippedOnAssign": "사진을 지정했습니다. 동영상은 아직 배경 화면으로 지정할 수 없습니다",
+    "play": "재생",
+    "pause": "일시 정지",
+    "seek": "재생 위치",
+    "volume": "음량",
+    "mute": "음소거",
+    "unmute": "음소거 해제",
+    "playback": "동영상 재생",
+    "controls": "동영상 제어",
+    "playbackFailed": "이 동영상을 재생할 수 없습니다.",
+    "openExternal": "다른 플레이어에서 열기",
+    "loading": "동영상 여는 중…",
+    "downloading": "동영상 다운로드 중…",
+    "local": "라이브러리의 동영상",
+    "localFolder": "폴더의 동영상"
   }
 }

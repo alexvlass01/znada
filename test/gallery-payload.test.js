@@ -141,6 +141,7 @@ function item(n) {
     config: { library: pool },
     window: { ZnadaPathKey: pathKeyMod, CardInteraction: cardInteraction },
     OnlineAdd: { pooledItem: () => ({ id: 'online1', type: 'image', path: 'C:\\dl\\1.jpg' }) },
+    ONLINE_HAVE: null,
   };
   vm.createContext(ctx);
   vm.runInContext(rendererFn('normPathKey'), ctx);
@@ -224,6 +225,7 @@ function item(n) {
     config: { library: {} },
     window: { ZnadaPathKey: pathKeyMod, CardInteraction: cardInteraction },
     OnlineAdd: { pooledItem: () => null },
+    ONLINE_HAVE: null,
   };
   vm.createContext(ctx);
   vm.runInContext(rendererFn('normPathKey'), ctx);

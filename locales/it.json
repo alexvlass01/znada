@@ -232,7 +232,7 @@
     "addFolder": "Aggiungi cartella…",
     "empty": "La libreria è vuota — trascina immagini qui o fai clic su «Aggiungi immagini…».",
     "emptyFolder": "Questa cartella non contiene immagini.",
-    "noMatches": "Nulla corrisponde alla ricerca o al tag. Cancellali per vedere tutto.",
+    "noMatches": "Nessun risultato qui. Cancella la ricerca, i tag o i filtri per vedere tutto.",
     "emptyFavorites": "Ancora nessun preferito: segna una foto con la stella e comparirà qui.",
     "emptyFolders": "Ancora nessuna cartella: aggiungine una con «Aggiungi cartella…».",
     "back": "‹ Tutte le cartelle",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} foto",
     "photosCount_few": "{n} foto",
     "photosCount_many": "{n} foto",
-    "photosCount_other": "{n} foto"
+    "photosCount_other": "{n} foto",
+    "kindPhoto": "Foto",
+    "kindVideo": "Video",
+    "dialogFilterMedia": "Immagini e video"
   },
   "details": {
     "type": "Tipo",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Per tutti",
     "ratingSensitive": "Sensibile",
     "ratingQuestionable": "Discutibile",
-    "ratingExplicit": "Esplicito"
+    "ratingExplicit": "Esplicito",
+    "copyTag": "Copia tag {tag}",
+    "tagCopied": "Tag copiato",
+    "tagCopyFailed": "Impossibile copiare il tag",
+    "typeVideo": "Video",
+    "duration": "Durata"
   },
   "motion": {
     "format": "Animazione · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "{n} preferito non ha trovato spazio nell’account — è rimasto su questo computer",
     "syncHeldToast_few": "{n} preferiti non hanno trovato spazio nell’account — sono rimasti su questo computer",
     "syncHeldToast_many": "{n} preferiti non hanno trovato spazio nell’account — sono rimasti su questo computer",
-    "syncHeldToast_other": "{n} preferiti non hanno trovato spazio nell’account — sono rimasti su questo computer"
+    "syncHeldToast_other": "{n} preferiti non hanno trovato spazio nell’account — sono rimasti su questo computer",
+    "sourceFailed": "Il sito non ha risposto"
   },
   "theme": {
     "group": "Tema di Windows",
@@ -486,7 +495,10 @@
     "libraryStore": "File della libreria",
     "configStore": "File delle impostazioni",
     "wallpaperSource": "Origine dello sfondo configurato",
-    "poolConsistency": "Assegnazione sfondo ripristinata dopo un salvataggio interrotto"
+    "poolConsistency": "Assegnazione sfondo ripristinata dopo un salvataggio interrotto",
+    "configRestored": "Il file delle impostazioni era danneggiato ed è stato ripristinato dalla copia del {date}",
+    "libraryRestored": "Il file della libreria era danneggiato ed è stato ripristinato dalla copia del {date}",
+    "folderStateRestored": "Il file delle informazioni sulle cartelle era danneggiato ed è stato ripristinato dalla copia del {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada non ha potuto cambiare lo sfondo",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada non ha trovato il tuo sfondo",
     "wallpaperSourceMissingBody": "L'immagine impostata non è più disponibile. Se l'unità o la cartella è stata spostata, ripristinala e lo sfondo tornerà al prossimo cambio.",
     "poolConsistencyTitle": "Znada ha corretto un'impostazione dello sfondo",
-    "poolConsistencyBody": "Un salvataggio è stato interrotto (probabilmente per mancanza di corrente o arresto forzato) e un monitor è rimasto associato a un'immagine non completamente salvata. L'impostazione è stata reimpostata. Le tue foto non sono state modificate."
+    "poolConsistencyBody": "Un salvataggio è stato interrotto (probabilmente per mancanza di corrente o arresto forzato) e un monitor è rimasto associato a un'immagine non completamente salvata. L'impostazione è stata reimpostata. Le tue foto non sono state modificate.",
+    "configRestoredTitle": "File delle impostazioni danneggiato: Znada lo ha ripristinato",
+    "libraryRestoredTitle": "File della libreria danneggiato: Znada lo ha ripristinato",
+    "folderStateRestoredTitle": "File delle informazioni sulle cartelle danneggiato: Znada lo ha ripristinato",
+    "configRestoredBody": "Znada non è riuscita a leggere il file delle impostazioni, forse danneggiato da un’interruzione di corrente o da un arresto anomalo. Le impostazioni sono state ripristinate da una copia di riserva ({date}). Le modifiche successive potrebbero mancare.",
+    "libraryRestoredBody": "Znada non è riuscita a leggere il file della libreria, forse danneggiato da un’interruzione di corrente o da un arresto anomalo. La libreria è stata ripristinata da una copia di riserva ({date}). Preferiti, tag e assegnazioni successivi potrebbero mancare. Le immagini non sono state modificate.",
+    "folderStateRestoredBody": "Znada non è riuscita a leggere il file delle informazioni sulle cartelle collegate, forse danneggiato da un’interruzione di corrente o da un arresto anomalo. Il file è stato ripristinato da una copia di riserva ({date}). Le foto rimosse da quelle cartelle dopo quella data potrebbero ricomparire."
   },
   "toast": {
     "applied": "Sfondo applicato",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Impossibile preparare l’anteprima per la ricerca.",
     "lookupChanged": "L’immagine è cambiata o non è più disponibile. Avviare una nuova ricerca.",
     "lookupResponseFailed": "Impossibile confermare le informazioni nella risposta del sito. Nessun dato modificato.",
-    "lookupHttpError": "Il sito ha restituito l’errore {n}. Riprovare più tardi."
+    "lookupHttpError": "Il sito ha restituito l’errore {n}. Riprovare più tardi.",
+    "lookupDismissed": "Confronto chiuso. Nessun dato modificato."
   },
   "whatsNew": {
     "button": "Novità",
@@ -656,5 +675,38 @@
     "unavailable": "Non disponibile",
     "retry": "Impossibile caricare l’immagine. Riprovare.",
     "writeFailed": "Impossibile salvare i preferiti. Le selezioni precedenti sono state conservate."
+  },
+  "libraryChecks": {
+    "title": "Controllo della libreria",
+    "duplicatesSwitch": "Cerca file identici",
+    "duplicatesTitle": "File identici",
+    "show": "Mostra",
+    "checking": "Controllo in corso…",
+    "copiesCount": "Copie in eccesso: {n}",
+    "noneFound": "Nessun risultato",
+    "foundToast": "File identici trovati: {n}",
+    "duplicatesEmpty": "Nessun file identico."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Apri nel lettore video",
+    "openFailed": "Impossibile aprire questo video",
+    "notWallpaper": "Non puoi ancora usare un video come sfondo",
+    "skippedOnAssign": "Foto assegnate. Non puoi ancora usare un video come sfondo",
+    "play": "Riproduci",
+    "pause": "Pausa",
+    "seek": "Posizione di riproduzione",
+    "volume": "Volume",
+    "mute": "Disattiva audio",
+    "unmute": "Attiva audio",
+    "playback": "Riproduzione video",
+    "controls": "Comandi video",
+    "playbackFailed": "Impossibile riprodurre questo video.",
+    "openExternal": "Apri in un altro lettore",
+    "loading": "Apertura del video…",
+    "downloading": "Download del video…",
+    "local": "Video dalla libreria",
+    "localFolder": "Video da una cartella"
   }
 }

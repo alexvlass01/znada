@@ -31,7 +31,10 @@ const SUFFIX = '.metadata.json';
 // Bounds, so a cache cannot grow without limit on a machine with a huge library.
 // Eviction is by age of last touch, which for the journal means the oldest ANSWER —
 // evicting it only costs one repeated question much later, never a wrong one.
-const FILE_LIMIT = 20000;
+// LIB-031. The file part has to hold the WHOLE library: "already have it" in Online
+// fingerprints every photo, and an evicted entry is a file read again on the next pass.
+// 5 895 photos on the owner's library (2026-11-08); this is room for many times that.
+const FILE_LIMIT = 100000;
 const LOOKUP_LIMIT = 20000;
 
 // Named after its config, exactly like the library store, so two profiles in one
@@ -85,6 +88,20 @@ function normalizeStore(raw, now) {
   return store;
 }
 
+// PERF-007. load/save already bound the copy they write. The object the process
+// keeps holding used to grow until restart. This applies the same age cut to that
+// live object. Evicting a journal entry only costs one repeated question later;
+// tags the user already has live on the library record, not in here.
+function evict(store, now) {
+  if (!store || typeof store !== 'object' || Array.isArray(store)) return store;
+  const at = Number(now) || Date.now();
+  const files = store.files && typeof store.files === 'object' && !Array.isArray(store.files) ? store.files : {};
+  const lookups = store.lookups && typeof store.lookups === 'object' && !Array.isArray(store.lookups) ? store.lookups : {};
+  store.files = boundMap(files, FILE_LIMIT, at);
+  store.lookups = boundMap(lookups, LOOKUP_LIMIT, at);
+  return store;
+}
+
 // Fail-open by design: an unreadable or unparseable cache is simply absent. The only
 // cost is doing the work again, and refusing to start would turn a corrupted cache into
 // a broken feature.
@@ -115,7 +132,9 @@ function save(store, configPath, now) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const clean = normalizeStore(store, at);
     const tmp = file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(clean, null, 2), 'utf8');
+    // Compact: with every photo in it the file is megabytes, rewritten while a pass reads
+    // (LIB-031), and nobody reads it by eye.
+    fs.writeFileSync(tmp, JSON.stringify(clean), 'utf8');
     fs.renameSync(tmp, file);
     return true;
   } catch (err) {
@@ -171,6 +190,7 @@ module.exports = {
   emptyStore,
   normalizeStore,
   boundMap,
+  evict,
   load,
   save,
   createWriter,

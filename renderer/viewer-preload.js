@@ -1,6 +1,17 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, sharedTexture } = require('electron');
+// Native handles stay out of the page; only a transferable VideoFrame crosses.
+if (sharedTexture && typeof sharedTexture.setSharedTextureReceiver === 'function') {
+  sharedTexture.setSharedTextureReceiver(async ({ importedSharedTexture }, info) => {
+    let frame;
+    try {
+      frame = importedSharedTexture.getVideoFrame();
+      window.postMessage({ type: 'znada-video-frame', info, frame }, '*', [frame]);
+      frame = null;
+    } finally { if (frame) frame.close(); importedSharedTexture.release(); }
+  });
+}
 const invokeMetadataLookup = (id, options) => ipcRenderer.invoke('item-lookup-metadata', id, options);
 
 // QA-009. The diagnostics probe is not loaded from this file. The viewer has no library
@@ -11,10 +22,14 @@ contextBridge.exposeInMainWorld('viewerApi', {
   favoriteState: (card) => ipcRenderer.invoke('favorite-state', card),
   favoriteSet: (card, on) => ipcRenderer.invoke('favorite-set', card, on),
   getPayload: () => ipcRenderer.invoke('gallery-payload'),
+  videoCommand: (request) => ipcRenderer.invoke('gallery-video', request),
+  onVideoState: (cb) => ipcRenderer.on('gallery-video-state', (_e, state) => cb(state)),
   close: () => ipcRenderer.invoke('gallery-close'),
   toggleFullscreen: () => ipcRenderer.invoke('gallery-toggle-fullscreen'),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
-  internetAdd: (item, query) => ipcRenderer.invoke('internet-add', item, query),
+  internetAdd: (item, query, requestId) => ipcRenderer.invoke('internet-add', item, query, requestId),
+  cancelInternetVideo: (requestId) => ipcRenderer.invoke('internet-cancel-video', requestId),
+  onInternetVideoProgress: (cb) => { ipcRenderer.on('internet-video-progress', (_event, progress) => cb(progress)); },
   cloudAdd: (item) => ipcRenderer.invoke('cloud-add', item),
   // ONL-008: removing and immediately restoring an online item from inside the viewer.
   // These are the same validated handlers the Library tab uses: removal moves records

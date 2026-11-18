@@ -232,7 +232,7 @@
     "addFolder": "Přidat složku…",
     "empty": "Vaše knihovna je prázdná — přetáhněte sem obrázky nebo klikněte na „Přidat“.",
     "emptyFolder": "Tato složka neobsahuje žádné obrázky.",
-    "noMatches": "Hledání ani štítku nic neodpovídá. Zrušte je, abyste viděli vše.",
+    "noMatches": "Nic se tu nenašlo. Vymažte hledání, štítky nebo filtry a zobrazí se vše.",
     "emptyFavorites": "Zatím žádné oblíbené — označte fotku hvězdičkou a objeví se tady.",
     "emptyFolders": "Zatím žádné složky — přidejte složku tlačítkem „Přidat složku…“.",
     "back": "‹ Všechny složky",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} fotka",
     "photosCount_few": "{n} fotky",
     "photosCount_many": "{n} fotky",
-    "photosCount_other": "{n} fotek"
+    "photosCount_other": "{n} fotek",
+    "kindPhoto": "Fotky",
+    "kindVideo": "Videa",
+    "dialogFilterMedia": "Obrázky a videa"
   },
   "details": {
     "type": "Typ",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Obecné",
     "ratingSensitive": "Citlivé",
     "ratingQuestionable": "Pochybné",
-    "ratingExplicit": "Explicitní"
+    "ratingExplicit": "Explicitní",
+    "copyTag": "Zkopírovat štítek {tag}",
+    "tagCopied": "Štítek zkopírován",
+    "tagCopyFailed": "Štítek se nepodařilo zkopírovat",
+    "typeVideo": "Video",
+    "duration": "Délka"
   },
   "motion": {
     "format": "Animace · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "Oblíbené, které se nevešly do účtu a zůstaly v tomto počítači: {n}",
     "syncHeldToast_few": "Oblíbené, které se nevešly do účtu a zůstaly v tomto počítači: {n}",
     "syncHeldToast_many": "Oblíbené, které se nevešly do účtu a zůstaly v tomto počítači: {n}",
-    "syncHeldToast_other": "Oblíbené, které se nevešly do účtu a zůstaly v tomto počítači: {n}"
+    "syncHeldToast_other": "Oblíbené, které se nevešly do účtu a zůstaly v tomto počítači: {n}",
+    "sourceFailed": "Web neodpověděl"
   },
   "theme": {
     "group": "Motiv Windows",
@@ -486,7 +495,10 @@
     "libraryStore": "Soubor knihovny",
     "configStore": "Soubor nastavení",
     "wallpaperSource": "Zdroj nastavené tapety",
-    "poolConsistency": "Přiřazení tapety opraveno po přerušeném ukládání"
+    "poolConsistency": "Přiřazení tapety opraveno po přerušeném ukládání",
+    "configRestored": "Soubor nastavení byl poškozen a obnoven z kopie z {date}",
+    "libraryRestored": "Soubor knihovny byl poškozen a obnoven z kopie z {date}",
+    "folderStateRestored": "Soubor s údaji o složkách byl poškozen a obnoven z kopie z {date}"
   },
   "notify": {
     "wallpaperFailedTitle": "Znada nedokázala změnit tapetu",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "Znada nemohla najít vaši tapetu",
     "wallpaperSourceMissingBody": "Nastavený obrázek již není k dispozici. Pokud byl disk nebo složka přesunuta, vraťte je a tapeta se načte při příští změně.",
     "poolConsistencyTitle": "Znada opravila nastavení tapety",
-    "poolConsistencyBody": "Ukládání bylo přerušeno (pravděpodobně výpadkem napájení nebo vynuceným vypnutím) a monitor zůstal přiřazen k neúplně uloženému obrázku. Nastavení bylo vyčištěno. Vaše fotografie nebyly dotčeny."
+    "poolConsistencyBody": "Ukládání bylo přerušeno (pravděpodobně výpadkem napájení nebo vynuceným vypnutím) a monitor zůstal přiřazen k neúplně uloženému obrázku. Nastavení bylo vyčištěno. Vaše fotografie nebyly dotčeny.",
+    "configRestoredTitle": "Soubor nastavení byl poškozen — Znada ho obnovila",
+    "libraryRestoredTitle": "Soubor knihovny byl poškozen — Znada ho obnovila",
+    "folderStateRestoredTitle": "Soubor s údaji o složkách byl poškozen — Znada ho obnovila",
+    "configRestoredBody": "Znada nemohla přečíst soubor nastavení. Mohl se poškodit při výpadku proudu nebo pádu aplikace. Nastavení bylo obnoveno ze záložní kopie ({date}). Pozdější změny mohou chybět.",
+    "libraryRestoredBody": "Znada nemohla přečíst soubor knihovny. Mohl se poškodit při výpadku proudu nebo pádu aplikace. Knihovna byla obnovena ze záložní kopie ({date}). Pozdější oblíbené položky, štítky a přiřazení mohou chybět. Obrázky se nezměnily.",
+    "folderStateRestoredBody": "Znada nemohla přečíst soubor s údaji o připojených složkách. Mohl se poškodit při výpadku proudu nebo pádu aplikace. Soubor byl obnoven ze záložní kopie ({date}). Fotky později odebrané z těchto složek se mohou znovu zobrazit."
   },
   "toast": {
     "applied": "Tapeta byla použita",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Náhled pro hledání se nepodařilo připravit.",
     "lookupChanged": "Obrázek se změnil nebo už není dostupný. Spusťte nové hledání.",
     "lookupResponseFailed": "Odpověď zdroje se nepodařilo ověřit. Data se nezměnila.",
-    "lookupHttpError": "Web vrátil chybu {n}. Zkuste to později."
+    "lookupHttpError": "Web vrátil chybu {n}. Zkuste to později.",
+    "lookupDismissed": "Porovnání zavřeno. Žádná data se nezměnila."
   },
   "whatsNew": {
     "button": "Co je nového",
@@ -656,5 +675,38 @@
     "unavailable": "Nedostupné",
     "retry": "Obrázek se nepodařilo načíst. Zkuste to znovu.",
     "writeFailed": "Oblíbené se nepodařilo uložit. Předchozí označení se nezměnila."
+  },
+  "libraryChecks": {
+    "title": "Kontrola knihovny",
+    "duplicatesSwitch": "Hledat totožné soubory",
+    "duplicatesTitle": "Totožné soubory",
+    "show": "Zobrazit",
+    "checking": "Probíhá kontrola…",
+    "copiesCount": "Nadbytečné kopie: {n}",
+    "noneFound": "Nic nenalezeno",
+    "foundToast": "Nalezené totožné soubory: {n}",
+    "duplicatesEmpty": "Žádné totožné soubory."
+  },
+  "video": {
+    "badge": "Video",
+    "badgeLength": "Video · {length}",
+    "openHint": "Otevřít v přehrávači videa",
+    "openFailed": "Video se nepodařilo otevřít",
+    "notWallpaper": "Videa zatím nelze nastavit jako tapetu",
+    "skippedOnAssign": "Fotky přiřazeny. Videa zatím nelze nastavit jako tapetu",
+    "play": "Přehrát",
+    "pause": "Pozastavit",
+    "seek": "Pozice přehrávání",
+    "volume": "Hlasitost",
+    "mute": "Ztlumit",
+    "unmute": "Zapnout zvuk",
+    "playback": "Přehrávání videa",
+    "controls": "Ovládání videa",
+    "playbackFailed": "Video se nepodařilo přehrát.",
+    "openExternal": "Otevřít v jiném přehrávači",
+    "loading": "Otevírá se video…",
+    "downloading": "Stahuje se video…",
+    "local": "Video z knihovny",
+    "localFolder": "Video ze složky"
   }
 }

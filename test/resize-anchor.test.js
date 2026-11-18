@@ -51,14 +51,14 @@ ok('resize-anchor runtime loads before renderer.js', modulePos >= 0 && rendererP
 const rendererJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
 const unifiedJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'unified-grid.js'), 'utf8');
 const windowResize = rendererJs.indexOf("window.addEventListener('resize', () => {");
-const shrinkBranch = rendererJs.indexOf('grid.clientWidth < liveVirtual.layoutWidth - 0.5', windowResize);
+const shrinkBranch = rendererJs.indexOf('window.UnifiedGrid.measureWidth(grid) <= liveVirtual.layoutWidth - window.UnifiedGrid.WIDTH_EPSILON', windowResize);
 const shrinkLayout = rendererJs.indexOf('layoutLibGrid(grid);', shrinkBranch);
 const resizeDebounce = rendererJs.indexOf('resizeT = setTimeout', shrinkBranch);
 ok('window shrink relayout commits synchronously before the resize debounce',
   windowResize >= 0 && shrinkBranch > windowResize && shrinkLayout > shrinkBranch
   && resizeDebounce > shrinkLayout);
 ok('a stale deferred width frame rechecks whether synchronous shrink already won',
-  unifiedJs.includes('if (!isValid() || Math.abs(grid.clientWidth - state.layoutWidth) < 0.5) return;'));
+  unifiedJs.includes('if (!isValid() || Math.abs(measureWidth(grid) - state.layoutWidth) < WIDTH_EPSILON) return;'));
 ok('only shrink passes the logical anchor into the one-pass virtual relayout',
   rendererJs.includes('anchor: shrinking ? scrollAnchor : null'));
 

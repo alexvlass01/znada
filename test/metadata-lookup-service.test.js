@@ -17,8 +17,10 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { EventEmitter } = require('events');
 const library = require('../src/library');
 const metadataLookup = require('../src/metadata-lookup');
+const metadataStore = require('../src/metadata-store');
 const libraryFreeze = require('../src/library-freeze');
 const service = require('../src/metadata-lookup-service');
 const { makeTempDir } = require('./helpers/temp-dir');
@@ -72,6 +74,7 @@ function setup(name, opts = {}) {
     isAuthorizedItemPath: () => state.authorized,
     isMoveRunning: () => state.moving,
     savePoolOnly: () => { state.saves++; },
+    ...(opts.deps || {}),
   });
   return { dir, photo, id, state, site, svc };
 }
@@ -177,6 +180,241 @@ function setup(name, opts = {}) {
         && Object.keys(b.svc.cache().lookups).length === 1);
       a.svc.dispose();
       b.svc.dispose();
+    }
+
+    {
+      // PERF-007. The live maps are what the process holds. A second lookup must cut
+      // them with the same age rule as the file on disk, and must not touch a tag the
+      // person already wrote.
+      const { id, state, site, svc } = setup('live-evict');
+      library.addTag(state.config.library, id, 'mine');
+      const first = await svc.lookupItem(id);
+      const cache = svc.cache();
+      for (let i = 0; i < metadataStore.FILE_LIMIT + 1000; i++) cache.files['flood-file-' + i] = { at: 1 };
+      for (let i = 0; i < metadataStore.LOOKUP_LIMIT + 1000; i++) cache.lookups['flood-lookup-' + i] = { at: 1 };
+      const second = await svc.lookupItem(id);
+      const item = library.getItem(state.config.library, id);
+      const journalKey = metadataLookup.journalKey('md5', HASH);
+      ok('a flooded cache is cut on the next lookup and the user tag stays',
+        first.status === 'found' && second.status === 'found' && second.cached === true
+        && item.tags.includes('mine') && item.tags.includes('sky')
+        && Object.keys(cache.files).length <= metadataStore.FILE_LIMIT
+        && Object.keys(cache.lookups).length <= metadataStore.LOOKUP_LIMIT
+        && !!cache.lookups[journalKey]
+        && site.asked.length === 1);
+      svc.dispose();
+    }
+
+    {
+      const clock = {
+        timers: [],
+        setTimer(fn) {
+          const timer = { fn, cleared: false, fired: false };
+          this.timers.push(timer);
+          return timer;
+        },
+        clearTimer(timer) { if (timer) timer.cleared = true; },
+        fire() {
+          for (const timer of this.timers.slice()) {
+            if (!timer.cleared && !timer.fired) {
+              timer.fired = true;
+              timer.fn();
+            }
+          }
+        },
+      };
+      const streams = [];
+      const { dir, id, state, svc } = setup('stalled-read', {
+        deps: {
+          queueLimit: 4,
+          jobTimeoutMs: 3000,
+          hashTimeoutMs: 3000,
+          setTimer: (fn) => clock.setTimer(fn),
+          clearTimer: (timer) => clock.clearTimer(timer),
+          createReadStream() {
+            const stream = new EventEmitter();
+            stream.destroyed = false;
+            stream.destroy = () => { stream.destroyed = true; stream.emit('close'); };
+            if (!streams.length) {
+              streams.push(stream);
+              return stream;
+            }
+            process.nextTick(() => {
+              stream.emit('data', Buffer.from('the next photo'));
+              stream.emit('end');
+            });
+            streams.push(stream);
+            return stream;
+          },
+        },
+      });
+      const secondPath = path.join(dir, 'next.png');
+      fs.writeFileSync(secondPath, Buffer.from('the next photo'));
+      const secondId = library.addPath(state.config.library, 'image', secondPath, { addedAt: 2 });
+      const firstJob = svc.lookupItem(id);
+      const secondJob = svc.lookupItem(secondId);
+      for (let i = 0; i < 20 && !streams.length; i++) await new Promise((resolve) => { setImmediate(resolve); });
+      clock.fire();
+      const timedOut = await firstJob;
+      const followed = await secondJob;
+      const firstItem = library.getItem(state.config.library, id);
+      ok('a stalled file times out, releases the stream, and the next file is looked up',
+        streams[0] && streams[0].destroyed === true
+        && timedOut.status === 'error' && timedOut.reason === 'timeout'
+        && firstItem.tags.length === 0
+        && followed.status === 'found' && followed.addedTags === 2);
+      svc.dispose();
+    }
+
+    {
+      const clock = {
+        timers: [],
+        setTimer(fn) {
+          const timer = { fn, cleared: false, fired: false };
+          this.timers.push(timer);
+          return timer;
+        },
+        clearTimer(timer) { if (timer) timer.cleared = true; },
+        fire() {
+          for (const timer of this.timers.slice()) {
+            if (!timer.cleared && !timer.fired) {
+              timer.fired = true;
+              timer.fn();
+            }
+          }
+        },
+      };
+      let opens = 0;
+      const { dir, state, svc } = setup('queue-cap', {
+        deps: {
+          queueLimit: 2,
+          jobTimeoutMs: 4000,
+          hashTimeoutMs: 4000,
+          setTimer: (fn) => clock.setTimer(fn),
+          clearTimer: (timer) => clock.clearTimer(timer),
+          createReadStream() {
+            opens += 1;
+            const stream = new EventEmitter();
+            stream.destroyed = false;
+            stream.destroy = () => { stream.destroyed = true; };
+            return stream;
+          },
+        },
+      });
+      const ids = [];
+      for (let i = 0; i < 23; i++) {
+        const file = path.join(dir, 'cap-' + i + '.png');
+        fs.writeFileSync(file, Buffer.from('cap-' + i));
+        ids.push(library.addPath(state.config.library, 'image', file, { addedAt: 1 }));
+      }
+      const tracked = ids.map((itemId) => {
+        const box = { done: false, reply: null };
+        svc.lookupItem(itemId).then((reply) => { box.done = true; box.reply = reply; });
+        return box;
+      });
+      for (let i = 0; i < 30 && (tracked.filter((box) => box.done).length < 20 || opens < 1); i++) {
+        await new Promise((resolve) => { setImmediate(resolve); });
+      }
+      const busy = tracked.filter((box) => box.done);
+      ok('lookups past the cap are busy and do not open another read (' + busy.length + ' busy, ' + opens + ' reads)',
+        busy.length === 20
+        && busy.every((box) => box.reply.status === 'busy' && box.reply.reason === 'queue')
+        && opens === 1);
+      for (let i = 0; i < 30 && tracked.some((box) => !box.done); i++) {
+        clock.fire();
+        await new Promise((resolve) => { setImmediate(resolve); });
+      }
+      svc.dispose();
+    }
+
+    {
+      const clock = {
+        timers: [],
+        setTimer(fn) {
+          const timer = { fn, cleared: false, fired: false };
+          this.timers.push(timer);
+          return timer;
+        },
+        clearTimer(timer) { if (timer) timer.cleared = true; },
+        fire() {
+          for (const timer of this.timers.slice()) {
+            if (!timer.cleared && !timer.fired) {
+              timer.fired = true;
+              timer.fn();
+            }
+          }
+        },
+      };
+      let stream = null;
+      const { photo, svc } = setup('direct-fingerprint-timeout', {
+        deps: {
+          hashTimeoutMs: 2000,
+          setTimer: (fn) => clock.setTimer(fn),
+          clearTimer: (timer) => clock.clearTimer(timer),
+          createReadStream() {
+            stream = new EventEmitter();
+            stream.destroyed = false;
+            stream.destroy = () => { stream.destroyed = true; stream.emit('close'); };
+            return stream;
+          },
+        },
+      });
+      const pending = svc.fingerprint(photo);
+      for (let i = 0; i < 20 && !stream; i++) await new Promise((resolve) => { setImmediate(resolve); });
+      clock.fire();
+      const print = await pending;
+      const files = svc.cache().files || {};
+      ok('a direct fingerprint of a stalled file times out without caching a hash',
+        print.error === 'timeout' && stream.destroyed === true
+        && Object.keys(files).length === 0);
+      svc.dispose();
+    }
+
+    {
+      // Замечание независимой проверки PR #334: строку «отменено сигналом очереди» можно было убрать, и
+      // набор оставался зелёным. Тогда отменённый запрос считался бы отказом сайта, и следующий вопрос
+      // тому же сайту упёрся бы в штрафную паузу, хотя сайт ничего плохого не ответил.
+      const clock = {
+        timers: [],
+        setTimer(fn) { const timer = { fn, cleared: false, fired: false }; this.timers.push(timer); return timer; },
+        clearTimer(timer) { if (timer) timer.cleared = true; },
+        fire() {
+          for (const timer of this.timers.slice()) {
+            if (!timer.cleared && !timer.fired) { timer.fired = true; timer.fn(); }
+          }
+        },
+      };
+      let hanging = true;
+      globalThis.fetch = (url, opts) => new Promise((resolve, reject) => {
+        if (!hanging) { resolve({ ok: true, status: 200, json: async () => ({}) }); return; }
+        const signal = opts && opts.signal;
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            const err = new Error('aborted'); err.name = 'AbortError'; reject(err);
+          }, { once: true });
+        }
+      });
+      const site = fakeSite(async (kind, hash, ctx) => {
+        const res = await ctx.fetchJson('https://danbooru.donmai.us/posts.json');
+        return res.error ? res : found(hash);
+      });
+      const { id, svc } = setup('abort-no-penalty', {
+        site,
+        deps: {
+          jobTimeoutMs: 4000,
+          setTimer: (fn) => clock.setTimer(fn),
+          clearTimer: (timer) => clock.clearTimer(timer),
+        },
+      });
+      const pending = svc.lookupItem(id);
+      for (let i = 0; i < 40; i++) await new Promise((resolve) => { setImmediate(resolve); });
+      clock.fire();
+      const cancelled = await pending;
+      hanging = false;
+      const next = await svc.lookupItem(id);
+      ok('a lookup the queue cancelled leaves the site unpunished',
+        cancelled.status === 'error' && next.status === 'found');
+      svc.dispose();
     }
 
     ok('the hash check ignores case and surrounding space and refuses an empty side',

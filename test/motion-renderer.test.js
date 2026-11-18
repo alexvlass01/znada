@@ -19,6 +19,7 @@ const path = require('path');
 const vm = require('vm');
 const MotionBadge = require('../renderer/motion-badge.js');
 const MotionHover = require('../renderer/motion-hover.js');
+const MediaKind = require('../renderer/media-kind.js');
 
 const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8').split('\r\n').join('\n');
 const rendererSrc = read('renderer', 'renderer.js');
@@ -183,7 +184,7 @@ function mainWindow() {
   const openedAssign = [];
   const context = {
     contentBlur: { bind() {}, enabled: () => false },
-    window: { api, MotionBadge, MotionHover, JustifiedLayout: { normalizeAspect: (a) => a } },
+    window: { api, MotionBadge, MotionHover, MediaKind, JustifiedLayout: { normalizeAspect: (a) => a } },
     document: doc,
     t,
     $: (selector) => elements[selector] || null,
@@ -214,6 +215,7 @@ function mainWindow() {
     extractLine(rendererSrc, 'const STILL_FRAME_MAX = ', 'renderer.js'),
     extract(rendererSrc, 'function applyThumbInfo(card, p, info) {', 'renderer.js'),
     extract(rendererSrc, 'function thumbWithMotion(path, w, h) {', 'renderer.js'),
+    extract(rendererSrc, 'function localCardMedia(info) {', 'renderer.js'),
     extract(rendererSrc, 'function renderStrip(theme) {', 'renderer.js'),
     extract(rendererSrc, 'async function stillFrameView(path) {', 'renderer.js'),
     extract(rendererSrc, 'async function homeWallpaperView(monitor) {', 'renderer.js'),
@@ -273,9 +275,9 @@ check('a tile in "Appearance" gets the same chip, from the same single request',
 check('the browser preview\'s stand-in API has no thumbInfo, and the tile just shows its thumbnail', async () => {
   const w = mainWindow();
   delete w.api.thumbInfo;
-  assert.deepStrictEqual(plain(await w.fns.thumbWithMotion('C:\\w\\a.gif', 200, 130)), { url: 'data:plain/C:\\w\\a.gif', motion: null });
+  assert.deepStrictEqual(plain(await w.fns.thumbWithMotion('C:\\w\\a.gif', 200, 130)), { url: 'data:plain/C:\\w\\a.gif', motion: null, video: null });
   w.api.thumb = async () => { throw new Error('gone'); };
-  assert.deepStrictEqual(plain(await w.fns.thumbWithMotion('C:\\w\\a.gif', 200, 130)), { url: '', motion: null });
+  assert.deepStrictEqual(plain(await w.fns.thumbWithMotion('C:\\w\\a.gif', 200, 130)), { url: '', motion: null, video: null });
 });
 
 check('Home\'s "recently added" card wears the chip, and its assign window can find it', async () => {
@@ -487,6 +489,8 @@ function viewerWindow() {
     document: doc,
     t,
     $: (selector) => (selector === '#viewerRoot' ? root : null),
+    VIEWER: { token: 1 },
+    currentEntry: () => context.entry,
     closeViewerPopup: () => { root.children.slice().forEach((c) => c.remove()); },
     AssignRows: {
       build: (pop) => {
@@ -505,7 +509,10 @@ function viewerWindow() {
   const fns = vm.runInContext(`${extract(viewerSrc, 'async function viewerEntryMoves(entry) {', 'viewer.js')}
     ${extract(viewerSrc, 'async function openViewerAssign(entry, descriptor, point) {', 'viewer.js')}
     ({ viewerEntryMoves, openViewerAssign });`, context);
-  return { root, asked, answers, fns, context };
+  return { root, asked, answers, fns, context, openAssign(entry) {
+    context.entry = entry;
+    return fns.openViewerAssign(entry, {}, { x: 5, y: 5 });
+  } };
 }
 
 check('the viewer knows a moving picture: a site\'s word for its cards, main\'s for files', async () => {
@@ -535,13 +542,13 @@ check('the viewer knows a moving picture: a site\'s word for its cards, main\'s 
 check('the viewer\'s assign window adds the first-frame line under the rows, only when it moves', async () => {
   const v = viewerWindow();
   v.answers.set('C:\\w\\moving.gif', { format: 'gif', animated: true, frames: 3, width: 2, height: 2 });
-  await v.fns.openViewerAssign({ kind: 'library', path: 'C:\\w\\moving.gif' }, {}, { x: 5, y: 5 });
+  await v.openAssign({ kind: 'library', path: 'C:\\w\\moving.gif' });
   const pop = v.root.children[0];
   const note = noteOf(pop);
   assert.ok(note, 'moving: the line is there');
   assert.strictEqual(pop.children[pop.children.length - 1], note, 'after the monitor rows');
   assert.strictEqual(note.children[0].textContent, 'For now, the desktop shows the first frame.');
-  await v.fns.openViewerAssign({ kind: 'library', path: 'C:\\w\\still.gif' }, {}, { x: 5, y: 5 });
+  await v.openAssign({ kind: 'library', path: 'C:\\w\\still.gif' });
   assert.strictEqual(v.root.children.length, 1, 'the first chooser was closed');
   assert.strictEqual(noteOf(v.root.children[0]), null, 'still: no line');
 });
@@ -550,7 +557,7 @@ check('the viewer\'s assign window still opens when main cannot answer', async (
   const v = viewerWindow();
   v.context.window.viewerApi.cardAssignTargets = async () => { throw new Error('gone'); };
   v.context.window.viewerApi.mediaMotion = async () => { throw new Error('gone'); };
-  await v.fns.openViewerAssign({ kind: 'path', path: 'C:\\w\\x.gif' }, {}, null);
+  await v.openAssign({ kind: 'path', path: 'C:\\w\\x.gif' });
   assert.strictEqual(v.root.children.length, 1);
   assert.strictEqual(noteOf(v.root.children[0]), null);
 });

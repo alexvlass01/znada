@@ -232,7 +232,7 @@
     "addFolder": "Mappa hozzáadása…",
     "empty": "A könyvtára üres — húzzon ide képeket vagy kattintson a „Hozzáadás” gombra.",
     "emptyFolder": "Ebben a mappában nincsenek képek.",
-    "noMatches": "Semmi sem felel meg a keresésnek vagy a címkének. Törölje őket, hogy mindent lásson.",
+    "noMatches": "Itt nincs találat. Az összes elem megjelenítéséhez töröld a keresést, a címkéket vagy a szűrőket.",
     "emptyFavorites": "Még nincsenek kedvencek — jelöljön meg egy fotót a csillaggal, és itt megjelenik.",
     "emptyFolders": "Még nincsenek mappák — adjon hozzá egyet a „Mappa hozzáadása…” gombbal.",
     "back": "‹ Összes mappa",
@@ -285,7 +285,10 @@
     "photosCount_one": "{n} fotó",
     "photosCount_few": "{n} fotó",
     "photosCount_many": "{n} fotó",
-    "photosCount_other": "{n} fotó"
+    "photosCount_other": "{n} fotó",
+    "kindPhoto": "Fényképek",
+    "kindVideo": "Videók",
+    "dialogFilterMedia": "Képek és videók"
   },
   "details": {
     "type": "Típus",
@@ -321,7 +324,12 @@
     "ratingGeneral": "Általános",
     "ratingSensitive": "Kényes",
     "ratingQuestionable": "Kérdéses",
-    "ratingExplicit": "Felnőtt"
+    "ratingExplicit": "Felnőtt",
+    "copyTag": "A(z) {tag} címke másolása",
+    "tagCopied": "Címke másolva",
+    "tagCopyFailed": "A címkét nem sikerült másolni",
+    "typeVideo": "Videó",
+    "duration": "Időtartam"
   },
   "motion": {
     "format": "Animáció · {format}",
@@ -423,7 +431,8 @@
     "syncHeldToast_one": "A fiókba nem férő, ezen a számítógépen maradt kedvencek száma: {n}",
     "syncHeldToast_few": "A fiókba nem férő, ezen a számítógépen maradt kedvencek száma: {n}",
     "syncHeldToast_many": "A fiókba nem férő, ezen a számítógépen maradt kedvencek száma: {n}",
-    "syncHeldToast_other": "A fiókba nem férő, ezen a számítógépen maradt kedvencek száma: {n}"
+    "syncHeldToast_other": "A fiókba nem férő, ezen a számítógépen maradt kedvencek száma: {n}",
+    "sourceFailed": "A webhely nem válaszolt"
   },
   "theme": {
     "group": "Windows téma",
@@ -486,7 +495,10 @@
     "libraryStore": "Könyvtárfájl",
     "configStore": "Beállításfájl",
     "wallpaperSource": "Beállított háttérkép forrása",
-    "poolConsistency": "Háttérkép-hozzárendelés helyreállítva egy megszakadt mentés után"
+    "poolConsistency": "Háttérkép-hozzárendelés helyreállítva egy megszakadt mentés után",
+    "configRestored": "A beállításfájl megsérült, ezért a(z) {date} dátumú másolatból lett helyreállítva",
+    "libraryRestored": "A könyvtárfájl megsérült, ezért a(z) {date} dátumú másolatból lett helyreállítva",
+    "folderStateRestored": "A mappaadatokat tartalmazó fájl megsérült, ezért a(z) {date} dátumú másolatból lett helyreállítva"
   },
   "notify": {
     "wallpaperFailedTitle": "A Znada nem tudta megváltoztatni a háttérképet",
@@ -506,7 +518,13 @@
     "wallpaperSourceMissingTitle": "A Znada nem találta a háttérképét",
     "wallpaperSourceMissingBody": "A beállított kép már nem található ezen a helyen. Ha a meghajtó vagy a mappa áthelyezésre került, állítsa vissza, és a háttérkép a következő váltáskor betöltődik.",
     "poolConsistencyTitle": "A Znada helyreállított egy háttérkép-beállítást",
-    "poolConsistencyBody": "Egy mentés megszakadt (valószínűleg áramkimaradás vagy kényszerített leállítás miatt), és a monitor egy nem teljesen mentett képre hivatkozott. A beállítás törölve lett. A fényképei nem sérültek."
+    "poolConsistencyBody": "Egy mentés megszakadt (valószínűleg áramkimaradás vagy kényszerített leállítás miatt), és a monitor egy nem teljesen mentett képre hivatkozott. A beállítás törölve lett. A fényképei nem sérültek.",
+    "configRestoredTitle": "A beállításfájl megsérült — a Znada helyreállította",
+    "libraryRestoredTitle": "A könyvtárfájl megsérült — a Znada helyreállította",
+    "folderStateRestoredTitle": "A mappaadatokat tartalmazó fájl megsérült — a Znada helyreállította",
+    "configRestoredBody": "A Znada nem tudta beolvasni a beállításfájlt. A fájl például áramkimaradás vagy összeomlás miatt sérülhetett meg. A beállítások biztonsági másolatból lettek helyreállítva ({date}). A későbbi módosítások hiányozhatnak.",
+    "libraryRestoredBody": "A Znada nem tudta beolvasni a könyvtárfájlt. A fájl például áramkimaradás vagy összeomlás miatt sérülhetett meg. A könyvtár biztonsági másolatból lett helyreállítva ({date}). A későbbi kedvencek, címkék és hozzárendelések hiányozhatnak. A képek nem változtak.",
+    "folderStateRestoredBody": "A Znada nem tudta beolvasni a csatlakoztatott mappák adatait. A fájl például áramkimaradás vagy összeomlás miatt sérülhetett meg. A fájl biztonsági másolatból lett helyreállítva ({date}). Az ezután eltávolított képek újra megjelenhetnek ezekben a mappákban."
   },
   "toast": {
     "applied": "Háttérkép alkalmazva",
@@ -637,7 +655,8 @@
     "lookupPreviewFailed": "Nem sikerült előkészíteni a keresési előnézetet.",
     "lookupChanged": "A kép megváltozott vagy már nem érhető el. Indítson új keresést.",
     "lookupResponseFailed": "Nem sikerült ellenőrizni a forrás válaszát. Az adatok nem változtak.",
-    "lookupHttpError": "A webhely {n} hibát adott vissza. Próbálja később."
+    "lookupHttpError": "A webhely {n} hibát adott vissza. Próbálja később.",
+    "lookupDismissed": "Összehasonlítás bezárva. Az adatok nem változtak."
   },
   "whatsNew": {
     "button": "Újdonságok",
@@ -656,5 +675,38 @@
     "unavailable": "Nem érhető el",
     "retry": "Nem sikerült betölteni a képet. Próbálja újra.",
     "writeFailed": "Nem sikerült menteni a kedvenceket. A korábbi kedvencek változatlanok."
+  },
+  "libraryChecks": {
+    "title": "Könyvtár ellenőrzése",
+    "duplicatesSwitch": "Azonos fájlok keresése",
+    "duplicatesTitle": "Azonos fájlok",
+    "show": "Megjelenítés",
+    "checking": "Ellenőrzés…",
+    "copiesCount": "Felesleges másolatok: {n}",
+    "noneFound": "Nincs találat",
+    "foundToast": "Talált azonos fájlok: {n}",
+    "duplicatesEmpty": "Nincsenek azonos fájlok."
+  },
+  "video": {
+    "badge": "Videó",
+    "badgeLength": "Videó · {length}",
+    "openHint": "Megnyitás a videólejátszóban",
+    "openFailed": "A videót nem sikerült megnyitni",
+    "notWallpaper": "Videó még nem állítható be háttérképként",
+    "skippedOnAssign": "A fényképek hozzárendelve. Videó még nem állítható be háttérképként",
+    "play": "Lejátszás",
+    "pause": "Szünet",
+    "seek": "Lejátszási pozíció",
+    "volume": "Hangerő",
+    "mute": "Némítás",
+    "unmute": "Némítás feloldása",
+    "playback": "Videólejátszás",
+    "controls": "Videóvezérlők",
+    "playbackFailed": "Ezt a videót nem sikerült lejátszani.",
+    "openExternal": "Megnyitás másik lejátszóban",
+    "loading": "Videó megnyitása…",
+    "downloading": "Videó letöltése…",
+    "local": "Videó a könyvtárból",
+    "localFolder": "Videó egy mappából"
   }
 }

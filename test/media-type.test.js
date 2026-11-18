@@ -94,8 +94,9 @@ ok('the playlist extension export cannot be mutated process-wide by a caller',
   const source = fs.readFileSync(path.join(__dirname, '..', 'native', 'thumbnail-helper', 'ShellInterop.cs'), 'utf8');
   const block = source.match(/HashSet<string> Extensions[\s\S]*?\{([\s\S]*?)\};/);
   const native = block ? [...block[1].matchAll(/"(\.[a-z0-9]+)"/gi)].map((m) => m[1].toLowerCase()) : [];
-  ok('the native thumbnail helper recognises exactly the canonical wallpaper formats',
-    native.sort().join() === media.fileExtensions().sort().join());
+  // MEDIA-002: the helper also gives video frames, so it mirrors the Library's union.
+  ok('the native thumbnail helper recognises exactly the formats the Library shows',
+    native.sort().join() === media.libraryExtensions().sort().join());
 }
 
 console.log(`\nAll ${passed} media-type tests passed.`);

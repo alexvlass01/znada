@@ -362,6 +362,18 @@ class ThumbnailHost {
     }
   }
 
+  // MEDIA-002. A video's length and frame size from its Windows properties. No retry on
+  // a lost process: the card simply shows ▶ without a length.
+  async mediaInfo(sourcePath) {
+    const result = await this._request('media-info', { path: sourcePath });
+    const num = (v, max) => (Number.isFinite(v) && v > 0 && v <= max ? Math.round(v) : 0);
+    return {
+      durationMs: num(result && result.durationMs, 1000 * 60 * 60 * 24 * 30),
+      width: num(result && result.width, 100000),
+      height: num(result && result.height, 100000),
+    };
+  }
+
   ping() {
     return this._request('ping');
   }

@@ -126,7 +126,7 @@ const CardTransfer = require('../renderer/card-transfer');
     vm.runInContext(constSource(viewerSource, 'VIEWER'), ctx);
     vm.runInContext(constSource(viewerSource, 'VIEWER_NOTICE'), ctx);
     for (const name of ['currentEntry', 'stopViewerNoticeClock', 'dismissViewerNotice', 'createViewerNotice', 'showViewerMessage',
-      'syncAddAction', 'syncCurrentAddAction', 'addViewerCardToLibrary', 'downloadViewerCard', 'renderActions']) {
+      'isVideoEntry', 'syncAddAction', 'syncCurrentAddAction', 'addViewerCardToLibrary', 'downloadViewerCard', 'renderActions']) {
       vm.runInContext(functionSource(viewerSource, name), ctx);
     }
 
@@ -206,19 +206,21 @@ const CardTransfer = require('../renderer/card-transfer');
       document: { createElement: makeElement },
       $: (selector) => (selector === '#whGrid' ? grid : null),
       OnlineAdd: require('../src/online-add'),
+      // LIB-031: no file of the user's matches these cards.
+      ONLINE_HAVE: { want() {}, lookup: () => null, refresh() {} },
       CardTransfer,
       config: { library: {} },
       INTERNET: { q: '' },
       toast: (message) => toasts.push(message),
       refreshPoolDependentChrome: () => {},
       removeOnlineFromLibrary: async () => true,
-      window: { api: {
+      window: { MediaKind: require('../renderer/media-kind'), api: {
         internetAdd: () => { const reply = held(); replies.push(reply); return reply.promise; },
       } },
     };
     vm.createContext(ctx);
     vm.runInContext(constSource(rendererSource, 'ONLINE_ADDING'), ctx);
-    for (const name of ['attachOnlineAddButton', 'addOnlineItem', 'addOnlineToLibrary',
+    for (const name of ['attachOnlineAddButton', 'downloadInternetCard', 'addOnlineItem', 'addOnlineToLibrary',
       'addCardToLibrary', 'refreshOnlineAddedState']) {
       vm.runInContext(functionSource(rendererSource, name), ctx);
     }

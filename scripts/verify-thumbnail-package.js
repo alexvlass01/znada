@@ -16,6 +16,7 @@ const {
   validateProviderCredential,
 } = require('./package-app');
 const { STAMP_FILE, stampDate } = require('../src/whats-new');
+const videoRuntime = require('../src/video-runtime');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_PACKAGE_ROOT = path.join(ROOT, 'dist', 'Znada-win32-x64');
@@ -268,7 +269,7 @@ function verifyExternalResources(packageRoot, { official = false, version = null
   try { roots = fs.readdirSync(resources, { withFileTypes: true }); }
   catch (_) { fail('resources directory is missing or unreadable'); }
   const actualRoots = roots.map((entry) => entry.name).sort();
-  const expectedRoots = (official ? ['app.asar', STAMP_FILE, 'thumbnail-helper'] : ['app.asar', 'thumbnail-helper']).sort();
+  const expectedRoots = (official ? ['app.asar', 'app.asar.unpacked', STAMP_FILE, 'thumbnail-helper', 'libmpv'] : ['app.asar', 'app.asar.unpacked', 'thumbnail-helper', 'libmpv']).sort();
   if (JSON.stringify(actualRoots) !== JSON.stringify(expectedRoots)) {
     fail(`resources must contain exactly ${expectedRoots.join(', ')}, found: ${actualRoots.join(', ')}`);
   }
@@ -280,6 +281,21 @@ function verifyExternalResources(packageRoot, { official = false, version = null
     }
   }
   const asarEntry = roots.find((entry) => entry.name === 'app.asar');
+  // Structure is checked separately from pinned bytes so date-stamp tests need no binary.
+  videoRuntime.verifyRuntime(path.join(resources, 'libmpv'), { verifyDigest: false });
+  const unpacked = roots.find((entry) => entry.name === 'app.asar.unpacked');
+  if (!unpacked?.isDirectory() || unpacked.isSymbolicLink()) fail('unpacked native runtime must be a real directory');
+  const nativeRoot = path.join(resources, 'app.asar.unpacked');
+  function verifyNative(directory, relative = '') {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const rel = path.posix.join(relative, entry.name);
+      if (entry.isSymbolicLink()) fail(`indirect native runtime: ${rel}`);
+      if (entry.isDirectory()) verifyNative(path.join(directory, entry.name), rel);
+      else if (!/^node_modules\/koffi\/build\/koffi\/(?:darwin_(?:arm64|x64)|freebsd_(?:arm64|ia32|x64)|linux_(?:armhf|arm64|ia32|loong64|riscv64d|x64)|musl_(?:arm64|x64)|openbsd_(?:ia32|x64)|win32_(?:arm64|ia32|x64))\/koffi\.node$/.test(rel)) fail(`unexpected unpacked native resource: ${rel}`);
+    }
+  }
+  verifyNative(nativeRoot);
+  if (!fs.existsSync(path.join(nativeRoot, 'node_modules/koffi/build/koffi/win32_x64/koffi.node'))) fail('Koffi Windows x64 native addon is missing');
   const helperEntry = roots.find((entry) => entry.name === 'thumbnail-helper');
   if (!asarEntry?.isFile() || asarEntry.isSymbolicLink()) fail('resources/app.asar must be a regular file');
   if (!helperEntry?.isDirectory() || helperEntry.isSymbolicLink()) {
@@ -299,12 +315,14 @@ function verifyExternalResources(packageRoot, { official = false, version = null
   return {
     appAsar: path.join(resources, 'app.asar'),
     helper: path.join(helperDir, 'Znada.ThumbnailHelper.exe'),
+    video: path.join(resources, 'libmpv'),
   };
 }
 
 function verifyPackage({ packageRoot = DEFAULT_PACKAGE_ROOT, official = false, sourcePackagePath } = {}) {
   const sourceVersion = JSON.parse(fs.readFileSync(sourcePackagePath || path.join(ROOT, 'package.json'), 'utf8')).version;
-  const { helper, appAsar } = verifyExternalResources(packageRoot, { official, version: sourceVersion });
+  const { helper, appAsar, video } = verifyExternalResources(packageRoot, { official, version: sourceVersion });
+  videoRuntime.verifyRuntime(video);
   const executable = path.join(packageRoot, 'Znada.exe');
 
   if (!fs.existsSync(executable) || !fs.statSync(executable).isFile()) fail('Znada.exe is missing');

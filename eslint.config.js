@@ -83,9 +83,9 @@ const RENDERER_SHARED = [
   'TagSuggest', 'LibrarySearch',
   'LibraryRemovalDialog', 'UndoDeadline',
   'AssignRows', 'AutoLoad', 'CardActions', 'CardCaption', 'CardDetails', 'CardInteraction', 'CardMenu', 'CardMetadata', 'ViewScroll',
-  'CardTransfer', 'DeferredRefresh', 'JustifiedLayout', 'MediaFolder', 'NextChange', 'OnlineAdd',
+  'CardTransfer', 'DeferredRefresh', 'JustifiedLayout', 'MediaFolder', 'NextChange', 'OnlineAdd', 'OnlineHave',
   'OnlineBrowse', 'OnlineFound', 'OnlineSources','OnlineQuickFilters', 'OnlineIdentity', 'ResizeAnchor', 'SizeFilter', 'SelectPopup', 'UnifiedGrid', 'VirtualGridDom',
-  'VirtualWindow', 'WhatsNew', 'WhatsNewDialog', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaMediaProxy', 'ZnadaPathKey', 'ZnadaPlural',
+  'VirtualWindow', 'WhatsNew', 'WhatsNewDialog', 'ZnadaGalleryPayload', 'ZnadaHotkey', 'ZnadaMediaProxy', 'ZnadaPathKey', 'ZnadaPlural', 'ZnadaViewerPrefetch',
 ].reduce((all, name) => Object.assign(all, { [name]: 'readonly' }), {});
 
 // Pages that are only ever a page.

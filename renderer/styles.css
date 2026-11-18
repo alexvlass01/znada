@@ -177,26 +177,6 @@ body {
 .tb-btn:active { background: var(--btn-bg-hover); }
 .tb-btn svg rect { fill: currentColor; }
 
-/* ---------- Menu popover ---------- */
-.menu-popover {
-  position: fixed;
-  top: 48px;
-  right: 140px;
-  z-index: 200;
-  min-width: 230px;
-  background: var(--card);
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.28);
-  padding: 6px;
-  transform-origin: top right;
-  animation: popIn 0.12s ease;
-}
-.menu-popover[hidden] { display: none; }
-@keyframes popIn {
-  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
 .menu-item {
   display: block;
   width: 100%;
@@ -2118,6 +2098,15 @@ html.dark .lib-folder-front { fill: #d99a34; }
   background: var(--btn-bg);
   font-size: 11.5px;
 }
+button.details-tag {
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: inherit;
+  cursor: pointer;
+}
+button.details-tag:hover { background: var(--btn-bg-hover); }
 .details-tag.more { color: var(--text-dim); }
 
 @media (max-width: 560px) {
@@ -2406,6 +2395,17 @@ html.dark #libActiveTags .lib-active-tag { color: #99c1f1; }
    the number's place; the checkbox keeps its normal look, because the choice has not changed. */
 .online-source-option.paused .online-source-name { color: var(--text-dim); }
 .online-source-option .online-source-count svg { display: block; width: 13px; height: 13px; }
+/* BUG-070. A site that did not answer: a small warning sign in the number's place, the reason on
+   hover, and a dot on the button that opens Sources — instead of a line that pushed the feed down.
+   The dot sits on "Sources" while that quick button is on the row, otherwise on "Filters". */
+.online-source-option.failed .online-source-count { color: var(--warn, #e5a50a); }
+.online-sources-failed #onlineQuickSources:not([hidden]),
+.online-sources-failed:not(:has(#onlineQuickSources:not([hidden]))) #whFilterToggle { position: relative; }
+.online-sources-failed #onlineQuickSources:not([hidden])::after,
+.online-sources-failed:not(:has(#onlineQuickSources:not([hidden]))) #whFilterToggle::after {
+  content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--warn, #e5a50a); pointer-events: none;
+}
 
 /* DESIGN-002. Quick buttons for existing online filters, then "Filters" at the row's end.
    The row takes only free space (basis 0), so what it holds never changes its width and
@@ -2422,6 +2422,10 @@ html.dark #libActiveTags .lib-active-tag { color: #99c1f1; }
 .online-quick-btn .online-quick-chevron { width: 12px; height: 12px; margin-right: -3px; opacity: .7; }
 #whFilterToggle { flex: 0 0 auto; }
 #whFilterToggle svg { width: 16px; height: 16px; flex: 0 0 auto; }
+/* MEDIA-004: the Library's own "Filters" is the same button, and its menu the same surface. */
+#libFilterToggle { flex: 0 0 auto; }
+#libFilterToggle svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.lib-filter-popover { width: 200px; }
 .online-filter-count {
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
   background: var(--accent); color: var(--accent-fg);
@@ -2444,7 +2448,23 @@ html.dark #libActiveTags .lib-active-tag { color: #99c1f1; }
 .online-filter-options { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 /* In the full menu short choices share a line, so the whole menu fits a small window;
    a quick button's own menu keeps the plain one-per-line list of a dropdown. */
+.lib-card > .online-video-download {
+  position: absolute;
+  z-index: 4;
+  inset: auto 8px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 78%);
+}
+.online-video-download progress { min-width: 0; flex: 1; }
+.online-video-download button { cursor: pointer; }
+.lib-card > .online-video-download .pill { color: white; background: #343438; padding: 4px 8px; }
+
 .online-filter-popover[data-scope="all"] #onlineSourceOptions { display: grid; grid-template-columns: 1fr 1fr; }
+.online-filter-popover[data-scope="all"] #onlineKindOptions,
 .online-filter-popover[data-scope="all"] #whFiltersRow { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; }
 .online-filter-note { margin: 2px 11px 4px 35px; color: var(--text-dim); font-size: 11.5px; line-height: 1.35; }
 .online-filter-note[hidden] { display: none; }
@@ -2931,5 +2951,6 @@ html.dark #libActiveTags .lib-active-tag { color: #99c1f1; }
   .lib-local-actions { width: 100%; margin-left: 0; }
   .lib-local-actions #libAddPhotos,
   .lib-local-actions:has(#libAddPhotos[hidden]) #libAddFolder { margin-left: auto; }
+  .lib-local-actions:has(#libAddPhotos[hidden]):has(#libAddFolder[hidden]) #libFilterToggle { margin-left: auto; }
 }
 @media (prefers-reduced-motion: no-preference) { .lib-local-actions .lib-add-btn { transition: background .12s ease; } }

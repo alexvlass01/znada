@@ -779,6 +779,36 @@ console.log('\nmain.js orchestration\n');
     assert.ok(m.__test.lastRemovalPending(), 'undo should stay available to retry');
   });
 
+  await test('undo keeps a missing external photo in the trash and can retry when it returns', async (dir) => {
+    const photo = H.writeImage(path.join(dir, 'external', 'photo.png'));
+    const id = library.idFor(photo);
+    H.writeJson(cfgFile(dir), baseConfig({
+      monitors: { MON1: { light: { itemIds: [id] }, dark: { itemIds: [] } } },
+    }));
+    H.writeJson(storeFile(dir), {
+      version: 1,
+      library: { [id]: { id, type: 'image', path: photo, addedAt: 1, favorite: false, tags: [] } },
+      trash: [],
+    });
+    const m = H.loadMain(dir);
+    m.__test.loadConfig();
+    await m.invoke('library-remove-many', [{ path: photo, id, type: 'image' }]);
+    fs.unlinkSync(photo);
+    const failed = await m.invoke('library-undo-remove');
+    assert.strictEqual(failed.restored, 0);
+    assert.strictEqual(failed.failed, 1);
+    assert.strictEqual(failed.config.library[id], undefined);
+    assert.deepStrictEqual(failed.config.monitors.MON1.light.itemIds, []);
+    assert.strictEqual(failed.config.libraryTrash[0].item.id, id);
+    assert.ok(m.__test.lastRemovalPending());
+
+    H.writeImage(photo);
+    const retried = await m.invoke('library-undo-remove');
+    assert.strictEqual(retried.restored, 1);
+    assert.deepStrictEqual(retried.config.monitors.MON1.light.itemIds, [id]);
+    assert.strictEqual(retried.config.libraryTrash.length, 0);
+  });
+
   await test('undo does not restore a legacy fallback whose file is gone', async (dir) => {
     const own = path.join(dir, 'wallpapers', 'legacy.png');
     H.writeImage(own);

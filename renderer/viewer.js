@@ -14,18 +14,29 @@ let renderFirstFrameEnd = null;
 let renderFullEnd = null;
 
 const I18N = { dict: {}, fallback: {} };
-const VIEWER = { items: [], index: 0, token: 0 };
+const VIEWER = { items: [], index: 0, token: 0, payloadEpoch: 0, closed: false };
 const POINTER = { x: 0, y: 0, t: 0, button: -1, blocked: false };
 const PAN = { active: false, x: 0, y: 0, moved: false };
+let VIDEO = null;
+let viewerVideoDownloads;
+function isVideoEntry(entry) {
+  if (entry?.kind === 'internet') return window.MediaKind?.isOnlineVideo?.(entry.raw) === true;
+  return !!(entry && (entry.kind === 'library' || entry.kind === 'path') && window.MediaKind && window.MediaKind.isVideoPath(entry.path));
+}
 
 // Resolved image sources keyed by item index, so prefetched neighbours show
-// instantly on navigation. Each entry holds { sample?, full? } (data: URLs for
-// booru). Prefetch grabs the cheap tier (sample where available), so we keep a
-// small radius and cap the cache, evicting the entries farthest from the current.
+// instantly on navigation. The budget covers the encoded source strings retained
+// here, including inline data URLs. Chromium owns the network and decoded caches.
 const IMG_CACHE = new Map();
-const PREFETCHING = new Set();
-const PREFETCH_RADIUS = 2;
-const IMG_CACHE_MAX = 7;
+const PREFETCHING = new Map();
+const IMG_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+let imageCacheBytes = 0;
+// PERF-011. Раскодированные соседи, которых держим готовыми: index → {img, bytes}.
+// Порядок, глубина и бюджет — `renderer/viewer-prefetch.js`.
+const WARM = new Map();
+// `hold`: пока у текущего фото нет кадра, новые запросы предзагрузки не начинаются —
+// текущее важнее. `direction` — куда листали последним.
+const PREFETCH = { center: -1, direction: 1, hold: true };
 
 function setHd(on) {
   const hd = $('#viewerHd');
@@ -168,6 +179,7 @@ const ZOOM = { scale: 1, x: 0, y: 0 };
 const ZOOM_MAX = 6;
 
 function applyZoom() {
+  if (VIDEO) VIDEO.zoom(ZOOM);
   if (STAGE.front) STAGE.front.style.transform = `translate(${ZOOM.x}px, ${ZOOM.y}px) scale(${ZOOM.scale})`;
   const stage = $('#viewerStage');
   if (stage) stage.style.cursor = ZOOM.scale > 1 ? 'grab' : '';
@@ -354,17 +366,42 @@ function normalizePayload(payload) {
 }
 
 function setPayload(payload) {
-  // Reusing the viewer window for a different gallery is a new context. An Undo from
-  // the previous payload must not remain floating over (and appear to belong to) the
-  // newly opened card.
-  dismissViewerNotice();
+  if (VIEWER.closed) return;
+  resetPayloadWork();
   const next = normalizePayload(payload);
   VIEWER.items = next.items;
   VIEWER.index = next.index;
-  IMG_CACHE.clear();
-  PREFETCHING.clear();
   if (payload && payload.background) applyBackgroundMode(payload.background);
   render();
+}
+
+function resetPayloadWork() {
+  ++VIEWER.payloadEpoch;
+  ++VIEWER.token;
+  dismissViewerNotice();
+  closeViewerPopup();
+  clearLoadingTimer();
+  for (const job of PREFETCHING.values()) job.warm?.removeAttribute('src');
+  PREFETCHING.clear();
+  for (const held of WARM.values()) held.img.removeAttribute('src');
+  WARM.clear();
+  PREFETCH.center = -1;
+  PREFETCH.hold = true;
+  PREFETCH_DONE.clear();
+  IMG_CACHE.clear();
+  imageCacheBytes = 0;
+}
+
+function destroyViewer() {
+  if (VIEWER.closed) return;
+  VIEWER.closed = true;
+  resetPayloadWork();
+  VIEWER.items = [];
+}
+
+function closeViewer() {
+  destroyViewer();
+  window.viewerApi.close();
 }
 
 function currentEntry() {
@@ -376,7 +413,7 @@ function currentEntry() {
 // the viewer while the user is aiming for the action.
 function blocksViewerClose(target) {
   return !!(target && typeof target.closest === 'function'
-    && target.closest('button, .media-notice'));
+    && target.closest('button, input, .media-video-controls, .video-guard, .media-notice'));
 }
 
 function setState(message, hidden = false) {
@@ -430,6 +467,7 @@ function mediaProxyUrl(item, tier) {
 
 async function previewSource(entry) {
   if (!entry) return '';
+  if (isVideoEntry(entry)) return ''; // native video is never prefetched as an <img>
   if ((entry.kind === 'library' || entry.kind === 'path') && entry.path) {
     return window.viewerApi.fileUrl(entry.path);
   }
@@ -568,51 +606,148 @@ async function present(src, token, entry, requireShape) {
 }
 
 function cacheTier(index, tier, src) {
-  if (!src) return;
+  if (!src || src.length > IMG_CACHE_MAX_BYTES) return;
+  // Most sources are ASCII, including base64. Avoid copying large data URLs
+  // just to measure them.
+  const bytes = /[\u0080-\uFFFF]/.test(src) ? new TextEncoder().encode(src).byteLength : src.length;
+  if (bytes > IMG_CACHE_MAX_BYTES) return;
   const entry = IMG_CACHE.get(index) || {};
+  const weight = `${tier}Bytes`;
+  imageCacheBytes += bytes - (entry[weight] || 0);
   entry[tier] = src;
+  entry[weight] = bytes;
   IMG_CACHE.set(index, entry);
-  if (IMG_CACHE.size <= IMG_CACHE_MAX) return;
+  if (imageCacheBytes <= IMG_CACHE_MAX_BYTES) return;
   const n = VIEWER.items.length || 1;
   const dist = (i) => { const d = Math.abs(i - index); return Math.min(d, n - d); };
-  // Drop the entries farthest (cyclically) from the current index first.
+  // Keep the tiers closest to the inserted source, evicting cyclically as before.
   const order = [...IMG_CACHE.keys()].sort((a, b) => dist(b) - dist(a));
   for (const key of order) {
-    if (IMG_CACHE.size <= IMG_CACHE_MAX) break;
-    if (key !== index) IMG_CACHE.delete(key);
+    if (imageCacheBytes <= IMG_CACHE_MAX_BYTES) break;
+    if (key === index) {
+      dropCachedTier(index, tier === 'full' ? 'sample' : 'full', entry);
+    } else {
+      const dropped = IMG_CACHE.get(key);
+      imageCacheBytes -= (dropped.sampleBytes || 0) + (dropped.fullBytes || 0);
+      IMG_CACHE.delete(key);
+    }
   }
+}
+
+function dropCachedTier(index, tier, entry) {
+  if (IMG_CACHE.get(index) !== entry) return;
+  const weight = `${tier}Bytes`;
+  imageCacheBytes -= entry[weight] || 0;
+  delete entry[weight];
+  delete entry[tier];
+  if (!entry.full && !entry.sample) IMG_CACHE.delete(index);
+}
+
+// PERF-011. Кадры, за которыми уже ходили в нынешнем окне вокруг текущего — удачно или нет.
+// Без этой отметки кадр, не влезший в бюджет памяти, раскодировался бы снова и снова:
+// подготовили → вытеснили → снова в очереди. Отметка снимается, только когда кадр выходит
+// из окна, — вернётся в окно, будет готовиться заново.
+const PREFETCH_DONE = new Set();
+
+function prefetchOrder(center) {
+  return ZnadaViewerPrefetch.plan(center, VIEWER.items.length, PREFETCH.direction);
 }
 
 async function prefetchIndex(index) {
-  const cached = IMG_CACHE.get(index);
-  if ((cached && (cached.full || cached.sample)) || PREFETCHING.has(index)) return;
+  if (VIEWER.closed) return;
+  if (WARM.has(index) || PREFETCHING.has(index)) return;
   const entry = VIEWER.items[index];
-  if (!entry) return;
-  PREFETCHING.add(index);
+  if (!entry || isVideoEntry(entry)) return;
+  const epoch = VIEWER.payloadEpoch;
+  const job = { warm: null };
+  // The normalized entry object is stable for the payload, even if its action
+  // state changes. An index or provider ID alone can be reused by a new gallery.
+  const active = () => epoch === VIEWER.payloadEpoch && VIEWER.items[index] === entry
+    && PREFETCHING.get(index) === job;
+  PREFETCHING.set(index, job);
   try {
-    // Prefer the cheap sample tier (booru); fall back to full (Wallhaven/local).
-    let tier = 'sample';
-    let src = await sampleSource(entry);
-    if (!src) { tier = 'full'; src = await fullSource(entry, ''); }
-    if (!src) return;
-    cacheTier(index, tier, src);
-    const warm = new Image();
+    // PERF-011. Адрес уже известен (кадр видели или готовили раньше) — берём его: тот же
+    // файл придёт из кеша браузера, и останется только раскодировать. Иначе — дешёвая
+    // промежуточная ступень (booru), а без неё оригинал (Wallhaven, свои файлы).
+    const cached = IMG_CACHE.get(index) || {};
+    let tier = cached.full ? 'full' : (cached.sample ? 'sample' : '');
+    let src = tier ? cached[tier] : '';
+    if (!src) {
+      tier = 'sample';
+      src = await sampleSource(entry);
+      if (!active()) return;
+      if (!src) { tier = 'full'; src = await fullSource(entry, ''); }
+      if (!active() || !src) return;
+      cacheTier(index, tier, src);
+      if (IMG_CACHE.get(index)?.[tier] !== src) return;
+    }
+    const warm = job.warm = new Image();
     warm.src = src;
-    if (warm.decode) { try { await warm.decode(); } catch {} }
+    if (warm.decode) await warm.decode();
+    if (!active()) return;
+    // Раскодированный кадр держим, только если он недорог: исполин в сотни мегабайт
+    // вытеснил бы всех соседей. Тогда остаётся файл в кеше браузера — тоже выигрыш.
+    const bytes = ZnadaViewerPrefetch.decodedBytes(warm.naturalWidth, warm.naturalHeight);
+    job.warm = null;
+    if (ZnadaViewerPrefetch.worthKeeping(bytes)) {
+      WARM.set(index, { img: warm, bytes });
+      trimWarm();
+    } else {
+      warm.removeAttribute('src');
+    }
   } catch {
     // Prefetch is best-effort; failures just mean a normal load on navigation.
   } finally {
-    PREFETCHING.delete(index);
+    if (active()) {
+      PREFETCHING.delete(index);
+      pumpPrefetch();
+    }
   }
 }
 
-function prefetchNeighbors(center) {
-  const n = VIEWER.items.length;
-  if (n <= 1) return;
-  for (let d = 1; d <= PREFETCH_RADIUS && d * 2 < n + 1; d++) {
-    prefetchIndex((center + d) % n);
-    prefetchIndex((center - d + n) % n);
+// Выбросить готовые кадры вне окна и сверх бюджета; текущий — первым по приоритету.
+function trimWarm() {
+  const order = PREFETCH.center < 0 ? [] : [PREFETCH.center, ...prefetchOrder(PREFETCH.center)];
+  const held = [...WARM].map(([index, item]) => ({ index, bytes: item.bytes }));
+  for (const index of ZnadaViewerPrefetch.evict(held, order)) {
+    WARM.get(index)?.img.removeAttribute('src');
+    WARM.delete(index);
   }
+}
+
+// Новое текущее фото. Запросы вне нового окна отменяются (их уход обрывает загрузку, как в
+// BUG-027), готовые вне окна выбрасываются, новые запросы ждут, пока у текущего не будет кадра.
+function retargetPrefetch(center) {
+  PREFETCH.center = center;
+  PREFETCH.hold = true;
+  const keep = new Set([center, ...prefetchOrder(center)]);
+  for (const [index, job] of [...PREFETCHING]) {
+    if (keep.has(index)) continue;
+    job.warm?.removeAttribute('src');
+    PREFETCHING.delete(index);
+  }
+  for (const index of [...PREFETCH_DONE]) {
+    if (!keep.has(index)) PREFETCH_DONE.delete(index);
+  }
+  trimWarm();
+}
+
+// Ставить в работу следующих по очереди, пока не занято PARALLEL мест.
+function pumpPrefetch() {
+  if (VIEWER.closed || PREFETCH.hold || PREFETCH.center < 0) return;
+  for (const index of prefetchOrder(PREFETCH.center)) {
+    if (PREFETCHING.size >= ZnadaViewerPrefetch.PARALLEL) return;
+    if (PREFETCH_DONE.has(index) || PREFETCHING.has(index) || WARM.has(index)) continue;
+    PREFETCH_DONE.add(index);
+    prefetchIndex(index);
+  }
+}
+
+// У текущего фото есть кадр — можно готовить соседей.
+function prefetchNeighbors(center) {
+  if (center !== PREFETCH.center) return;
+  PREFETCH.hold = false;
+  pumpPrefetch();
 }
 
 // ONL-008. The viewer's button used to latch exactly the way the grid's did: add once
@@ -854,11 +989,13 @@ async function viewerEntryMoves(entry) {
 // The monitor chooser, drawn by the same module the main window uses. Its data comes
 // from main because this window holds no config of its own.
 async function openViewerAssign(entry, descriptor, point) {
+  const token = VIEWER.token;
   // Asked side by side, so the chooser opens no later than it did before.
   const [targets, moving] = await Promise.all([
     Promise.resolve().then(() => window.viewerApi.cardAssignTargets()).catch(() => null),
     viewerEntryMoves(entry),
   ]);
+  if (VIEWER.closed || token !== VIEWER.token || currentEntry() !== entry) return;
   const root = $('#viewerRoot');
   if (!root) return;
   closeViewerPopup();
@@ -896,7 +1033,7 @@ async function openViewerAssign(entry, descriptor, point) {
       // complaint this behaviour drew in the main window.
       closeViewerPopup();
       let id = entry.added && entry.pooled ? entry.pooled.id : '';
-      if (!id && (entry.kind === 'library' || entry.kind === 'path')) {
+      if (!id && (entry.kind === 'library' || entry.kind === 'path' || (entry.pooled && entry.pooled.path))) {
         // A local photo needs a record, not a download. Sending it down the online add
         // path asked main to fetch a file already on the disk, and main answered
         // 'badItem' over a picture the user was looking at full-screen.
@@ -930,12 +1067,17 @@ async function openViewerAssign(entry, descriptor, point) {
   VIEWER_POPUP.element = pop;
   const dismiss = (e) => { if (!pop.contains(e.target)) closeViewerPopup(); };
   VIEWER_POPUP.dismiss = dismiss;
-  setTimeout(() => document.addEventListener('mousedown', dismiss, true), 0);
+  VIEWER_POPUP.timer = setTimeout(() => {
+    VIEWER_POPUP.timer = null;
+    document.addEventListener('mousedown', dismiss, true);
+  }, 0);
 }
 
-const VIEWER_POPUP = { element: null, dismiss: null };
+const VIEWER_POPUP = { element: null, dismiss: null, timer: null };
 
 function closeViewerPopup() {
+  if (VIEWER_POPUP.timer !== null) clearTimeout(VIEWER_POPUP.timer);
+  VIEWER_POPUP.timer = null;
   if (VIEWER_POPUP.dismiss) document.removeEventListener('mousedown', VIEWER_POPUP.dismiss, true);
   VIEWER_POPUP.dismiss = null;
   if (VIEWER_POPUP.element) VIEWER_POPUP.element.remove();
@@ -966,10 +1108,17 @@ function addViewerCardToLibrary(entry, descriptor) {
 async function downloadViewerCard(entry, descriptor) {
   let res;
   try {
-    res = descriptor.kind === 'cloud'
-      ? await window.viewerApi.cloudAdd(entry.raw)
-      : await window.viewerApi.internetAdd(entry.raw, entry.query || '');
+    if (descriptor.kind === 'internet' && isVideoEntry(entry)) {
+      res = await getViewerVideoDownloads().download(entry.raw, entry.query || '', () => {
+        if (currentEntry() === entry) viewerVideoDownloads.sync($('#viewerActions'), entry.raw);
+      });
+    } else {
+      res = descriptor.kind === 'cloud'
+        ? await window.viewerApi.cloudAdd(entry.raw)
+        : await window.viewerApi.internetAdd(entry.raw, entry.query || '');
+    }
   } catch { res = { error: 'download' }; }
+  if (res?.error === 'cancelled') return '';
   if (!res || res.error) {
     showViewerMessage(CardTransfer.errorMessage(t, res && res.error));
     return '';
@@ -1049,15 +1198,19 @@ async function ensureViewerRecord(entry) {
   const none = { id: '', error: '' };
   if (!entry) return none;
   if (entry.pooled && entry.pooled.id) return { id: entry.pooled.id, error: '' };
-  if (entry.kind !== 'library' && entry.kind !== 'path') return none;
-  if (!entry.path) return none;
+  // LIB-031. An online card the user already has as a file in their folder: that file is
+  // the photo, and it gets its record the way the same photo in the Library would.
+  const own = entry.pooled && entry.pooled.path ? entry.pooled.path : '';
+  if (!own && entry.kind !== 'library' && entry.kind !== 'path') return none;
+  const filePath = own || entry.path;
+  if (!filePath) return none;
   let res;
-  try { res = await window.viewerApi.cardEnsureRecord(entry.path, 'image'); }
+  try { res = await window.viewerApi.cardEnsureRecord(filePath, 'image'); }
   catch { return none; }
   const id = (res && res.id) || '';
   // The same bookkeeping addViewerCardToLibrary does after an add, so the menu and the
   // action button cannot disagree about what this entry now is.
-  if (id) { entry.added = true; entry.pooled = { id, path: entry.path, type: 'image' }; }
+  if (id) { entry.added = true; entry.pooled = { id, path: filePath, type: 'image' }; }
   return { id, error: (res && res.error) || '' };
 }
 
@@ -1121,6 +1274,10 @@ async function removeViewerCard(entry) {
   return true;
 }
 
+function getViewerVideoDownloads() {
+  return viewerVideoDownloads ||= window.createOnlineVideoDownloads(window.viewerApi, t);
+}
+
 function renderActions(entry) {
   const actions = $('#viewerActions');
   if (!actions) return;
@@ -1148,6 +1305,7 @@ function renderActions(entry) {
     syncAddAction(entry, add);
   });
   actions.appendChild(add);
+  if (entry.kind === 'internet' && isVideoEntry(entry)) getViewerVideoDownloads().sync(actions, entry.raw);
 }
 
 function updateResolutionInSubtitle(width, height, entry) {
@@ -1175,7 +1333,20 @@ function updateResolutionInSubtitle(width, height, entry) {
 function step(delta) {
   if (VIEWER.items.length <= 1) return;
   VIEWER.index = (VIEWER.index + delta + VIEWER.items.length) % VIEWER.items.length;
+  PREFETCH.direction = ZnadaViewerPrefetch.direction(delta); // PERF-011: больше готовим по ходу
   render();
+}
+
+/*
+ * BUG-065. The sample tier of a moving picture is a still JPEG. The viewer used to drop
+ * "loading full quality" as soon as the sample was up, which is right for a photo (the
+ * sample already looks like the photo) and wrong for a GIF: the picture stood still with
+ * no word that the moving original was still on its way, and it read as "stopped loading".
+ * For a picture the site declares moving, the note stays until the original is up.
+ */
+function sampleIsStillStandIn(entry) {
+  return !!(entry && entry.kind === 'internet' && window.MotionBadge
+    && window.MotionBadge.fromSite(entry.raw));
 }
 
 async function render() {
@@ -1184,8 +1355,10 @@ async function render() {
 }
 
 async function renderCore() {
+  if (VIEWER.closed) return;
   const entry = currentEntry();
   const token = ++VIEWER.token;
+  if (VIDEO) VIDEO.stop(token - 1);
   renderFirstFrameEnd = diagSpan('viewer', 'first-frame'); // fired by present() on first show
   renderFullEnd = diagSpan('viewer', 'full-quality'); // fired when the full tier is shown
   const title = $('#viewerTitle');
@@ -1202,6 +1375,7 @@ async function renderCore() {
   if (prev) prev.disabled = VIEWER.items.length <= 1;
   if (next) next.disabled = VIEWER.items.length <= 1;
   renderActions(entry);
+  retargetPrefetch(VIEWER.index); // PERF-011
 
   if (!STAGE.front) return;
   const idx = VIEWER.index;
@@ -1209,6 +1383,31 @@ async function renderCore() {
   resetZoom(); // each photo opens fit-to-screen; showImage re-applies on the new layer
   setStageAlt(entry && entry.title);
   setHd(false);
+  if (isVideoEntry(entry)) {
+    clearStage(); applyStageAspect(entry); clearLoadingTimer(); setState(t('video.loading'));
+    for (const layer of [BG.front, BG.back]) { if (layer) layer.removeAttribute('src'); }
+    if ($('#viewerBg')) $('#viewerBg').style.background = '';
+    if (!VIDEO) VIDEO = window.ZnadaViewerVideo({ window, document, api: window.viewerApi, t,
+      onFirstFrame(width, height, poster) {
+        clearLoadingTimer(); setState('');
+        if (poster) updateBackgroundFromSrc(poster);
+        applyStageAspect({ ...currentEntry(), raw: { width, height } });
+        updateResolutionInSubtitle(width, height, currentEntry());
+        if (renderFirstFrameEnd) { renderFirstFrameEnd(); renderFirstFrameEnd = null; }
+        if (renderFullEnd) { renderFullEnd(); renderFullEnd = null; }
+      },
+      onError() {
+        clearLoadingTimer(); setLoadError(t('video.playbackFailed'), () => render());
+        if (currentEntry()?.kind === 'internet') return;
+        const external = document.createElement('button'); external.type = 'button'; external.className = 'media-action';
+        external.textContent = t('video.openExternal');
+        external.addEventListener('click', async () => { const result = await VIDEO.external(); if (!result?.ok) setState(t('video.openFailed')); });
+        $('#viewerState').appendChild(external);
+      },
+    });
+    VIDEO.show(VIEWER.index, token);
+    return;
+  }
   // Keep the previous frame on screen while the next one decodes (no black flash),
   // and only surface the "Loading…" pill if the load is actually slow. On first
   // open there is nothing to keep, so show it immediately.
@@ -1219,17 +1418,27 @@ async function renderCore() {
 
   // 1) Show the best cached tier instantly (full preferred, else the sample).
   if (cached.full) {
-    if (await present(cached.full, token, entry)) {
+    const full = cached.full;
+    const presented = await present(full, token, entry);
+    if (token !== VIEWER.token) return;
+    if (presented) {
       if (renderFullEnd) { renderFullEnd({ status: 'cached' }); renderFullEnd = null; } // budget span #14
       prefetchNeighbors(idx);
       return;
     }
-    if (token !== VIEWER.token) return;
-    delete cached.full; // stale/broken — fall through and reload
+    if (cached.full === full) dropCachedTier(idx, 'full', cached);
   }
   if (cached.sample) {
-    if (await present(cached.sample, token, entry)) shown = true;
-    else { if (token !== VIEWER.token) return; delete cached.sample; }
+    const sample = cached.sample;
+    const presented = await present(sample, token, entry);
+    if (token !== VIEWER.token) return;
+    if (presented) {
+      shown = true;
+      if (token === VIEWER.token && sampleIsStillStandIn(entry)) setHd(true); // BUG-065
+      // PERF-011. Кадр уже на экране — соседей готовим, не дожидаясь оригинала. Прежде
+      // предзагрузка ждала полного качества и при быстром листании не начиналась вовсе.
+      prefetchNeighbors(idx);
+    } else if (cached.sample === sample) { dropCachedTier(idx, 'sample', cached); }
   }
 
   // 2) Nothing decent cached: show the quick thumbnail, then the sample tier (booru).
@@ -1252,9 +1461,12 @@ async function renderCore() {
     try { sample = await sampleSource(entry); } catch {}
     if (token !== VIEWER.token) return;
     if (sample && await present(sample, token, entry, true)) {
+      if (token !== VIEWER.token) return;
       cacheTier(idx, 'sample', sample);
       shown = true;
-      if (token === VIEWER.token) setHd(false);
+      // BUG-065: a moving picture's sample is a still; keep the note until the original.
+      if (token === VIEWER.token) setHd(sampleIsStillStandIn(entry));
+      prefetchNeighbors(idx); // PERF-011
     }
     if (token !== VIEWER.token) return;
   }
@@ -1265,14 +1477,16 @@ async function renderCore() {
   if (token !== VIEWER.token) return;
   const currentSrc = STAGE.front && STAGE.front.getAttribute('src');
   if (full && full !== currentSrc && await present(full, token, entry)) {
+    if (token !== VIEWER.token) return;
     cacheTier(idx, 'full', full);
     if (renderFullEnd) { renderFullEnd({ status: 'upgraded' }); renderFullEnd = null; } // budget span #14
   }
-  if (token === VIEWER.token) setHd(false);
+  if (token !== VIEWER.token) return;
+  setHd(false);
   // Все источники испробованы. Если на сцене так ничего и нет — это настоящая ошибка,
   // и о ней надо сказать. Раньше об этом сообщал провал показа миниатюры, но теперь
   // пропуск миниатюры законен, и единственный честный признак — пустая сцена.
-  if (token === VIEWER.token && !stageHasImage()) {
+  if (!stageHasImage()) {
     clearLoadingTimer();
     clearStage();
     // BUG-042. Повтор перезапускает показ того же кадра целиком: источники пробуются
@@ -1284,8 +1498,9 @@ async function renderCore() {
 }
 
 function initEvents() {
+  window.addEventListener('pagehide', destroyViewer, { once: true });
   const close = $('#viewerClose');
-  if (close) close.addEventListener('click', () => window.viewerApi.close());
+  if (close) close.addEventListener('click', closeViewer);
   const root = $('#viewerRoot');
 
   // ONL-009. Right-click anywhere on the picture opens the same menu the grid has.
@@ -1306,11 +1521,14 @@ function initEvents() {
     openViewerCardMenu(currentEntry(), null);
   });
   const fullscreen = $('#viewerFullscreen');
-  if (fullscreen) fullscreen.addEventListener('click', async () => {
-    // Drop focus so the next arrow-key press doesn't paint a focus ring on the button.
-    fullscreen.blur();
+  const toggleFullscreen = async () => {
     const r = await window.viewerApi.toggleFullscreen();
     if (r && typeof r.fullscreen === 'boolean') setFullscreenUi(r.fullscreen);
+  };
+  if (fullscreen) fullscreen.addEventListener('click', () => {
+    // Drop focus so the next arrow-key press doesn't paint a focus ring on the button.
+    fullscreen.blur();
+    void toggleFullscreen();
   });
   const prev = $('#viewerPrev');
   if (prev) prev.addEventListener('click', () => { step(-1); prev.blur(); });
@@ -1318,6 +1536,7 @@ function initEvents() {
   if (next) next.addEventListener('click', () => { step(1); next.blur(); });
   if (root) {
     root.addEventListener('wheel', (e) => {
+      if (e.target.closest('.media-video-controls')) return;
       e.preventDefault();
       zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.18 : 1 / 1.18);
     }, { passive: false });
@@ -1369,15 +1588,33 @@ function initEvents() {
       const dy = Math.abs(e.clientY - POINTER.y);
       const dt = Date.now() - POINTER.t;
       if (dx <= 4 && dy <= 4 && dt < 350 && !panned) {
+        // MEDIA-008: a press on the moving picture is play/pause, as in every player.
+        // The backdrop around it still closes the viewer, as it does for a photo.
+        if (VIDEO && VIDEO.click(e.target)) return;
         if (ZOOM.scale > 1) { resetZoom(); applyZoom(); } // click while zoomed → fit
-        else window.viewerApi.close();                    // click while fit → close
+        else closeViewer();                               // click while fit → close
       }
+    });
+    // MEDIA-008: the two presses already toggled play/pause there and back, so the
+    // video keeps doing what it did and only the window changes.
+    root.addEventListener('dblclick', (e) => {
+      if (VIDEO && VIDEO.owns(e.target)) void toggleFullscreen();
     });
   }
   document.addEventListener('keydown', (e) => {
+    if (VIDEO && VIDEO.key(e)) return;
+    if (e.key !== 'Escape' && e.target && e.target.closest('input,select,textarea')) return;
+    // MEDIA-008: F is fullscreen for whatever is open. By physical key, so it works on
+    // any keyboard layout; never with a modifier and never while a menu is open.
+    if (e.code === 'KeyF' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat
+      && !document.querySelector('.lib-popup') && !(e.target && e.target.closest('button'))) {
+      e.preventDefault();
+      void toggleFullscreen();
+      return;
+    }
     if (e.key === 'Escape') {
       e.preventDefault();
-      window.viewerApi.close();
+      closeViewer();
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
       step(-1);
@@ -1395,7 +1632,9 @@ async function init() {
   initStage();
   await loadI18n();
   initEvents();
-  setPayload(await window.viewerApi.getPayload());
+  const epoch = VIEWER.payloadEpoch;
+  const payload = await window.viewerApi.getPayload();
+  if (epoch === VIEWER.payloadEpoch) setPayload(payload);
 }
 
 init();

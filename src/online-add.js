@@ -49,15 +49,37 @@
   }
 
   // `pool` is either the library object or a prebuilt index from sourceIndex().
-  function pooledItem(pool, kind, item) {
+  //
+  // LIB-031. `have` (optional) answers whether the user already has this very picture as
+  // a file — found by its fingerprint or size, wherever it came from: a watched folder, a
+  // photo saved from a browser, Znada's own folder. Owner, 2026-11-08: such a photo IS that
+  // photo, so the card shows as already downloaded and acts on the user's file. The
+  // download marker wins when both answer: it names the record this card made.
+  function pooledItem(pool, kind, item, have = null) {
     const markers = sourceMarkers(kind, item);
-    if (!markers.length) return null;
-    const index = pool instanceof Map ? pool : sourceIndex(pool);
-    for (const marker of markers) {
-      const record = index.get(marker);
-      if (record) return record;
+    if (markers.length) {
+      const index = pool instanceof Map ? pool : sourceIndex(pool);
+      for (const marker of markers) {
+        const record = index.get(marker);
+        if (record) return record;
+      }
     }
-    return null;
+    return foundItem(pool, kind, item, have);
+  }
+
+  // The user's own file for this card, in the shape of a pool record: the record itself
+  // when the file has one, otherwise just its path (a photo inside a watched folder that
+  // nothing has made a record for yet — the same as such a photo in the Library grid).
+  function foundItem(pool, kind, item, have) {
+    if (!have || typeof have.lookup !== 'function') return null;
+    let found = null;
+    try { found = have.lookup(kind, item); } catch { found = null; }
+    const filePath = found && typeof found.path === 'string' ? found.path : '';
+    if (!filePath) return null;
+    const id = typeof found.id === 'string' ? found.id : '';
+    const library = pool && !(pool instanceof Map) && typeof pool === 'object' ? pool : null;
+    if (id && library && library[id] && library[id].type === 'image') return library[id];
+    return { id, path: filePath, type: 'image', found: true };
   }
 
   // DESIGN-008. What an add in progress is remembered by. The same marker that will
@@ -72,8 +94,8 @@
 
   // `adding` is whatever holds the adds in progress (a Map or a Set of addingKey()s).
   // An add that already landed wins: the pool is the truth, the flag only fills the wait.
-  function buttonState(pool, kind, item, adding) {
-    const pooled = pooledItem(pool, kind, item);
+  function buttonState(pool, kind, item, adding, have = null) {
+    const pooled = pooledItem(pool, kind, item, have);
     if (pooled) {
       return { added: true, adding: false, pooled, glyph: '✓', titleKey: 'online.remove', action: 'remove' };
     }

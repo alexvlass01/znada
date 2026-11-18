@@ -44,6 +44,17 @@ const filesOf = (root) => mainProcessSources(root).map((s) => s.file).sort();
 const refuses = (files, pattern) => assert.throws(() => mainProcessSources(project(files)), pattern);
 
 try {
+  ok('the one video utility entrypoint is followed, and dynamic/renamed/other utility loads remain refused', () => {
+    const main = "const { utilityProcess } = require('electron'); const path = require('path'); utilityProcess.fork(path.join(__dirname, 'src', 'video-worker.js'), [], {});";
+    assert.deepStrictEqual(filesOf(project({ 'main.js': main, 'src/video-worker.js': '' })), ['main.js', 'src/video-worker.js']);
+    for (const changed of [main.replace("'video-worker.js'", 'fromWindow'), main.replace("'video-worker.js'", "'other.js'"),
+      main.replace('utilityProcess.fork', 'utilityProcess.exec'), "const {utilityProcess: other}=require('electron');",
+      "const {utilityProcess}=require('electron'); const fork=utilityProcess.fork; fork('anything');"]) {
+      refuses({ 'main.js': changed, 'src/video-worker.js': '' }, /utilityProcess loads code/);
+    }
+    refuses({ 'main.js': main, 'src/video-worker.js': "eval('bad');" }, /runs code from text/);
+    refuses({ 'main.js': main }, /does not resolve/);
+  });
   // --- What is in the set ------------------------------------------------------------
 
   ok('a module only another module loads is read and followed, .cjs included', () => {

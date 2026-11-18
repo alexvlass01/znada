@@ -49,7 +49,10 @@ function harness(library = {}) {
   const ctx = { contentBlur: { bind() {}, syncSettings() {}, enabled: () => false }, LIB: { filter: 'all', q: '', tags: [], tagMenu: '', availableTags: null }, config: { library },
     FAVORITES: { get entries() { return Object.values(ctx.config.library).filter(item => item.favorite).map(item => ({ item })); } },
     LibrarySearch, document, $: (id) => nodes[id], t: (key, vars) => key === 'library.photosCount' ? vars.n + ' фото' : key, baseName: (name) => name.split('/').pop(),
-    inRemovedView: () => ctx.LIB.filter === 'removed', libOpenSection: () => ctx.LIB.filter,
+    inRemovedView: () => ctx.LIB.filter === 'removed', inDuplicatesView: () => ctx.LIB.filter === 'duplicates',
+    // MEDIA-004: the kind of file is tested in library-search.test.js; nothing is narrowed here.
+    kindFilterActive: () => false,
+    libOpenSection: () => ctx.LIB.filter,
     closeLibPopup() {}, clearSelection() { ctx.clears++; }, syncSelectionUI() {},
     renders: 0, clears: 0, tops: 0, scrollOpenViewToTop() { ctx.tops++; },
     window: { handlers: {}, addEventListener(event, handler) { this.handlers[event] = handler; }, api: { setConfig: async () => {} } },

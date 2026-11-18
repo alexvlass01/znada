@@ -123,6 +123,25 @@ console.log('\nLIB-009: вытеснение из корзины доходит 
   // собрался, не завися от формулировок локали.
   const fakeT = (key, vars) => (vars && vars.n !== undefined ? key + ':' + vars.n : key);
 
+  await test('окно: неудачная отмена сообщает об ошибке и предлагает повтор', async () => {
+    const result = { restored: 0, failed: 1 };
+    const ctx = { t: fakeT, config: {}, LIB: { filter: 'all' }, shown: null,
+      window: { api: { libraryUndoRemove: async () => result } },
+      renderLibrary() {}, renderPreviews() {}, renderHome() {},
+      toast(msg) { ctx.shown = { msg, label: null }; },
+      toastAction(msg, label, onAction) { ctx.shown = { msg, label, onAction }; },
+    };
+    vm.createContext(ctx);
+    vm.runInContext('async ' + grab('renderer/renderer.js', 'undoLastRemoval'), ctx);
+    await ctx.undoLastRemoval('token-1');
+    assert.strictEqual(ctx.shown.msg, 'library.undoFailed');
+    assert.strictEqual(ctx.shown.label, 'library.undo');
+    result.restored = 1;
+    result.failed = 0;
+    await ctx.shown.onAction();
+    assert.strictEqual(ctx.shown.msg, 'library.undoneToast');
+  });
+
   {
     const ctx = { t: fakeT, shown: null };
     ctx.toast = (msg) => { ctx.shown = { msg, action: null }; };
